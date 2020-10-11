@@ -167,3 +167,238 @@ DELETE {index}
 
 ~~~
 
+
+
+ # Elastic Stack
+
+## Elastic Search和Kibana入门
+
+#### Elasticsearch 配置说明
+
+**可以在启动时通过-E来设置启动参数**
+
+例如bin/elasticsearch -Ehttp.port=19200，修改http.port为19200
+
+~~~yml
+# 集群名称，以此作为判断同一集群的判断条件, 默认为elasticsearch
+cluster.name: elasticsearch
+
+# 当前节点在集群中的名称，默认随机分配
+node.name: node-1
+
+# 当前节点数据保存地址，同一台机器上的不同es节点的数据保存地址不能相同，默认为$ES_HOME/data
+path.data: /path/to/data
+# 当前节点日志地址, 默认为$ES_HOME/logs
+path.logs: /path/to/logs
+
+# 对外网络发布的地址, 默认为127.0.0.1
+network.host: 127.0.0.1
+# 当前节点提供restful api的端口， 默认为9200
+http.port: 9200
+~~~
+
+#### Elasticsearch的Development和Production模式
+
+es在启动时将会做启动前的检查，如磁盘是否够用，内存是否够用，版本是否足够高等
+
+- 在Development模式下，不满足的条件会以**warning**的形式打印
+- 在Production模式下，不满足的条件会以**error**的形式打印，并**启动失败**
+
+es将根据elasticsearch.yml中的network.host属性进行区分
+
+- network.host为127.0.0.1，为Development模式
+- network.host为当前实际地址，为Production模式
+
+
+
+#### ES本地快速部署集群
+
+1. 切换到$ES_HOME目录，也就是es的安装目录
+
+2. 开启三个cmd，分别执行（windows）：
+
+   - bin\elasticsearch.bat -Ehttp.port=9200 -Epath.data=node1
+   - bin\elasticsearch.bat -Ehttp.port=8200 -Epath.data=node2
+   - bin\elasticsearch.bat -Ehttp.port=7200 -Epath.data=node3
+
+   **path.data必须不一样，因为不同es的path.data一样会导致启动失败**
+
+   **http.port必须不一样，因为一样会导致端口占用**
+
+   ![image-20201010221906412](img/image-20201010221906412.png)
+
+   ![image-20201010221947637](img/image-20201010221947637.png)
+
+   ![image-20201010222031482](img/image-20201010222031482.png)
+
+3. 浏览器访问http://localhost:9200/_cat/nodes?v
+
+   ![image-20201010222123351](img/image-20201010222123351.png)
+
+4. 查看$ES_HOME, 自动创建了node1，node2，node3文件夹，这三个文件夹会自动创建$ES_HOME目录下
+
+   ![image-20201010222312985](img/image-20201010222312985.png)
+
+#### ES 简单CRUD
+
+**在7.x版本中，type已经移除了，只能为_doc**
+
+> Create
+
+~~~shell
+# account为index，person为type，1为id。（5.x版本）
+# 在7.x版本中，type已经移除了，只能为_doc
+POST /account/person/1
+{
+  "name": "zhansan",
+  "lastname": "Doe",
+  "description": "admin root"
+}
+~~~
+
+> Read
+
+~~~shell
+# account为index，person为type，1为id。（5.x版本）
+# 在7.x版本中，type已经移除了，只能为_doc
+GET /account/person/1
+~~~
+
+> Update
+
+~~~shell
+# account为index，person为type，1为id。（5.x版本）
+# 
+POST /account/person/1/_update
+{
+  "doc":{
+    "description": "admin adminstrator"
+  }
+}
+
+# 部分修改，修改后为
+{
+    "name" : "zhansan",
+    "lastname" : "Doe",
+    "description" : "admin adminstrator"
+  }
+~~~
+
+> Delete
+
+~~~shell
+# 删除文档
+DELETE /account/_doc/1
+~~~
+
+#### ES Document
+
+> 文档数据类型
+
+Document就是一个Json Object，有多个字段组成，字段的常见数据类型如下：
+
+- 字符串：text，keyword
+- 数字类型：long，integer，short，byte，double，float，half_float，scaled_float
+- 布尔：boolean
+- 日期：date
+- 二进制：binary
+- 范围类型：integer_range，float_range，long_range，double_range，date_range
+
+> 每个文档的都有唯一id标识，类型mysql中的primary key
+
+- 自行指定
+- es自动生成
+
+> Document元数据，用于标注文档的相关信息
+
+- _index：文档所在的索引名
+- _type：文档所在的类型名
+- _id：文档唯一id
+- \_uid：组合id，由\_type和\_id组成(6.x不在起作用，同_id一样)
+- _source：文档的原始json数据
+- _all：整合所有字段内容到该字段中，默认禁止使用
+
+> Doucment API
+
+
+
+![image-20201011170620205](img/image-20201011170620205.png)
+
+![image-20201011170604349](img/image-20201011170604349.png)
+
+
+
+![image-20201011170531024](img/image-20201011170531024.png)
+
+![image-20201011170855780](img/image-20201011170855780.png)
+
+![image-20201011171207328](img/image-20201011171207328.png)
+
+![image-20201011171906017](img/image-20201011171906017.png)
+
+
+
+#### ES Index
+
+![image-20201011165148109](img/image-20201011165148109.png)
+
+> Index API
+
+![image-20201011165225771](img/image-20201011165225771.png)
+
+![image-20201011165330826](img/image-20201011165330826.png)
+
+#### 正排索引和倒排索引
+
+![image-20201011180202991](img/image-20201011180202991.png)
+
+![image-20201011180341195](img/image-20201011180341195.png)
+
+![image-20201011180426472](img/image-20201011180426472.png)
+
+![image-20201011180554286](img/image-20201011180554286.png)
+
+> 倒排索引的结构
+
+倒排索引的结构：
+
+- 单词词典（Term Dictionary）：一般使用B+Tree进行实现
+  - 记录所有文档的单词，一般都比较大
+  - 记录单词到倒排列表的关联信息
+- 倒排列表（Posting List）记录单词对应的文档集合，由倒排索引项（Posting）组成，倒排索引项有如下几种类型
+  - 文档id，用于获取原生信息
+  - 单词频率（TF），记录该单词在该文档中出现的次数，用于后续相关性算分
+  - 位置（Position），记录单词在文档中的分词位置，用于做词语搜索
+  - 偏移（Offset），记录单词在文档的开始和结束位置，用于做高亮显示
+
+
+
+举例：有如下的3个文档
+
+![image-20201011201955697](img/image-20201011201955697.png)
+
+通过上面三个文档进行分词，然后构造出单词词典，**使用B+树进行实现**
+
+![image-20201011201928079](img/image-20201011201928079.png)
+
+然后构造出倒排列表，以”搜索引擎“这个单词为例：
+
+![image-20201011202804557](img/image-20201011202804557.png)
+
+总的结构如下：
+
+![image-20201011203035745](img/image-20201011203035745.png)
+
+## Mapping设置
+
+#### Mapping作用
+
+![image-20201011221805920](img/image-20201011221805920.png)
+
+![image-20201011222115577](img/image-20201011222115577.png)
+
+![image-20201011222346645](img/image-20201011222346645.png)
+
+![image-20201011222501921](img/image-20201011222501921.png)
+
+![image-20201011222542168](img/image-20201011222542168.png)
