@@ -657,3 +657,59 @@ git merge devle
 - 缺点: 需要在devel分支上执行git rebase, 导致devel分支上的原始commit history变化了.
 
 ![image-20200917201930425](img\image-20200917201930425.png)
+
+
+
+## git remote 详解
+
+#### git remote --help 显示帮助文档
+
+#### git remote add 添加远程仓库
+
+~~~shell
+git remote add <remote_name> <url>
+~~~
+
+#### git remote -v 显示所有远程仓库及地址
+
+![image-20201012192953309](img/image-20201012192953309.png)
+
+#### git remote rename 重命名远程仓库
+
+![image-20201012193158852](img/image-20201012193158852.png)
+
+#### git remote remove 删除远程仓库
+
+~~~shell
+git remote remove <remote_name>
+~~~
+
+#### git remote show 显示远程仓库的详细信息
+
+![image-20201012193406972](img/image-20201012193406972.png)
+
+红色框显示了可以pull和push的分支
+
+![image-20201012193804584](img/image-20201012193804584.png)
+
+同时显示了所有的远程分支以及远程分支的状态, **tracked为正常状态, new表示新建的远程分支,下次fetch会在本地新建这个远程分支, stale表示该分支已经在远程仓库删除了, 请使用git remote prune删除本地的这个远程分支**
+
+#### git remote prune 
+
+~~~shell
+# 删除远程仓库中已经删除的本地的远程分支
+git remote prune <remote_name>
+# 列出远程仓库中已经删除的分支
+git remote prune --dry-run <remote_name>
+
+# git fetch + git remote prune
+git fetch --prune
+~~~
+
+#### git remote update
+
+~~~shell
+# 同git fetch
+git remote update
+~~~
+
