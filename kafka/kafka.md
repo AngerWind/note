@@ -104,9 +104,9 @@ chmod +x ke.sh
 
 
 
-## kafka命令行
+#### kafka命令行
 
-#### kafka启动关闭
+> kafka启动关闭
 
 ```shell
 # 启动kafka并堵塞终端
@@ -119,7 +119,7 @@ bin/kafka-server-start.sh -daemon config/server.properties
 bin/kafka-server-stop.sh stop
 ```
 
-#### topic命令相关
+> topic命令相关
 
 ~~~~shell
 # 查看当前所有topic
@@ -138,7 +138,7 @@ bin/kafka-topics.sh --zookeeper localhost:2181 --describe --topic topicName
 bin/kafka-topics.sh --zookeeper localhost:2181 --alter --topic topicName --partitions 6
 ~~~~
 
-#### 生产者命令相关
+> 生产者命令相关
 
 ~~~shell
 # 生产消息
@@ -149,7 +149,7 @@ bin/kafka-console-producer.sh --brokerlist localhost:9092 --topic topicName
 
 
 
-#### 消费者命令相关
+> 消费者命令相关
 
 ~~~shell
 # 消费消息
@@ -158,6 +158,18 @@ bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --from-beginning
 ~~~
 
 新版本kafka将offset存在一个名为`_comsumer_offsets`的topic中， 该topic默认50个分区，1个副本。
+
+
+
+#### kafka分区副本机制
+
+> 分区
+
+在一个kafka集群上可以有多个Topic，每个Topic可以设置该Topic有多少个分区。Topic中的消息就是存储在这些分区上的。分区数可以大于集群节点数，这样就会有多个分区存储在相同的节点上。
+
+> 副本
+
+每个Topic有多个分区，同时也可以设置这些分区有多少个副本。副本数不能大于集群节点数，因为多个副本分布在同一台节点上没有意义。这些副本中，只有一个副本是leader，提供对外服务。其他副本都是follower，follower的作用只是从leader拉取数据实现冗余，不提供对外服务。
 
 
 
@@ -287,7 +299,7 @@ Kafka的ack机制，指的是producer的消息发送确认机制，这直接影�
 
 
 
-#### 分区Leader选举策略，EOL，HW
+#### 分区Leader选举策略，EOL，HW， isr
 
 
 

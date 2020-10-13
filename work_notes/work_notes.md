@@ -713,3 +713,123 @@ git fetch --prune
 git remote update
 ~~~
 
+## Linux 命令使用
+
+#### 查看端口占用
+
+~~~shell
+# 查看8080端口的占用
+lsof -i:8080
+~~~
+
+#### tar命令
+
+> 参数
+
+必选参数：
+
+- -c：建立一个压缩文件的参数指令(create 的意思)；   
+- -x：解开一个压缩文件的参数指令！  
+- -t：查看 tarfile 里面的文件！   
+- -r：向压缩归档文件末尾追加文件   
+- -u：更新原压缩包中的文件   
+
+可选参数：
+
+- -z：有gzip属性,即需要用 gzip 压缩   
+- -j：有bz2属性,即需要用 bzip2 压缩   
+- -Z：有compress属性的   
+- -v ：压缩的过程中显示文件(显示所有过程)！这个常用，但不建议用在背景执行过程！   
+- -O：将文件解开到标准输出   
+- -f ：使用档名，请留意，在 f 之后要立即接档名！不要再加参数！       例如：使用『 tar -zcvfP tfile sfile』就是错误的写法，要写成『 tar -zcvPf tfile sfile』才对喔！  -p ：使用原文件的原来属性（属性不会依据使用者而变）   
+- -P ：可以使用绝对路径来压缩！   
+- -N ：比后面接的日期(yyyy/mm/dd)还要新的才会被打包进新建的文件中！   --exclude FILE：在压缩的过程中，不要将 FILE 打包！     
+- -f: 使用档案名字，切记，这个参数是最后一个参数，后面只能接档案名。 
+- -C：指定目录
+
+> 解压
+
+~~~shell
+# 将/source/kernel.tgz解压到 /source/linux-2.6.29 目录
+tar zxvf /source/kernel.tgz -C /source/ linux-2.6.29
+
+tar –xvf file.tar         // 解压 tar包  
+tar -zxvf file.tar.gz     // 解压tar.gz  
+tar -jxvf file.tar.bz2    // 解压 tar.bz2  
+tar –Zxvf file.tar.Z      // 解压tar.Z  
+~~~
+
+> 压缩
+
+~~~shell
+# 将linux-2.6.29 目录压缩到 kernel.tgz
+tar -czvf kernel.tgz linux-2.6.29
+
+# 将目录里所有jpg文件打包成tar.jpg  
+tar -cvf jpg.tar *.jpg       
+
+# 将目录里所有jpg文件打包成jpg.tar后，并且将其用gzip压缩，生成一个gzip压缩过的包，命名为jpg.tar.gz  
+tar –czf jpg.tar.gz *.jpg   
+
+# 将目录里所有jpg文件打包成jpg.tar后，并且将其用bzip2压缩，生成一个bzip2压缩过的包，命名为jpg.tar.bz2 
+tar –cjf jpg.tar.bz2 *.jpg 
+
+# 将目录里所有jpg文件打包成jpg.tar后，并且将其用compress压缩，生成一个umcompress压缩过的包，命名为jpg.tar.Z  
+tar –cZf jpg.tar.Z *.jpg     
+~~~
+
+> 查看
+
+~~~shell
+# 列出压缩包中所有文件
+tar -tf aaa.tar.gz
+~~~
+
+#### ps命令
+
+选项：
+
+- a：显示一个终端的所有进程，除会话引线外；
+- u：显示进程的归属用户及内存的使用情况；
+- x：显示没有控制终端的进程；
+- -a：显示同意终端下所有进行
+- -A:  显示所有进程
+- -l：长格式显示更加详细的信息；
+- -e：显示所有进程，等于-A；
+- -u：指定用户的所有进程
+
+~~~shell
+# 显示所有进程
+ps aux
+
+USER PID %CPU %MEM  VSZ  RSS   TTY STAT START TIME COMMAND
+root   1  0.0  0.2 2872 1416   ?   Ss   Jun04 0:02 /sbin/init
+root   2  0.0  0.0    0    0   ?    S   Jun04 0:00 [kthreadd]
+
+USER	该进程是由哪个用户产生的。
+PID	进程的 ID。
+%CPU	该进程占用 CPU 资源的百分比，占用的百分比越高，进程越耗费资源。
+%MEM	该进程占用物理内存的百分比，占用的百分比越高，进程越耗费资源。
+VSZ	该进程占用虚拟内存的大小，单位为 KB。
+RSS	该进程占用实际物理内存的大小，单位为 KB。
+TTY	该进程是在哪个终端运行的。
+STAT	进程状态。
+START	该进程的启动时间。
+TIME	该进程占用 CPU 的运算时间，注意不是系统时间。
+COMMAND	产生此进程的命令名。
+~~~
+
+~~~shell
+# 显示指定用户进程
+ps -u root
+~~~
+
+~~~shell
+# 显示所有进程信息，连同命令行
+ps -ef 
+~~~
+
+~~~shell
+ps -le
+~~~
+
