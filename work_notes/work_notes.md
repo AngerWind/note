@@ -713,3 +713,356 @@ git fetch --prune
 git remote update
 ~~~
 
+## Linux 命令使用
+
+#### 查看端口占用
+
+~~~shell
+# 查看8080端口的占用
+lsof -i:8080
+~~~
+
+#### 压缩、解压、tar命令
+
+> 常见的压缩文件压缩和解压缩
+
+| 文件后缀名 | 说明                           | 压缩                              | 解压缩                    |
+| ---------- | ------------------------------ | --------------------------------- | ------------------------- |
+| *.zip      | zip 程序打包压缩的文件         | zip fileName.zip dirName          | unzip fileName.zip        |
+| *.rar      | rar 程序压缩的文件             | rar a fileName.rar dirName        | rar x fileName.rar        |
+| *.7z       | 7zip 程序压缩的文件            | 7z a fileName.7z dirName          | 7z x fileName.7z          |
+| *.tar      | tar 程序打包，未压缩的文件     | tar cvf fileName.tar dirName      | tar xvf fileName.tar      |
+| *.gz       | gzip 程序 (GNU zip) 压缩的文件 | gzip fileName                     | gzip -d fileName.gz       |
+| *.bz2      | tar 打包，gzip 程序压缩的文件  | bzip2 -z FileName                 | bzip2 -d FileName.bz2     |
+| *.tar.gz   | tar打包，gzip程序压缩的文件    | tar zcvf FileName.tar.gz dirName  | tar zxvf FileName.tar.gz  |
+| *.tar.xz   | tar打包，xz程序压缩的文件      | tar cvJf fileName.tar.xz dirName  | tar -xvJf fileName.tar.xz |
+| *.tar.bz2  | tar打包，bzip2程序压缩的文件   | tar jcvf FileName.tar.bz2 dirName | tar jxvf FileName.tar.bz2 |
+| *.Z        | compress命令解压缩rar文件      | compress fileName                 | uncompress fileName.Z     |
+
+> 参数
+
+必选参数：
+
+- -c：建立一个压缩文件的参数指令(create 的意思)；   
+- -x：解开一个压缩文件的参数指令！  
+- -t：查看 tarfile 里面的文件！   
+- -r：向压缩归档文件末尾追加文件   
+- -u：更新原压缩包中的文件   
+
+可选参数：
+
+- -z：有gzip属性,即需要用 gzip 压缩   
+- -j：有bz2属性,即需要用 bzip2 压缩   
+- -Z：有compress属性的   
+- -v ：压缩的过程中显示文件(显示所有过程)！这个常用，但不建议用在背景执行过程！   
+- -O：将文件解开到标准输出   
+- -f ：使用档名，请留意，在 f 之后要立即接档名！不要再加参数！       例如：使用『 tar -zcvfP tfile sfile』就是错误的写法，要写成『 tar -zcvPf tfile sfile』才对喔！  -p ：使用原文件的原来属性（属性不会依据使用者而变）   
+- -P ：可以使用绝对路径来压缩！   
+- -N ：比后面接的日期(yyyy/mm/dd)还要新的才会被打包进新建的文件中！   --exclude FILE：在压缩的过程中，不要将 FILE 打包！     
+- -f: 使用档案名字，切记，这个参数是最后一个参数，后面只能接档案名。 
+- -C：指定目录
+
+> 解压
+
+~~~shell
+# 将/source/kernel.tgz解压到 /source/linux-2.6.29 目录
+tar zxvf /source/kernel.tgz -C /source/ linux-2.6.29
+
+tar –xvf file.tar         // 解压 tar包  
+tar -zxvf file.tar.gz     // 解压tar.gz  
+tar -jxvf file.tar.bz2    // 解压 tar.bz2  
+tar –Zxvf file.tar.Z      // 解压tar.Z  
+~~~
+
+> 压缩
+
+~~~shell
+# 将linux-2.6.29 目录压缩到 kernel.tgz
+tar -czvf kernel.tgz linux-2.6.29
+
+# 将目录里所有jpg文件打包成tar.jpg  
+tar -cvf jpg.tar *.jpg       
+
+# 将目录里所有jpg文件打包成jpg.tar后，并且将其用gzip压缩，生成一个gzip压缩过的包，命名为jpg.tar.gz  
+tar –czf jpg.tar.gz *.jpg   
+
+# 将目录里所有jpg文件打包成jpg.tar后，并且将其用bzip2压缩，生成一个bzip2压缩过的包，命名为jpg.tar.bz2 
+tar –cjf jpg.tar.bz2 *.jpg 
+
+# 将目录里所有jpg文件打包成jpg.tar后，并且将其用compress压缩，生成一个umcompress压缩过的包，命名为jpg.tar.Z  
+tar –cZf jpg.tar.Z *.jpg     
+~~~
+
+> 查看
+
+~~~shell
+# 列出压缩包中所有文件
+tar -tf aaa.tar.gz
+~~~
+
+#### ps命令
+
+选项：
+
+- a：显示一个终端的所有进程，除会话引线外；
+- u：显示进程的归属用户及内存的使用情况；
+- x：显示没有控制终端的进程；
+- -a：显示同意终端下所有进行
+- -A:  显示所有进程
+- -l：长格式显示更加详细的信息；
+- -e：显示所有进程，等于-A；
+- -u：指定用户的所有进程
+
+~~~shell
+# 显示所有进程
+ps aux
+
+USER PID %CPU %MEM  VSZ  RSS   TTY STAT START TIME COMMAND
+root   1  0.0  0.2 2872 1416   ?   Ss   Jun04 0:02 /sbin/init
+root   2  0.0  0.0    0    0   ?    S   Jun04 0:00 [kthreadd]
+
+USER	该进程是由哪个用户产生的。
+PID	进程的 ID。
+%CPU	该进程占用 CPU 资源的百分比，占用的百分比越高，进程越耗费资源。
+%MEM	该进程占用物理内存的百分比，占用的百分比越高，进程越耗费资源。
+VSZ	该进程占用虚拟内存的大小，单位为 KB。
+RSS	该进程占用实际物理内存的大小，单位为 KB。
+TTY	该进程是在哪个终端运行的。
+STAT	进程状态。
+START	该进程的启动时间。
+TIME	该进程占用 CPU 的运算时间，注意不是系统时间。
+COMMAND	产生此进程的命令名。
+~~~
+
+~~~shell
+# 显示指定用户进程
+ps -u root
+~~~
+
+~~~shell
+# 显示所有进程信息，连同命令行
+ps -ef 
+~~~
+
+~~~shell
+ps -le
+~~~
+
+#### man命令查看帮助文档
+
+man命令是Linux下最核心的命令之一。而man命令也并不是英文单词“man”的意思，它是单词**manual**的缩写，即使用手册的意思。
+
+
+
+**man手册页文件存放在/usr/share/man目录下。**
+
+
+
+Linux的man手册共有以下几个章节：
+
+| 代號 | 代表內容                                                     |
+| ---- | ------------------------------------------------------------ |
+| 1    | Executable programs or shell commands<br/> 使用者在shell中可以操作的指令或可执行档 |
+| 2    | System calls (functions provided by the kernel)<br/>系統核心可呼叫的函数与工具等 |
+| 3    | Library calls (functions within program libraries)<br/>一些常用的函数(function)与函数库(library)，大部分是C的函数库(libc) |
+| 4    | Special files (usually found in /dev)<br/>装置档案的说明，通常在/dev下的档案 |
+| 5    | File formats and conventions eg /etc/passwd<br/>设定档或者是某些档案的格式 |
+| 6    | Games<br/>游戏                                               |
+| 7    | Miscellaneous (including macro packages and conventions), e.g. man(7), groff(7)<br/>惯例与协定等，例如Linux档案系统、网络协定、ASCII code等等的說明 |
+| 8    | System administration commands (usually only for root)<br/>系統管理員可用的管理指令 |
+| 9    | Kernel routines [Non standard]<br>跟kernel有关的文件         |
+
+我们输入`man ls`，它会在最左上角显示“LS（1）”，在这里，“LS”表示手册名称，而“（1）”表示该手册位于第一节章，表示可执行命令。
+
+**man是按照手册的章节号的顺序进行搜索的**，比如：
+
+```
+man sleep
+```
+
+只会显示sleep命令的手册,如果想查看库函数sleep，就要输入:
+
+```
+man 3 sleep
+```
+
+> 选项
+
+- -a：在所有的man帮助手册中搜索
+
+  ~~~shell
+  man -a sleep
+  ~~~
+
+  显示sleep(1)按q推出后将会询问还有sleep(3)是否查看
+
+  ![image-20201014112806163](img/image-20201014112806163.png)
+
+- -w：显示手册所在位置
+
+  man -w只会显示搜索到的第一个文档的位置
+
+  man -aw显示搜索到的全部文档的位置
+
+  ![image-20201014113051046](img/image-20201014113051046.png)
+
+
+
+
+
+#### shell输入输出重定向
+
+输入输出类型：
+
+| 类型                        | 文件描述符 | 默认情况               | 对应文件句柄位置 |
+| :-------------------------- | :--------- | :--------------------- | :--------------- |
+| 标准输入（standard input）  | 0          | 从键盘获得输入         | /proc/self/fd/0  |
+| 标准输出（standard output） | 1          | 输出到屏幕（即控制台） | /proc/self/fd/1  |
+| 错误输出（error output）    | 2          | 输出到屏幕（即控制台） | /proc/self/fd/2  |
+
+> 重定向输出
+
+| 命令                | 介绍                                                         |
+| :------------------ | :----------------------------------------------------------- |
+| command >filename   | 把标准输出重定向到新文件中(**删除文件再新建再写入**, 等于**覆盖**内容)（**没有文件新建**） |
+| command 1>filename  | 同上                                                         |
+| command >>filename  | 把标准输出**追加**到文件中（**没有文件新建**）               |
+| command 1>>filename | 同上                                                         |
+| command 2>filename  | 把标准错误重定向到新文件中                                   |
+| command 2>>filename | 把标准错误追加到新文件中                                     |
+
+案例：
+~~~shell
+$ ls
+Dockerfile
+$ ls Dockerfile a.txt
+ls: cannot access a.txt: No such file or directory
+Dockerfile
+~~~
+
+上面命令，我们目录下只有Dockerfile一个文件， 使用`ls Dockerfile a.txt`命令以后，`ls: cannot access a.txt: No such file or directory`是错误输出，`Dockerfile`是标准输出。所以我们可以将错误内容输出到error.txt文件中，把标准输出输入到stadand.txt文件中。
+
+~~~shell
+$ ls Dockerfile a.txt > error.txt 2>error.txt
+~~~
+
+~~~shell
+# 把"hello world输入到a.txt中"
+echo "hello world" > a.txt
+~~~
+
+
+
+
+
+> 输入重定向
+
+| 命令                | 介绍                                      |
+| :------------------ | :---------------------------------------- |
+| command <filename   | 以filename文件作为标准输入                |
+| command 0<filename  | 同上                                      |
+| command <<delimiter | 从标准输入中读入，直到遇到delimiter分隔符 |
+
+案例：
+
+~~~shell
+# 从标准输入中读取，直到遇到结束符， <<后面的是自定义的结束符
+$ cat >a.txt  <<end
+hello
+world
+end
+
+$ cat a.txt 
+hello
+world
+~~~
+> 高级用法(https://blog.csdn.net/qq_31073871/article/details/80810306)
+
+**>/dev/null**
+
+这条命令的作用是将标准输出1重定向到`/dev/null`中。 `/dev/null`代表linux的空设备文件，所有往这个文件里面写入的内容都会丢失，俗称“黑洞”。那么执行了`>/dev/null`之后，标准输出就会不再存在，没有任何地方能够找到输出的内容。
+
+**2  >&1**
+
+这条命令用到了重定向绑定，采用&可以将两个输出绑定在一起。这条命令的作用是**将错误输出输入到标准输出**
+
+2>&1，可以这样理解：按照前面讲解的知识，“2>”表示要把标准错误信息进行重定向，一般来说，重定向的目标是某个文件，而这条语句把重定向的目标设置成了文件描述符1的输入了，也即“&1”，也即，fd2的输出会被送到fd1的输入中去，后果就是，fd2的输入从fd1的输出口送了出来，流程是这样的：fd2输入 -> fd2输出 -> fd1的输入 -> fd的输出。
+
+linux在执行shell命令之前，就会**确定好所有的输入输出位置，并且从左到右依次执行重定向的命令**，所以`>/dev/null 2>&1`的作用就是让标准输出重定向到`/dev/null`中（丢弃标准输出），然后错误输出由于重用了标准输出的描述符，所以错误输出也被定向到了`/dev/null`中，错误输出同样也被丢弃了。执行了这条命令之后，该条shell命令将不会输出任何信息到控制台，也不会有任何信息输出到文件中。
+
+**>/dev/null 2>&1 和 2>&1 >/dev/null**
+
+乍眼看这两条命令貌似是等同的，但其实大为不同。刚才提到了，linux在执行shell命令之前，就会确定好所有的输入输出位置，并且从左到右依次执行重定向的命令。
+
+那么我们同样从左到右地来分析`2>&1 >/dev/null`：`2>&1`，将错误输出绑定到标准输出上。由于此时的标准输出是默认值，也就是输出到屏幕，所以错误输出会输出到屏幕。`>/dev/null`，将标准输出1重定向到`/dev/null`中。
+
+**>/dev/null 2>&1 和 >/dev/null 2>/dev/null**
+
+那么可能会有些同学会疑问，为什么要用重定向绑定，而不是像`>/dev/null 2>/dev/null`这样子重复一遍呢。
+
+为了回答这个问题，我们回到刚才介绍输出重定向的场景。我们尝试将标准输出和错误输出都定向到out文件中：
+
+```
+# ls a.txt b.txt >out 2>out
+# cat out
+a.txt
+无法访问b.txt: 没有那个文件或目录
+```
+
+WTF？竟然出现了乱码，这是为啥呢？这是因为采用这种写法，标准输出和错误输出会抢占往out文件的管道，所以可能会导致输出内容的时候出现缺失、覆盖等情况。现在是出现了乱码，有时候也有可能出现只有error信息或者只有正常信息的情况。不管怎么说，采用这种写法，最后的情况是无法预估的。
+
+而且，由于out文件被打开了两次，两个文件描述符会抢占性的往文件中输出内容，所以整体IO效率不如`>/dev/null 2>&1`来得高。
+
+
+
+#### 环境变量与export
+
+> Linux环境变量分类
+
+一、按照生命周期来分，Linux环境变量可以分为两类：
+ 1、永久的：需要用户修改相关的配置文件，变量永久生效。
+ 2、临时的：用户利用export命令，在当前终端下声明环境变量，关闭Shell终端失效。
+
+二、按照作用域来分，Linux环境变量可以分为：
+ 1、系统环境变量：系统环境变量对该系统中所有用户都有效。
+ 2、用户环境变量：顾名思义，这种类型的环境变量只对特定的用户有效。
+
+>  Linux设置环境变量的方法
+
+一、在`/etc/profile`文件中添加变量 **对所有用户生效（永久的）**
+ 用vim在文件`/etc/profile`文件中增加变量，该变量将会对Linux下所有用户有效，并且是“永久的”。
+ 例如：编辑/etc/profile文件，添加CLASSPATH变量
+
+```bash
+  vim /etc/profile    
+  export CLASSPATH=./JAVA_HOME/lib;$JAVA_HOME/jre/lib
+```
+
+注：修改文件后要想马上生效还要运行`source /etc/profile`不然只能在下次重进此用户时生效。
+
+
+
+ 二、在用户目录下的.bash_profile文件中增加变量 **【对单一用户生效（永久的）】**
+ 用`vim ~/.bash_profile`文件中增加变量，改变量仅会对当前用户有效，并且是“永久的”。
+
+```bash
+vim ~/.bash.profile
+export CLASSPATH=./JAVA_HOME/lib;$JAVA_HOME/jre/lib
+```
+
+注：修改文件后要想马上生效还要运行$ source ~/.bash_profile不然只能在下次重进此用户时生效。
+
+
+
+ 三、直接运行export命令定义变量 **【只对当前shell（BASH）有效（临时的）】**
+ 在shell的命令行下直接使用`export 变量名=变量值`
+ 定义变量，该变量只在当前的shell（BASH）或其子shell（BASH）下是有效的，shell关闭了，变量也就失效了，再打开新shell时就没有这个变量，需要使用的话还需要重新定义。
+
+
+
+## 杂乱
+
+#### 打印日志的注意点
+
+
+
