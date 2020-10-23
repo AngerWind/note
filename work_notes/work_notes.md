@@ -1066,3 +1066,28 @@ export CLASSPATH=./JAVA_HOME/lib;$JAVA_HOME/jre/lib
 
 
 
+## 多线程
+
+#### synchronized
+
+1. synchronized关键字**不能**被继承 即父类方法是同步方法 子类方法继承后默认不是同步方法
+2. synchronized**不能**修饰接口方法 因为接口是特殊的抽象类 不能新建实例 实例锁应归实现其的类所有
+3. synchronized**不能**修饰构造方法（但可在内部使用synchronized代码块来同步
+4. 对成员方法修饰 -> synchronized(this)
+5. 对静态方法修饰 -> synchronized(ClassA.class)
+6. 尝试获取该对象锁的线程会被阻塞，并不影响其他线程不获取锁的操作，所以要在涉及同步量操作的所有地方采用同步方法（如加锁），否则引起线程安全问题几乎是必然的。
+7. 可重进入, 在父子类继承的情况下也支持.
+
+#### synchronized原理
+
+#### 多线程状态
+
+#### 常用方法
+
+- Thead.sleep
+- 
+
+#### 线程中断
+
+#### 内存可见性与volatile
+
