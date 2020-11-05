@@ -722,6 +722,31 @@ git remote update
 lsof -i:8080
 ~~~
 
+#### gz压缩包
+
+- 解压
+
+  gzip -d fileName
+
+- 压缩
+
+  gzip fileName
+
+- 查看文件压缩内容
+
+  zcat fileName, 可结合管道使用
+
+- 不解压直接搜索压缩文件
+
+  zgrep 模式 文件名
+
+  ~~~shell
+  # 在压缩文件中直接搜索字符a
+  zgrep a /root.gz
+  ~~~
+
+  
+
 #### 压缩、解压、tar命令
 
 > 常见的压缩文件压缩和解压缩
@@ -1064,5 +1089,308 @@ export CLASSPATH=./JAVA_HOME/lib;$JAVA_HOME/jre/lib
 
 #### 打印日志的注意点
 
+#### java静态变量、静态代码块、代码块、成员变量初始化时机
+
+>  Java中静态变量初始化、static块执行时机（https://www.cnblogs.com/aflyun/p/9562885.html）
+
+演示例子
+
+在使用static进行初始化的操作，怎么也执行不了！代码如下：
+
+```java
+public class StaticDemo {
+
+    public static final String INIT = "init";
+    static {
+        System.out.println("------StaticDemo----");
+    }
+}
+
+public class TestStatic {
+
+    public static void main(String[] args) {
+        System.out.println(StaticDemo.INIT);
+    }
+}
+//打印
+init
+```
+
+怎么没有执行 static 块的代码呢？
+
+最后发现是因为调用的静态属性被final修饰导致的。去掉final修饰，结果OK！
+
+```
+public class StaticDemo {
+
+    //去掉 final
+    public static String INIT = "init";
+    static {
+        System.out.println("------StaticDemo----");
+    }
+}
+
+public class TestStatic {
+
+    public static void main(String[] args) {
+        System.out.println(StaticDemo.INIT);
+    }
+}
+//打印结果
+------StaticDemo----
+init
+```
+
+(static final的基础类型和String可能在编译的时候就定下来了吧)
+
+这里就和类加载机制中的 **初始化** 相关！**类被加载了不一定就会执行静态代码块，只有一个类被主动使用的时候，静态代码才会被执行**！
+
+　当一个类被主动使用时，Java虚拟就会对其初始化，如下六种情况为主动使用：
+
+1. 当创建某个类的新实例时（如通过new或者反射，克隆，反序列化等）
+
+2. 当调用某个类的静态方法时
+
+3. **当使用某个类或接口的静态字段时**
+
+4. 当调用Java API中的某些反射方法时，比如类Class中的方法，或者java.lang.reflect中的类的方法时
+
+5. 当初始化某个子类时
+
+6. 当虚拟机启动某个被标明为启动类的类（即包含main方法的那个类）
+
+   Java编译器会收集所有的类变量初始化语句和类型的静态初始化器，将这些放到一个特殊的方法中：clinit。
+
+**重点：使用final修饰的静态字段，在调用的时候不会对类进行初始化！**
+
+> 静态变量、静态代码块、代码块、成员变量调用顺序
+
+1. 类被主动使用时，静态代码被执行
+   - 为非final的静态变量分配内存空间，并赋初始值（不对变量进行初始化）
+   - 从上到下为静态变量初始化和执行静态代码块
+2. 类实例化的时候，执行普通代码块和对成员变量初始化
+   - 为成员变量分配内存空间，并赋初始值
+   - 从上到下为成员变量初始化和执行普通代码块
+   - 执行构造函数
+
+案例分析（https://blog.csdn.net/tongyi55555/article/details/46627415）
+
+~~~java
+public class VarOrder {
+
+    public static int k = 0;
+    public static VarOrder t1 = new VarOrder("t1");
+    public static VarOrder t2 = new VarOrder("t2");
+    public static int i = print("i");
+    public static int n = 99;
+    private int a = 0;
+    public int j = print("j");
+    {
+        print("构造块");
+    }
+    static {
+        print("静态块");
+    }
+
+    public VarOrder(String str) {
+        System.out.println((++k) + ":" + str + " i=" + i + " n=" + n);
+        ++i;
+        ++n;
+    }
+
+    public static int print(String str) {
+        System.out.println((++k) + ":" + str + " i=" + i + " n=" + n);
+        ++n;
+        return ++i;
+    }
+
+    public static void main(String args[]) {
+        VarOrder t = new VarOrder("init");
+    }
+}
+~~~
+
+　1). 静态的一定是最开始进行调用的，如果存在多个，那么写在前面的先调用，因此静态变量int k先调用，没有输出；
+
+　　2). 静态变量t1开始调用，t1是该类的实例对象，因此在实例对象中，非静态变量和代码块要首先进行初始化，因此int a和int j先进行调用进行赋值，然后是代码块进行调用。**虽然类的静态变量和静态代码块的调用顺序要高于非静态变量和代码块，但是因为这里的t1是实例对象，因此不会跳转到t1和t2后面的静态变量int i和int n中执行赋值，打印输出的都是i和n的初始值，从0开始。**最后才是自身的构造函数进行调用，输出如下：
+
+```
+1:j i=0 n=0
+2:构造块 i=1 n=1
+3:t1 i=2 n=2123
+```
+
+　　同理t1调用后，t2进行调用，输出的内容与t1实例化时相似，如下：
+
+```
+4:j i=3 n=3
+5:构造块 i=4 n=4
+6:t2 i=5 n=5123
+```
+
+　　3). t2实例化后，继续顺序执行，开始执行静态变量int i，此时输出内容：
+
+```
+7:i i=6 n=61
+```
+
+　　4). 继续进行静态变量int n赋值，没有输出，但是要记住此时n的值已经由6变为99；
+
+　　5). 最后一个静态调用，即静态块调用，此时输出如下：
+
+```
+8:静态块 i=7 n=991
+```
+
+　　6). 静态变量和静态块调用完毕后，此时才开始进入到主方法的代码中执行，主方法中的代码就一句，实例化对象，与2)分析的一致，先调用非静态变量和代码块，最后调用构造函数，因此输出如下：
+
+```
+9:j i=8 n=100
+10:构造块 i=9 n=101
+11:init i=10 n=102123
+```
+
+**综上所述，最终的输出结果为：**
+
+```
+1:j i=0 n=0
+2:构造块 i=1 n=1
+3:t1 i=2 n=2
+4:j i=3 n=3
+5:构造块 i=4 n=4
+6:t2 i=5 n=5
+7:i i=6 n=6
+8:静态块 i=7 n=99
+9:j i=8 n=100
+10:构造块 i=9 n=101
+11:init i=10 n=102
+```
 
 
+
+
+
+
+
+## 多线程
+
+#### synchronized
+
+1. synchronized关键字**不能**被继承 即父类方法是同步方法 子类方法继承后默认不是同步方法
+2. synchronized**不能**修饰接口方法 因为接口是特殊的抽象类 不能新建实例 实例锁应归实现其的类所有
+3. synchronized**不能**修饰构造方法（但可在内部使用synchronized代码块来同步
+4. 对成员方法修饰 -> synchronized(this)
+5. 对静态方法修饰 -> synchronized(ClassA.class)
+6. 尝试获取该对象锁的线程会被阻塞，并不影响其他线程不获取锁的操作，所以要在涉及同步量操作的所有地方采用同步方法（如加锁），否则引起线程安全问题几乎是必然的。
+7. 可重进入, 在父子类继承的情况下也支持.
+
+#### synchronized原理
+
+#### 多线程状态
+
+#### 常用方法
+
+> sleep
+
+强制当前正在执行的线程休眠（），但是不会释放锁，不需要在同步块中调用，当前线程sleep时如果
+
+> yield
+
+释放线程所占有的CPU资源，从而让其他线程有机会运行，但是并不能保证某个特定的线程能够获得CPU资源。谁能获得CPU完全取决于调度器，在有些情况下调用yield方法的线程甚至会再次得到CPU资源。所以，依赖于yield方法是不可靠的，它只能尽力而为。yield()并不释放锁。
+
+> sleep与yield的区别
+
+- sleep让当前正在执行的线程暂停一段时间，并**进入阻塞状态**，则可以通过调用Thread类的静态sleep()方法来实现。当前线程调用sleep()方法进入阻塞状态后，在其睡眠时间内，该线程不会获得执行的机会，而**其它任何优先级的线程都可以得到执行的机会**，即使系统中没有其它可执行的线程，处于sleep()的线程也不会执行，sleep()是用来暂停线程的执行。
+
+  yield()方法是一个和sleep()方法有点相似的方法，它也是Thread类提供的一个静态方法。可以让当前正在执行的线程暂停，但它不会阻塞该线程，只是**将该线程转入就绪状态**。yeild()只是让当前线程暂停一下，**让系统的线程调度器重新调度一次**，完全可能的情况是：当某个线程调用了yield()线程暂停之后，线程调度器又将其调度出来重新执行。
+  当某个线程调用了yield()方法暂停之后，**只有优先级与当前线程相同，或者优先级比当前线程更高的处于就绪状态的线程才会获得执行机会**。
+
+- sleep()方法的声明抛出了InterruptedException异常，所以调用sleep()方法时要么捕捉异常，要么抛出该异常。
+- sleep()方法比yield()方法具有更好的可移动性，所以建议不要使用yield()方法来控制并发线程的执行
+
+
+
+> 暂停线程suspend(废弃)和resume(废弃)
+
+> 停止线程stop
+
+> 中断线程interrupt
+
+调用interrupt方法仅仅是在当前线程中打了一个停止的标记，并不是真正的停止线程。线程中断并不会立即终止线程，而是通知目标线程，有人希望你终止。至于目标线程收到通知后会如何处理，则完全由目标线程自行决定。
+
+~~~java
+public boolean Thread.isInterrupted() //判断是否被中断
+public static boolean Thread.interrupted() //判断是否被中断，并清除当前中断状态
+~~~
+
+这两个方法使得当前线程能够感知到是否被中断了（通过检查标志位）。否则当前线程是不会管这个标志位的，也就不会被中断了。
+
+~~~java
+@Override
+public void run() {
+    super.run();
+    for(int i = 0; i <= 200000; i++) {
+        //判断是否被中断
+        if(Thread.currentThread().isInterrupted()){
+            //处理中断逻辑
+            break;
+        }
+        System.out.println("i=" + i);
+    }
+}
+~~~
+
+Thread.sleep() 方法会抛出一个 InterruptedException 异常，当线程被 sleep() 休眠时，如果被中断，这会就抛出这个异常。
+（注意：Thread.sleep() 方法由于中断而抛出的异常，是会清除中断标记的。）
+
+> wait, notify, notifyAlls
+
+wait()方法使当前线程进行等待，并阻塞在当前代码处直到接到通知或者被中断为止。在调用wait()方法之前，线程必须获得调用wait()方法的对象的对象级别锁，即只能在同步块或者同步方法中调用wait()方法。如果调用wait时没有获得该对象的锁，则抛出IllegalMonitorStateException。执行wait()后，当前线程释放锁。接到通知后，在wait()返回前，线程需要与其他线程竞争重新获得锁。
+
+wait(long)方法与wait()类似，但超过设定时间自动唤醒。
+
+当线程wait状态时，调用线程对象的interrupt()方法出现InterruptedException异常。
+
+notify()也要在同步方法中，即调用时当前线程必须获得调用对象的对象级别锁。没有持有锁抛出IllegalMonitorStateException。该方法用来通知那些可能等待该对象的对象锁的其他线程。如果有多个线程等待，线程规划器随机挑选一个呈wait状态的线程，对其发出notify。执行notify()后，当前线程不会立刻释放该对象锁，要等到退出synchronized代码块后才会释放锁。当第一个获得该对象锁的wait线程运行完毕，他会是否掉该对象锁，此时如果该对象没有再次使用notify语句，则即便该对象已经空闲，其他wait状态的线程依旧阻塞知道该对象发出notify或者notifyAll。
+
+若notify时，没有wait的线程，该notify将被忽略。
+
+notifyAll()与notify()类似，只是唤醒所有wait的线程。
+
+因线程调度的随机性，若先线程A先调用notify()之后线程B才进入wait()状态，将会导致线程B永久wait。
+
+> wait与sleep的区别
+
+- wait需要在同步块中调用， 释放锁。sleep不需要再同步块中调用，不释放锁。
+- wait需要notify唤醒，而sleep可以自动醒来。
+- sleep是静态方法，wait是对象方法.
+
+> join
+
+
+
+#### 线程中断
+
+#### 内存可见性与volatile
+
+公共堆栈和线程私有堆栈
+
+
+
+#### java 加密算法
+
+加密算法大体上分为大体上分为**双向加密**和**单向加密(摘要加密)**，而双向加密又分为**对称加密**和**非对称加密**(有些资料将加密直接分为对称加密和非对称加密)。
+
+ 双向加密大体意思就是明文加密后形成密文，可以通过算法还原成明文。而单向加密只是对信息进行了摘要计算，不能通过算法生成明文，单向加密从严格意思上说不能算是加密的一种，应该算是摘要算法吧。
+
+> 常用对称加密算法
+
+**DES**、**RC2**、**RC4**、**SKIPJACK**、**RC5**、**AES**
+
+> 常用非对称加密算法
+
+**RSA** 、**DSA** 
+
+> 常用单向加密算法
+
+ **MD5**、**SHA**、**HMAC**

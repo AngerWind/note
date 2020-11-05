@@ -1,4 +1,4 @@
-## Docker file
+## Dockerfile
 
 #### 基本结构
 
@@ -526,3 +526,226 @@ Docker supports three different kinds of mounts, which allow containers to read 
 | **src** or **source**                    | for `type=bind` and `type=npipe` | `type=volume`: `src` is an optional way to specify the name of the volume (for example, `src=my-volume`). If the named volume does not exist, it is automatically created. If no `src` is specified, the volume is assigned a random name which is guaranteed to be unique on the host, but may not be unique cluster-wide. A randomly-named volume has the same lifecycle as its container and is destroyed when the *container* is destroyed (which is upon `service update`, or when scaling or re-balancing the service)`type=bind`: `src` is required, and specifies an absolute path to the file or directory to bind-mount (for example, `src=/path/on/host/`). An error is produced if the file or directory does not exist.`type=tmpfs`: `src` is not supported. |
 | **dst** or **destination** or **target** | yes                              | Mount path inside the container, for example `/some/path/in/container/`. If the path does not exist in the container's filesystem, the Engine creates a directory at the specified location before mounting the volume or bind mount. |
 | **readonly** or **ro**                   |                                  | The Engine mounts binds and volumes `read-write` unless `readonly` option is given when mounting the bind or volume. Note that setting `readonly` for a bind-mount does not make its submounts `readonly` on the current Linux implementation. See also `bind-nonrecursive`.`true` or `1` or no value: Mounts the bind or volume read-only.`false` or `0`: Mounts the bind or volume read-write. |
+
+## Docker Compose V3 模板文件常用命令
+
+默认的模板文件名称为 `docker-compose.yml`，格式为 YAML 格式。
+
+`docker-compose.yml`版本需要在第一行指定，这里是`version: "3"`
+
+```yml
+version: "3"
+
+services:
+  webapp:
+    image: examples/web
+    ports:
+      - "80:80"
+    volumes:
+      - "/data"
+```
+
+
+
+#### build
+
+指定 `Dockerfile` 所在文件夹的路径（可以是绝对路径，或者相对 `docker-compose.yml 文件的路径`）。 `Compose` 自动查找`Dockerfile`文件，并利用这个路径上下文自动构建这个镜像，然后使用这个镜像。
+
+~~~yaml
+version: '3'
+services:
+  webapp:
+    build: ./dir
+~~~
+
+也可以使用 `context` 指令指定 `Dockerfile` 所在文件夹的路径。
+
+使用 `dockerfile` 指令指定 `Dockerfile` 文件名。(类似于`docker build -f filename`)
+
+使用 `arg` 指令指定构建镜像时的变量。(类似于`docker build --build-args varname=value`)
+
+~~~yaml
+version: "3.8"
+services:
+  webapp:
+    build:
+      # 指定构建路径上下文，默认使用这个路径下的Dockerfile文件
+      context: ./dir
+      # 指定Dockerfile文件名
+      dockerfile: Dockerfile-alternate
+      args:
+        - arg1: 1
+        # boolean需要使用引号
+        - arg2: "true"
+~~~
+
+同时指定`build`和`image`，Compose将会使用`image`所指定的名字命名构建好的镜像。
+
+下面示例命名构建好的镜像name=webapp，tag=1.0.0
+
+~~~yaml
+version: "3.8"
+services:
+  webapp:
+    build:./dir
+    image: webapp:1.0.0
+~~~
+
+#### command
+
+覆盖容器启动后默认执行的命令。类似于`docker run`后面指定运行的命令行参数。
+
+```yaml
+version: "3.8"
+services:
+  webapp:
+    build:./dir
+    command: echo "hello world"
+```
+
+#### container_name
+
+指定容器名称。默认将会使用 `项目名称_服务名称_序号` 这样的格式。
+
+```yaml
+version: "3.8"
+services:
+  webapp:
+    build:./dir
+    command: echo "hello world"
+```
+
+#### depends_on
+
+解决容器的依赖、启动先后的问题。以下例子中会先启动 `redis` `db` 再启动 `web`
+
+```yaml
+version: '3'
+services:
+  web:
+    build: .
+    depends_on:
+      - db
+      - redis
+  redis:
+    image: redis
+  db:
+    image: postgres
+```
+
+注意：`web` 服务不会等待 `redis` `db` 「完全启动」之后才启动。
+
+#### env_file
+
+从文件中获取环境变量，可以为单独的文件路径或列表。
+
+如果通过 `docker-compose -f FILE` 方式来指定 Compose 模板文件，则 `env_file` 中变量的路径会基于模板文件路径。
+
+如果有变量名称与 `environment` 指令冲突，则按照惯例，以后者为准。
+
+```yaml
+env_file:  
+  - ./common.env  
+  - ./apps/web.env  
+  - /opt/secrets.env
+```
+
+环境变量文件中每一行必须符合格式，支持 `#` 开头的注释行。
+
+```
+# common.env: Set development environment
+PROG_ENV=development
+```
+
+#### environment
+
+设置环境变量。你可以使用数组或字典两种格式。
+
+只给定名称的变量会自动获取运行 Compose 主机上对应变量的值，可以用来防止泄露不必要的数据。（类似于`docker run -e env_name=value`）
+
+```yaml
+environment:  
+  RACK_ENV: development  
+  SESSION_SECRET:
+environment:  
+  - RACK_ENV=development  
+  - SESSION_SECRET
+```
+
+如果变量名称或者值中用到 `true|false，yes|no` 等表达 [布尔](https://yaml.org/type/bool.html) 含义的词汇，最好放到引号里，避免 YAML 自动解析某些内容为对应的布尔语义。
+
+#### expose
+
+暴露端口，但不映射到宿主机，只被连接的服务访问。
+
+仅可以指定内部端口为参数。( 类似于dockerfile中的`EXPOSE`命令 )
+
+```
+expose:
+ - "3000"
+ - "8000"
+```
+
+#### image
+
+指定为镜像名称或镜像 ID。如果镜像在本地不存在，`Compose` 将会尝试拉取这个镜像。(类似于`docker run`中指定运行的镜像)
+
+```yaml
+version: '3'
+services:
+  web:
+    image: ubuntu
+```
+
+#### labels
+
+为容器添加 Docker 元数据（metadata）信息。例如可以为容器添加辅助说明信息。(类似于dockerfile中的`LABEL`命令)
+
+```yaml
+labels:
+  com.startupteam.description: "webapp for a startup team"
+  com.startupteam.department: "devops department"
+  com.startupteam.release: "rc3 for v1.0"
+```
+
+#### ports
+
+暴露端口信息。
+
+使用宿主端口：容器端口 `(HOST:CONTAINER)` 格式，或者仅仅指定容器的端口（宿主将会随机选择端口）都可以。
+
+```yaml
+ports:
+ - "3000"
+ - "8000:8000"
+ - "127.0.0.1:8001:8001"
+```
+
+*注意：当使用* *`HOST:CONTAINER`* *格式来映射端口时，如果你使用的容器端口小于 60 并且没放到引号里，可能会得到错误结果，因为* *`YAML`* *会自动解析* *`xx:yy`* *这种数字格式为 60 进制。为避免出现这种问题，建议数字串都采用引号包括起来的字符串格式。*
+
+#### volumes
+
+数据卷所挂载路径设置。可以设置为宿主机路径(`HOST:CONTAINER`)或者数据卷名称(`VOLUME:CONTAINER`)，并且可以设置访问模式 （`HOST:CONTAINER:ro`）。
+
+该指令中路径支持相对路径。
+
+```yaml
+volumes:
+ - /var/lib/mysql
+ - cache/:/tmp/cache
+ - ~/configs:/etc/configs/:ro
+```
+
+如果路径为数据卷名称，必须在文件中配置数据卷。
+
+```yaml
+version: "3"
+services:  
+  my_src:    
+    image: mysql:8.0    
+    volumes:      
+      - mysql_data:/var/lib/mysql
+      
+volumes:  mysql_data:
+```
+
