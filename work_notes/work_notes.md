@@ -791,7 +791,7 @@ lsof -i:8080
 
 ~~~shell
 # 将/source/kernel.tgz解压到 /source/linux-2.6.29 目录
-tar zxvf /source/kernel.tgz -C /source/ linux-2.6.29
+tar zxvf /source/kernel.tgz -C /source/linux-2.6.29
 
 tar –xvf file.tar         // 解压 tar包  
 tar -zxvf file.tar.gz     // 解压tar.gz  
