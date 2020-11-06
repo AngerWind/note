@@ -235,7 +235,7 @@ es将根据elasticsearch.yml中的network.host属性进行区分
 
    ![image-20201010222123351](img/image-20201010222123351.png)
 
-4. 查看$ES_HOME, 自动创建了node1，node2，node3文件夹，这三个文件夹会自动创建$ES_HOME目录下
+4. 查看$ES_HOME, 自动创建了node1，node2，node3文件夹，这三个文件夹会自动创建**$ES_HOME**目录下
 
    ![image-20201010222312985](img/image-20201010222312985.png)
 
@@ -404,6 +404,10 @@ Document就是一个Json Object，有多个字段组成，字段的常见数据�
 ![image-20201011222542168](img/image-20201011222542168.png)
 
 ## ES分布式
+
+#### es如何通过相同的cluster_name就可以组成一个集群? 网络广播?不同机器上的es要如何组成集群
+
+
 
 ![image-20201013123946507](img/image-20201013123946507.png)
 
