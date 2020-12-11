@@ -34,7 +34,8 @@
 
    ![image-20200912224347024](img\image-20200912224347024.png)
 
-   
+
+
 
 ## ES核心概念
 **ES和关系型数据库对比**：
@@ -238,6 +239,68 @@ es将根据elasticsearch.yml中的network.host属性进行区分
 4. 查看$ES_HOME, 自动创建了node1，node2，node3文件夹，这三个文件夹会自动创建**$ES_HOME**目录下
 
    ![image-20201010222312985](img/image-20201010222312985.png)
+
+#### 通过docker搭建ES集群
+
+> 7.x版本
+
+~~~shell
+docker network create -d bridge es-bridge # 创建一个docker 桥接网络
+
+# -----------------------------------------------------------------------------
+# 搭建一个新集群
+docker run -p 9200:9200 -p 9201:9300 --name es01 -d  \
+-e "node.name=es01" -e "cluster.initial_master_nodes=es01,es02,es03" \
+-e "discovery.seed_hosts=es02,es03" --network=es-bridge docker.elastic.co/elasticsearch/elasticsearch:7.3.2
+
+docker run -p 9300:9200 -p 9301:9300 --name es02 -d  \
+-e "node.name=es02" -e "cluster.initial_master_nodes=es01,es02,es03" \
+-e "discovery.seed_hosts=es01,es03" --network=es-bridge docker.elastic.co/elasticsearch/elasticsearch:7.3.2
+
+docker run -p 9400:9200 -p 9401:9300 --name es03 -d  \
+-e "node.name=es03" -e "cluster.initial_master_nodes=es01,es02,es03" \
+-e "discovery.seed_hosts=es01,es02" --network=es-bridge docker.elastic.co/elasticsearch/elasticsearch:7.3.2
+
+# --------------------------------------------------------------------------
+# 向一个现有集群加入一个新节点
+docker run -p 9500:9200 -p 9501:9300  --network=es-bridge -d --name es04 \
+-e "node.name=es04" -e "discovery.seed_hosts=es01,es02,es03" -e "cluster.name=docker-cluster" \
+docker.elastic.co/elasticsearch/elasticsearch:7.3.2 
+~~~
+
+> 6.2.4版本
+
+~~~~shell
+docker network create -d es-6.2.4 # 创建一个docker 桥接网络
+
+# ----------------------------------------------------------------------------
+# 拉取es镜像
+docker pull docker.elastic.co/elasticsearch/elasticsearch:6.2.4 # 含有es和免费的x-pack功能(x-pack默认开启, 查看分片需要认证)
+docker pull docker.elastic.co/elasticsearch/elasticsearch-platinum:6.2.4 # 含有es和完整的x-pack功能(完整功能免费30天,到期后只能使用免费功能, x-pack默认开启, 查看分片需要认证)
+docker pull docker.elastic.co/elasticsearch/elasticsearch-oss:6.2.4 # 只含有es
+
+# --------------------------------------------------------------------------------
+# 搭建一个新集群
+docker run -p 9200:9200 -p 9201:9300 --name es01 -d  \
+-e "node.name=es01" -e "discovery.zen.ping.unicast.hosts=es01,es02,es03" -e "discovery.zen.minimum_master_nodes=2" \
+--network=es-6.2.4 docker.elastic.co/elasticsearch/elasticsearch-oss:6.2.4
+
+docker run -p 9300:9200 -p 9301:9300 --name es02 -d  \
+-e "node.name=es02" -e "discovery.zen.ping.unicast.hosts=es01,es02,es03" -e "discovery.zen.minimum_master_nodes=2" \
+--network=es-6.2.4 docker.elastic.co/elasticsearch/elasticsearch-oss:6.2.4
+
+docker run -p 9400:9200 -p 9401:9300 --name es03 -d  \
+-e "node.name=es03" -e "discovery.zen.ping.unicast.hosts=es01,es02,es03" -e "discovery.zen.minimum_master_nodes=2" \
+--network=es-6.2.4 docker.elastic.co/elasticsearch/elasticsearch-oss:6.2.4
+
+# --------------------------------------------------------------------------------
+# 向一个现有集群中加入新节点
+docker run -p 9500:9200 -p 9501:9300 --name es04 -d  \
+-e "node.name=es04" -e "discovery.zen.ping.unicast.hosts=es01,es02,es03" -e "discovery.zen.minimum_master_nodes=2" \
+--network=es-6.2.4 docker.elastic.co/elasticsearch/elasticsearch-oss:6.2.4
+~~~~
+
+
 
 #### ES 简单CRUD
 

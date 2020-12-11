@@ -1226,7 +1226,7 @@ top(选项)
 - T：根据时间/累计时间进行排序；
 - w：将当前设置写入~/.toprc文件中。
 
-### 实例 
+> 实例 
 
 ```
 top - 09:44:56 up 16 days, 21:23,  1 user,  load average: 9.59, 4.75, 1.92
@@ -1261,6 +1261,75 @@ Swap:  5144568k total,       56k used,  5144512k free,  2013180k cached
 - 56k used[使用的交换区总量],
 - 5144512k free[空闲交换区总量],
 - 2013180k cached[缓冲的交换区总量],
+
+#### less
+
+> option
+
+-i：忽略搜索时的大小写
+
+-N：显示行号
+
+-m：显示百分比
+
+> 常用
+
+h：帮助文档
+
+q：退出
+
+> 移动
+
+方向键：上下左右
+
+f(forward) 、PageDown：后一页
+
+b(backward)、PageUp：前一页
+
+> 搜索
+
+/字符串：向下搜索“字符串”的功能
+
+?字符串：向上搜索“字符串”的功能
+
+n：重复前一个搜索（与 / 或 ? 有关）
+
+N：反向重复前一个搜索（与 / 或 ? 有关）
+
+> 跳转
+
+g：跳转到第一行
+
+G：跳转到最后一行
+
+
+
+#### curl
+
+| 选项                                                         | 作用                                                         | 示例                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| -X                                                           | 设置请求方式POST/GET/HEAD/DELETE/PUT/PATCH                   | curl -X GET www.baidu.com, 使用GET方式请求百度               |
+| -H "name: value"<br />--header "name: value"                 | 添加http的请求头                                             | curl -H "cookie: token=123" -H "origin: https://www.baidu.com" www.baidu.com， 设置请求头 |
+| -H "name: "<br />--header "name: "                           | 移除一个http header                                          |                                                              |
+| -A "string"<br />--user-agent "string"                       | 设置Http请求头“User-Agent”，服务器通过“User-Agent”可以判断客户端使用的浏览器名称和操作系统类型，伪造此参数能导致服务器做出错误判断。<br/>也可以使用“-H”, “--header option”设置此选项；<br />使用-A "" 将会移除User-Agent请求头 |                                                              |
+| -e "url"<br />--referer "url"                                | 设置Referer请求头，告诉http服务从哪个页面进入到此页面；      |                                                              |
+| -b "name1=value1;name2=value2"<br />--cookie "name1=value1;name2=value2" | 设置cookie，设置多个cookie使用分号隔开，使用多个-b选项只有最后一个生效（与-H不同）。 |                                                              |
+| -d "data"<br />--data "data"<br /> --data-ascii "data"<br />--data-binary "data"<br />--data-raw "data" | 发送指定数据给服务器, 就像html表单一样.curl将会使用content-type application/x-www-form-urlencoded 发送数据<br />-d, --data --data-ascii效果一样. --data-raw 与上述一样但不会转义@字符.<br />要发送二进制数据请使用--data-binary.  <br />要讲数据进行url编码请使用--data-urlencode.<br/>以上选项多次使用将会把数据通过&合并在一起，因此使用 '-d name=daniel -d skill=lousy' 将会生成 'name=daniel&skill=lousy'.<br/>If you start the data with the letter @, the rest should be a file name to read the data from, or - if you want curl to read the  data  from              stdin.  Multiple files can also be specified. Posting data from a file named 'foobar' would thus be done with --data @foobar. 读取文件时，回车和换行将被丢弃。如果不想@作为转义字符请使用--data-raw instead. | curl -d "login=root&pwd=123"  www.baidu.com 向百度post"login=root&pwd=123"字符串。<br />**curl -d "@data.txt" www.baidu.com 读取`data.txt`文件的内容，作为数据体向服务器发送。** |
+| --data-urlencode `<data>`                                    | 除了执行url编码，与--data一样<br/>`<data>`需要符合以下格式<br /><br />content   这会将content进行编码，content中不能包含任何@，=<br/><br /> =content  这会将content进行编码，包括= @都会进行编码.<br/><br /> name=content  仅编码content内容，name需要是已经进行url编码的<br/> @filename 将文件内容读取出来编码<br/><br/>name@filename  将文件内容进行编码需要是已经进行url编码的。 |                                                              |
+| -I <br />--head                                              | 只输出返回的请求头，不输出请求体                             |                                                              |
+| -i<br />--include                                            | 输出返回的请求头和请求体                                     |                                                              |
+| -D file<br />--dump-header file                              | 保存http响应头到指定的文件                                   | curl -D hello.txt www.baidu.com 将响应头保存在hello.txt中    |
+| -c file<br />--cookie-jar file                               | 将服务器返回cookie保存到指定文件中                           | curl -c hello.txt www.baidu.com 将cookie保存在hello.txt中    |
+| -G                                                           |                                                              |                                                              |
+| -F, --form <name=content>                                    | 模拟html表单，并将Content-Type设置为  multipart/form-data.<br />如果content是文件，filename 请以@开头. 如果content是从文件中读取的，filename请以<开头.  <br/>@和<的区别是，@将会上传文件，而<将会读取文件内容转换为text上传。<br />Example, to send your password file to the server, where 'password' is the name of the form-field to which /etc/passwd will be the input:<br/><br/>              curl -F password=@/etc/passwd www.mypasswords.com<br/><br/>              To read content from stdin instead of a file, use - as the filename. This goes for both @ and < constructs.<br/><br/>可以通过'type='来设置Content-Type:curl -F "web=@index.html;type=text/html" url.com 或者 curl -F "name=daniel;type=text/foo" url.com<br/><br/>可以通过'filename='来显式改变文件名：curl -F "file=@localfile;filename=nameinpost" url.com<br/><br/>如果filename或者path含有逗号和分号，必须使用""括起来：curl -F "file=@\"localfile\";filename=\"nameinpost\"" url.com 或者 curl -F 'file=@"localfile";filename="nameinpost"' url.com<br/>如果被""括起来的filename和path中含有双引号和反斜杠，则必须使用反斜杠进行转义<br/><br/>该选项可以被多次使用 |                                                              |
+| -#<br/>--progress-bar                                        | 显式进度条                                                   |                                                              |
+| -o <file> <br />--output <file>                              | 将返回内容输出到文件。 如果是用过通配符获取多个url，可以使用“#”后跟“数字序号”，curl会自动将它替换对应的关键词，如： 　　curl "http://aiezu.com/{a,b}.txt" -o "#1.txt"; 　　将保存为：“a.txt”,“b.txt”;  　　curl "http://aiezu.com/{a,b}_[1-3].txt" -o "#1#2.txt"; 　　将保存为：a1.txt、a2.txt、a3.txt、b1.txt、b2.txt、b3.txt  　　如果要根据规则创建保存目录，参考：“--create-dirs”  指定“-”将定向到标准输出“如控制台”； |                                                              |
+| -O --remote-name                                             | 将返回内容输出到当前目录下，并将 URL 的最后部分当作文件名；  |                                                              |
+|                                                              |                                                              |                                                              |
+|                                                              |                                                              |                                                              |
+|                                                              |                                                              |                                                              |
+
+
 
 #### nohup
 
@@ -1449,6 +1518,54 @@ public class VarOrder {
 9:j i=8 n=100
 10:构造块 i=9 n=101
 11:init i=10 n=102
+```
+
+
+
+#### window和wsl的文件互访
+
+> wls访问windows文件
+
+cd /mnt
+
+> windows访问wls文件
+
+
+
+#### 记一次排序引起的慢查询
+
+> 起因
+
+测试项目某个页面调用后端api经常超时，但是并发并不高
+
+> 排查
+
+在api代码各处打log记录执行时间（low），发现是一个排序引起的慢查询，每次查询都要两秒多，并且还是在一个循环里面，导致前端调用api超时。
+
+查看连接的mysql数据库，发现：
+
+- 排序字段上面没有索引
+- 使用count统计表数据，发现表数据六百多万
+
+> 解决：备份表数据，删除表一个月以前的数据
+
+>总结
+
+原理：
+
+排序导致的慢查询可以从以下几个方面排查:
+
+- 查看排序的数据量是否很大
+- 是否利用索引
+
+
+
+#### 完整的协议组成
+
+```
+协议://用户名:密码@地址:端口/路径?queryString#锚点
+mongodb://wesee:3wgmhyRkiHlQ5N7tkPOYTHG@10.1.0.126:37017/wesee
+https://docs.spring.io/spring-framework/docs/5.2.9.RELEASE/spring-framework-reference/core.html#beans-postconstruct-and-predestroy-annotations
 ```
 
 
@@ -2170,15 +2287,36 @@ public void test(){
 
 公共堆栈和线程私有堆栈
 
+
+
+
+
 #### 原子类
+
+
+
+#### ReentrantLock
+
+> Condition
+
+> 公平锁, 先进先出
+
+
+
+
 
 #### Lock类
 
 ```
-ReentrantLock
 ReentrantReadWriteLock.ReadLock
 ReentrantReadWriteLock.WriteLock
 ```
+
+
+
+
+
+
 
 #### java 加密算法
 
