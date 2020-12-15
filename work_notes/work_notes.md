@@ -1306,6 +1306,10 @@ G：跳转到最后一行
 
 #### curl
 
+https://blog.csdn.net/wuhuagu_wuhuaguo/article/details/90764856#%E4%B8%80%E3%80%81%E6%9C%80%E5%B8%B8%E7%94%A8%E7%9A%84curl%E5%91%BD%E4%BB%A4
+
+http://aiezu.com/article/linux_curl_command.html
+
 | 选项                                                         | 作用                                                         | 示例                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | -X                                                           | 设置请求方式POST/GET/HEAD/DELETE/PUT/PATCH                   | curl -X GET www.baidu.com, 使用GET方式请求百度               |
