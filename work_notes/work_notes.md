@@ -1564,13 +1564,85 @@ cd /mnt
 
 ```
 协议://用户名:密码@地址:端口/路径?queryString#锚点
+
 mongodb://wesee:3wgmhyRkiHlQ5N7tkPOYTHG@10.1.0.126:37017/wesee
+
 https://docs.spring.io/spring-framework/docs/5.2.9.RELEASE/spring-framework-reference/core.html#beans-postconstruct-and-predestroy-annotations
 ```
 
+#### Class.getReources和Class.getClassLoader.getResources的区别
 
+今天在Java程序中读取resources资源下的文件，由于对Java结构了解不透彻，遇到很多坑。正常在Java工程中读取某路径下的文件时，可以采用绝对路径和相对路径，绝对路径没什么好说的，相对路径，即相对于当前类的路径。在本地工程和服务器中读取文件的方式有所不同，以下图配置文件为例：
 
+　![img](img/1543609-20190708153434326-94020132.png)
 
+> 本地读取资源文件
+
+　　Java类中需要读取properties中的配置文件，可以采用**文件（File）**方式进行读取：
+
+```java
+File file = new File("src/main/resources/properties/test.properties");
+InputStream in = new FileInputStream(file);
+```
+
+　　注意：**当在IDEA中运行（不部署在服务器上），可以读取到该文件；**
+
+　　原因：JavaWeb项目部署服务器中，会将项目打包成Jar包或者war包，此时就不会存在 src/main/resources 目录，JVM会在编译项目时，主动将 java文件编译成 class文件 和 resources 下的静态文件放在 target/classes目录下；
+
+　　理解：Java文件只有编译成 class文件才会被JVM执行，本地执行时会，当前项目即为Java进程的工作空间，虽然class文件在target/classes目录下，但是target/classes不是class文件运行的目录，只是存放的目录，运行目录还是在IDEA的模块下，所以运行时会找到 src/main/resources 资源文件！
+
+> 服务器（Tomcat）读取资源文件
+
+　　当工程部署到Tomcat中时，按照上边方式，则会抛出异常：FileNotFoundException。原因：Java工程打包部署到Tomcat中时，properties的路径变到顶层（classes下），这是由Maven工程结构决定的。由Maven构建的web工程，主代码放在src/main/java路径下，资源放在src/main/resources路径下，当构建jar包 或 war包时，JVM虚拟机会自动编译java文件为class文件存放在 target/classes目录下，resource资源下的文件会原封不动的拷贝一份到 target/classes 目录下：
+
+![img](img/1543609-20190709195004669-345524878.png)
+
+> 案例
+
+\#java获取文件目录
+├── pom.xml
+├── src
+│  ├── main
+│  │  ├── java
+│  │  │  ├── com
+│  │  │  │  ├── alipay
+│  │  │  │  │  ├── ResourceTest.java
+│  │  │  │  │  └── Resource.java
+│  │  └── resources
+│  │  │  ├── conf
+│  │  │  │  ├── sysConf.json
+│  │  │  └── request.xml
+└── local.iml
+
+~~~java
+
+public class ResourceTest {
+    public static void main(String[] args) {
+        // 1、通过Class的getResource方法
+        // 使用绝对路径
+        String a3 = ResourceTest.class.getResource("/request.xml").getPath();
+        // 使用相对路径
+        String a4 = ResourceTest.class.getResource("../../request.xml").getPath();
+ 
+        // 2、通过本类的ClassLoader的getResource方法
+        // 只能使用绝对路径
+        String b2 = ResourceTest.class.getClassLoader().getResource("request.xml").getPath();
+    }
+}
+~~~
+
+Class.getResources和ClassLoader.getReources的区别在于：
+
+- **Class.getResources可以使用相对路径，也可以使用绝对路径，使用相对路径时不加"/", 使用绝对路径时使用"/"**
+- **ClassLoader.getResources不能使用相对路径，只能使用绝对路径，使用绝对路径时不用加"/", 默认就是绝对路径就是项目根目录。**
+
+~~~java
+// 读取properties时，可以通过getResourcesAsStream读取流，然后通过Properties进行加载。
+InputStream in = this.getClass().getResourceAsStream("/properties/test.properties");
+Properties properties = new Properties();
+properties.load(in);
+properties.getProperty("name");
+~~~
 
 
 

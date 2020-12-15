@@ -297,6 +297,44 @@ public @interface BeautifulController{
 
 #### 关于@ComponentScan的说明
 
+- ComponentScan默认扫描当前类所在的包及其子包
+
+- ComponentScan默认会将@Component及其衍生注解注册成bean
+
+- **在同一个ComponentScan中，excludeFilters的优先级大于includeFilters**
+
+  ~~~java
+  // 在同一个@ComponentScan中，同一个类即被include又被exclude， exclude是优先include的，因为源码先处理exclude，所以以下结果为exclude掉了SimpleScopeMetadataResolver
+  @ComponentScan(includeFilters = {
+          @Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class}, excludeFilters = {
+          @Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})
+  })
+  public class SpringTestApplication{}
+  ~~~
+
+- **若存在多个ComponentScan，每个ComponentScan之间是单独扫描的，不存在联系**，即：
+
+  ~~~java
+  // 第一个ComponentScan exclude掉了SimpleScopeMetadataResolver， 但是第二个注解include了SimpleScopeMetadataResolver， 两者之间并无联系，所以整体的结果还是include了SimpleScopeMetadataResolver
+  @ComponentScan(excludeFilters = {
+          @Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})
+  })
+  @ComponentScan(includeFilters = {
+          @Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})
+  })
+  public class SpringTestApplication{}
+  ~~~
+
+  **推荐一个@ComponentScan只进行一个包的包扫描处理。**
+
+- useDefaultFilters等效于@ComponentScan(includeFilters = {@Filter(type = FilterType.ANNOTATION, value = {Component.class})})， 源码也是添加了一个includeFilters
+
+- 对于@ComponentScan，@ComponentScan(excludeFilters = {
+          @Filter(type = FilterType.ANNOTATION, value = {Component.class})
+  })相当于把Component，Controller，Service，Repository及他们的衍生注解都排除了。
+
+> 关于@Component的includeFilters和excludeFilters的说明
+
 ```java
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
@@ -315,7 +353,7 @@ public @interface ComponentScan {
    /**
     通过class指定需要扫描的包，若存在com.example.SimpleScan类，则@ComponentScan(basePackageClasses = SimpleScan)表示需要扫描SimpleScan所在的包，即com.example包。
     推荐写一个类似于Serializable一样的无任何属性的接口，并通过basePackageClasses属性进行引用。
-    该属性相比较于basePackages更加的安全，应该字符串可能出错。
+    该属性相比较于basePackages更加的安全，因为字符串可能出错。
     */
    Class<?>[] basePackageClasses() default {};
 
@@ -335,33 +373,28 @@ public @interface ComponentScan {
     */
    ScopedProxyMode scopedProxy() default ScopedProxyMode.DEFAULT;
 
-   // 通过该属性可以使只有匹配该pattern的class文件才进行扫描
+   // 通过该属性可以使只有匹配该pattern的class文件才进行扫描, 默认为"**/*.class"
    String resourcePattern() default ClassPathScanningCandidateComponentProvider.DEFAULT_RESOURCE_PATTERN;
 
-   // 开启该选项的话，会将扫描到的带有@Component及其衍生注解（@Controller,@Service,@Repository）注册成bean。关闭的话就不会将这些有注解的类注册成bean了，需要自己通过includeFilters属性进行添加。
+   // 开启该选项的话，会将扫描到的带有@Component及其衍生注解（@Controller,@Service,@Repository）的类自动注册成bean。关闭的话就不会将这些有注解的类注册成bean了，需要自己通过includeFilters属性进行添加。
+    // 该属性相当于@ComponentScan(includeFilters = {
+        @Filter(type = FilterType.ANNOTATION, value = {Component.class})
+})
    boolean useDefaultFilters() default true;
 
+   
    /**
-    * Specifies which types are eligible for component scanning.
-    * <p>Further narrows the set of candidate components from everything in {@link #basePackages}
-    * to everything in the base packages that matches the given filter or filters.
-    * <p>Note that these filters will be applied in addition to the default filters, if specified.
-    * Any type under the specified base packages which matches a given filter will be included,
-    * even if it does not match the default filters (i.e. is not annotated with {@code @Component}).
-    * @see #resourcePattern()
-    * @see #useDefaultFilters()
-    */
+   指定哪些类型适合进行组件扫描。
+   进一步将候选组件的范围从basePackages中的所有内容basePackages到与给定过滤器匹配的基本包中的所有内容。
+   默认过滤器也将应用指定的includeFilters 
+   即使不匹配默认过滤器（即未使用@Component注释），也将    包括与指定过滤器匹配的指定基本软件包下的任何类型
+   */
    Filter[] includeFilters() default {};
 
-   /**
-    * Specifies which types are not eligible for component scanning.
-    * @see #resourcePattern
-    */
    Filter[] excludeFilters() default {};
 
    // 设置检测到的Component是否进行懒加载
    boolean lazyInit() default false;
-
 
    /**
     * Declares the type filter to be used as an {@linkplain ComponentScan#includeFilters
@@ -374,60 +407,32 @@ public @interface ComponentScan {
       /**
        * The type of filter to use.
        * <p>Default is {@link FilterType#ANNOTATION}.
-       * @see #classes
-       * @see #pattern
        */
       FilterType type() default FilterType.ANNOTATION;
 
-      /**
-       * Alias for {@link #classes}.
-       * @see #classes
-       */
       @AliasFor("classes")
       Class<?>[] value() default {};
 
       /**
-       * The class or classes to use as the filter.
-       * <p>The following table explains how the classes will be interpreted
-       * based on the configured value of the {@link #type} attribute.
-       * <table border="1">
-       * <tr><th>{@code FilterType}</th><th>Class Interpreted As</th></tr>
-       * <tr><td>{@link FilterType#ANNOTATION ANNOTATION}</td>
-       * <td>the annotation itself</td></tr>
-       * <tr><td>{@link FilterType#ASSIGNABLE_TYPE ASSIGNABLE_TYPE}</td>
-       * <td>the type that detected components should be assignable to</td></tr>
-       * <tr><td>{@link FilterType#CUSTOM CUSTOM}</td>
-       * <td>an implementation of {@link TypeFilter}</td></tr>
-       * </table>
-       * <p>When multiple classes are specified, <em>OR</em> logic is applied
-       * &mdash; for example, "include types annotated with {@code @Foo} OR {@code @Bar}".
-       * <p>Custom {@link TypeFilter TypeFilters} may optionally implement any of the
-       * following {@link org.springframework.beans.factory.Aware Aware} interfaces, and
-       * their respective methods will be called prior to {@link TypeFilter#match match}:
-       * <ul>
-       * <li>{@link org.springframework.context.EnvironmentAware EnvironmentAware}</li>
-       * <li>{@link org.springframework.beans.factory.BeanFactoryAware BeanFactoryAware}
-       * <li>{@link org.springframework.beans.factory.BeanClassLoaderAware BeanClassLoaderAware}
-       * <li>{@link org.springframework.context.ResourceLoaderAware ResourceLoaderAware}
-       * </ul>
-       * <p>Specifying zero classes is permitted but will have no effect on component
-       * scanning.
-       * @since 4.2
-       * @see #value
-       * @see #type
+       如果type被设置为FilterType#ANNOTATION，classes请填写注解，spring将会对标有该注解的类进行处理（exclude或者include）
+       @ComponentScan(excludeFilters = {@Filter(type = FilterType.ANNOTATION, value = {Component.class})})表示排除被Component及其衍生注解标注的类
+       
+       如果type被设置为FilterType#ASSINGABLE_TYPE，classes请填写类
+       @ComponentScan(includeFilters = {@Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})})表示要讲SimpleScopeMetadataResolver注册成bean（即使他没有被@Component标注）
+       
+       如果type被设置为FilterType#CUSTOM，classes请填写自定义的过滤器，该过滤器需要继承TypeFilter接口，自定义TypeFilter可以选择实现以下任何Aware接口，并且将在匹配之前调用它们各自的方法：
+       EnvironmentAware
+       BeanFactoryAware
+       BeanClassLoaderAware
+       ResourceLoaderAware
+       
        */
       @AliasFor("value")
       Class<?>[] classes() default {};
 
       /**
-       * The pattern (or patterns) to use for the filter, as an alternative
-       * to specifying a Class {@link #value}.
-       * <p>If {@link #type} is set to {@link FilterType#ASPECTJ ASPECTJ},
-       * this is an AspectJ type pattern expression. If {@link #type} is
-       * set to {@link FilterType#REGEX REGEX}, this is a regex pattern
-       * for the fully-qualified class names to match.
-       * @see #type
-       * @see #classes
+       如果type被设置为FilterType#ASPECTJ, pattern被解析为AspectJ表达式
+       如果type被设置为FilterType#REGEX, pattern被解析为正则表达式
        */
       String[] pattern() default {};
 
@@ -435,3 +440,10 @@ public @interface ComponentScan {
 
 }
 ```
+
+> @Component的源码解析
+
+处理@Configuration的代码从ConfigurationClassPaser#doProcessConfigurationClass()开始
+
+![image-20201215135237192](img/image-20201215135237192.png)
+
