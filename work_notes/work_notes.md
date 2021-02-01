@@ -1,4 +1,4 @@
-git commit撤销
+![image-20210109193921971](img/image-20210109193921971.png)git commit撤销
 
 写完代买之后, 一般是
 
@@ -1650,6 +1650,85 @@ properties.getProperty("name");
 
 
 
+#### 虚拟机Ubuntu磁盘扩容
+
+**随着编译路由器的型号和数量的增多，原本50G的硬盘大小已经不够用了。**
+**因此扩展了ubuntu硬盘容量，并将扩容的笔记分享给大家。**
+
+**虚拟机关机状态下，点击编辑设置**
+<img src="img/061619_0749_VMubuntu1.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**找到硬盘，点击扩展**
+<img src="img/061619_0749_VMubuntu2.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom: 50%;" />
+
+**修改磁盘大小，这里50G扩展到100G**
+![《VM虚拟机ubuntu硬盘容量扩展》](img/061619_0749_VMubuntu3.png)
+
+**扩展中**
+<img src="img/061619_0749_VMubuntu4.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**虚拟机提示扩展完成**
+<img src="img/061619_0749_VMubuntu5.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**开机进入系统，安装gparted分区管理工具，终端中运行**
+sudo apt-get install gparted
+<img src="img/061619_0749_VMubuntu6.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom: 25%;" />
+
+**在软件管理中，找到gparted软件**
+<img src="img/061619_0749_VMubuntu7.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom: 33%;" />
+
+**提示输入密码**
+<img src="img/061619_0749_VMubuntu8.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**记录sda2大小，并删除sda2**
+<img src="img/061619_0749_VMubuntu9.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**选中sda5，右键禁用交换空间**
+<img src="img/061619_0749_VMubuntu10.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**禁用后，再次选中sda5，右键选中删除**
+<img src="img/061619_0749_VMubuntu11.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**删除sda5后，选中sda2，右键删除**
+<img src="img/061619_0749_VMubuntu12.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**选中sda1，右键更改大小**
+<img src="img/061619_0749_VMubuntu13.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**弹出的窗口，调整剩余空间为1024即可。**
+<img src="img/061619_0749_VMubuntu14.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**完成调整后，选中未分配空间，右键新建**
+<img src="img/061619_0749_VMubuntu15.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**弹出的窗口，选择创建为扩展分区**
+<img src="img/061619_0749_VMubuntu16.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**完成后，选中新出现的未分配分区，右键新建**
+<img src="img/061619_0749_VMubuntu17.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**弹出的窗口，选择文件系统为：linux-swap**
+<img src="img/061619_0749_VMubuntu18.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**确认参数无误，点击上面(√)确认按钮**
+<img src="img/061619_0749_VMubuntu19.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**点击应用，执行修改**
+<img src="img/061619_0749_VMubuntu20.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**大约10分钟，完成所有操作**
+<img src="img/061619_0749_VMubuntu21.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom:50%;" />
+
+**查看系统硬盘是否成功扩展**
+df -h
+<img src="img/061619_0749_VMubuntu22.png" alt="《VM虚拟机ubuntu硬盘容量扩展》" style="zoom: 50%;" />
+
+**成功扩展，以上就是VM虚拟机ubuntu硬盘大小扩展的所有操作。**
+
+
+
+
+
 ## 多线程
 
 #### synchronized
@@ -2411,3 +2490,441 @@ ReentrantReadWriteLock.WriteLock
 > 常用单向加密算法
 
  **MD5**、**SHA**、**HMAC**
+
+
+
+
+
+
+
+# mysql中的内置函数
+
+mysql内置函数列表可以从mysql官方文档查询，这里仅分类简单介绍一些可能会用到的函数。
+
+https://dev.mysql.com/doc/refman/5.6/en/sql-function-reference.html
+
+https://www.cnblogs.com/noway-neway/p/5211401.html
+
+https://www.w3cschool.cn/mysql/func-date-add.html
+
+#### 1 数学函数
+
+abs(x)
+pi()
+mod(x,y)
+sqrt(x)
+ceil(x)或者ceiling(x)
+rand(),rand(N):返回0-1间的浮点数，使用不同的seed N可以获得不同的随机数
+round(x, D)：四舍五入保留D位小数，D默认为0， 可以为负数， 如round(19, -1)返回20
+truncate(x, D):截断至保留D位小数，D可以为负数， 如trancate(19,-1)返回10
+sign(x): 返回x的符号，正负零分别返回1， -1， 0
+pow(x,y)或者power(x,y)
+exp(x)：e^x
+log(x)：自然对数
+log10(x)：以10为底的对数
+radians(x):角度换弧度
+degrees(x):弧度换角度
+sin(x)和asin(x):
+cos(x)和acos(x):
+tan(x)和atan(x):
+cot(x):
+
+#### 2 字符串函数
+
+char_length(str):返回str所包含的字符数，一个多字节字符算一个字符
+length(str): 返回字符串的字节长度，如utf8中，一个汉字3字节，数字和字母算一个字节
+concat(s1, s1, ...): 返回连接参数产生的字符串
+concat_ws(x, s1, s2, ...): 使用连接符x连接其他参数产生的字符串
+INSERT(str,pos,len,newstr):返回str,其起始于pos，长度为len的子串被newstr取代。
+\1. 若pos不在str范围内，则返回原字符串str
+\2. 若str中从pos开始的子串不足len,则将从pos开始的剩余字符用newstr取代
+\3. 计算pos时从1开始，若pos=3,则从第3个字符开始替换
+lower（str)或者lcase(str):
+upper(str)或者ucase(str):
+left(s,n):返回字符串s最左边n个字符
+right(s,n): 返回字符串最右边n个字符
+lpad(s1, len, s2): 用s2在s1左边填充至长度为len, 若s1的长度大于len,则截断字符串s1至长度len返回
+rpad(s1, len, s2):
+ltrim(s):删除s左侧空格字符
+rtrim(s):
+TRIM([{BOTH | LEADING | TRAILING} [remstr] FROM] str)或TRIM([remstr FROM] str)：从str中删除remstr, remstr默认为空白字符
+REPEAT(str,count)：返回str重复count次得到的新字符串
+REPLACE(str,from_str,to_str)： 将str中的from_str全部替换成to_str
+SPACE(N):返回长度为N的空白字符串
+STRCMP(str1,str2):若str1和str2相同，返回0， 若str1小于str2, 返回-1， 否则返回1.
+SUBSTRING(str,pos), SUBSTRING(str FROM pos), SUBSTRING(str,pos,len), SUBSTRING(str FROM pos FOR len),MID(str,pos,len): 获取特定位置，特定长度的子字符串
+LOCATE(substr,str), LOCATE(substr,str,pos),INSTR(str,substr),POSITION(substr IN str): 返回字符串中特定子串的位置，注意这里INSTR与其他函数的参数位置是相反的
+REVERSE(str)
+ELT(N,str1,str2,str3,...)：返回参数strN, 若N大于str参数个数，则返回NULL
+FIELD(str,str1,str2,str3,...): 返回str在后面的str列表中第一次出现的位置，若找不到str或者str为NULL, 则返回0
+FIND_IN_SET(str,strlist)：strlist是由','分隔的字符串，若str不在strlist或者strlist为空字符串，则返回0；若任意一个参数为NULL则返回ＮＵＬＬ
+MAKE_SET(bits,str1,str2,...): 由bits的作为位图来选取strN参数，选中的参数用','连接后返回
+
+#### 3 日期和时间函数
+
+**CURDATE(), CURRENT_DATE, CURRENT_DATE():用于获取当前日期，格式为'YYYY-MM-DD'; 若+0则返回YYYYMMDD**
+UTC_DATE, UTC_DATE():返回当前世界标准时间
+CURTIME([fsp]), CURRENT_TIME, CURRENT_TIME([fsp]): 用于获取当前时间， 格式为'HH:MM:SS' 若+0则返回 HHMMSS
+UTC_TIME, UTC_TIME([fsp])
+CURRENT_TIMESTAMP, CURRENT_TIMESTAMP([fsp]), LOCALTIME, LOCALTIME([fsp]), SYSDATE([fsp]), NOW([fsp]): 用于获取当前的时间日期，格式为'YYYY-MM-DD HH:MM:SS'，若+0则返回YYYYMMDDHHMMSS
+UTC_TIMESTAMP, UTC_TIMESTAMP([fsp])
+UNIX_TIMESTAMP(), UNIX_TIMESTAMP(date)：返回一个unix时间戳（'1970-01-01 00:00:00' UTC至今或者date的秒数），这实际上是从字符串到整数的一个转化过程
+FROM_UNIXTIME(unix_timestamp), FROM_UNIXTIME(unix_timestamp,format)：从时间戳返回'YYYY-MM-DD HH:MM:SS' 或者YYYYMMDDHHMMSS，加入format后根据所需的format显示。
+**MONTH(date)**
+MONTHNAME(date)
+DAYNAME(date)
+DAY(date)，DAYOFMONTH(date)：1-31或者0
+**DAYOFWEEK(date)：1-7==>星期天-星期六**
+**DAYOFYEAR(date)： 1-365（366）**
+WEEK(date[,mode])：判断是一年的第几周，如果1-1所在周在新的一年多于4天，则将其定为第一周；否则将其定为上一年的最后一周。mode是用来人为定义一周从星期几开始。
+WEEKOFYEAR(date)：类似week(date,3)，从周一开始计算一周。
+QUARTER(date)：返回1-4
+**HOUR(time)：返回时间中的小时数，可以大于24**
+**MINUTE(time)：**
+**SECOND(time)：**
+EXTRACT(unit FROM date)：提取日期时间中的要素
+
+```sql
+    SELECT EXTRACT(YEAR FROM '2009-07-02'); ##2009
+    SELECT EXTRACT(YEAR_MONTH FROM '2009-07-02 01:02:03');##200907
+    SELECT EXTRACT(DAY_MINUTE FROM '2009-07-02 01:02:03');##20102
+    SELECT EXTRACT(MICROSECOND FROM '2003-01-02 10:30:00.000123');##123
+```
+
+TIME_TO_SEC(time)
+SEC_TO_TIME(seconds)
+
+TO_DAYS(date): 从第0年开始的天数
+TO_SECNDS(expr)：从第0年开始的秒数
+
+ADDDATE(date,INTERVAL expr unit), ADDDATE(expr,days),DATE_ADD(date,INTERVAL expr unit)
+DATE_SUB(date,INTERVAL expr unit), DATE_SUB(date,INTERVAL expr unit)
+ADDTIME(expr1,expr2)
+SUBTIME(expr1,expr2)
+
+```sql
+    SELECT ADDTIME('2007-12-31 23:59:59.999999', '1 1:1:1.000002');##'2008-01-02 01:01:01.000001'
+    SELECT ADDTIME('01:00:00.999999', '02:00:00.999998');##'03:00:01.999997'
+```
+
+注意：时间日期的加减也可以直接用+/-来进行
+
+```sql
+    date + INTERVAL expr unit
+    date - INTERVAL expr unit
+    如：
+    SELECT '2008-12-31 23:59:59' + INTERVAL 1 SECOND;##'2009-01-01 00:00:00'
+    SELECT INTERVAL 1 DAY + '2008-12-31';##'2009-01-01'
+    SELECT '2005-01-01' - INTERVAL 1 SECOND;##'2004-12-31 23:59:59'
+```
+
+DATE_FORMAT(date,format):
+DATEDIFF(expr1,expr2):返回相差的天数
+TIMEDIFF(expr1,expr2)：返回相隔的时间
+
+#### 4 条件判断函数
+
+IF(expr1,expr2,expr3)：如果expr1不为0或者NULL,则返回expr2的值，否则返回expr3的值
+IFNULL(expr1,expr2)：如果expr1不为NULL,返回expr1,否则返回expr2
+NULLIF(expr1,expr2): 如果expr1=expr2则返回NULL, 否则返回expr2
+CASE value WHEN [compare_value] THEN result [WHEN [compare_value] THEN result ...] [ELSE result] END
+当compare_value=value时返回result
+CASE WHEN [condition] THEN result [WHEN [condition] THEN result ...] [ELSE result] END
+当condition为TRUE时返回result
+
+```sql
+    SELECT CASE 1 WHEN 1 THEN 'one'
+        WHEN 2 THEN 'two' ELSE 'more' END;##'one'
+    SELECT CASE WHEN 1>0 THEN 'true' ELSE 'false' END;##'true'
+    SELECT CASE BINARY 'B'
+        WHEN 'a' THEN 1 WHEN 'b' THEN 2 END;##NULL
+```
+
+#### 5 系统信息函数
+
+VERSION():返回mysql服务器的版本，是utf8编码的字符串
+CONNECTION_ID()：显示连接号（连接的线程号）
+DATABASE()，SCHEMA()：显示当前使用的数据库
+SESSION_USER(), SYSTEM_USER(), USER(), CURRENT_USER, CURRENT_USER():返回当前的用户名@主机，utf8编码字符串
+CHARSET(str)
+COLLATION(str)
+LAST_INSERT_ID()：自动返回最后一个insert或者update查询， 为auto_increment列设置的第一个发生的值
+
+#### 6 加密和压缩函数
+
+PASSWORD(str):这个函数的输出与变量old_password有关。old_password 在mysql5.6中默认为0。 不同取值的效果如下表
+![img](https://images2015.cnblogs.com/blog/865265/201602/865265-20160224150201724-1500361171.png)
+old_password=1时， password(str)的效果与old_password(str)相同，由于其不够安全已经弃用（5.6.5以后）。
+old_password=2时，在生成哈希密码时会随机加盐。
+
+MD5(str):计算MD5 128位校验和，返回32位16进制数构成的字符串，当str为NULL时返回NULL。可以用作哈希密码
+SHA1(str), SHA(str)：计算160位校验和，返回40位16进制数构成的字符串，当str为NULL时返回NULL。
+SHA2(str, hash_length)：计算SHA-2系列的哈希方法(SHA-224, SHA-256, SHA-384, and SHA-512). 第一个参数为待校验字符串，第二个参数为结果的位数（224， 256， 384， 512）
+ENCRYPT(str[,salt]): 用unix crypt()来加密str. salt至少要有两位字符，否则会返回NULL。若未指定salt参数，则会随机添加salt。
+
+ECODE(crypt_str,pass_str):解密crypt_str, pass_str用作密码
+ENCODE(str,pass_str)：用pass_str作为密码加密str
+
+DES_ENCRYPT(str[,{key_num|key_str}])：用Triple-DES算法编码str， 这个函数只有在mysql配置成支持ssl时才可用。
+DES_DECRYPT(crypt_str[,key_str])
+
+AES_ENCRYPT(str,key_str[,init_vector])
+AES_DECRYPT(crypt_str,key_str[,init_vector])
+
+COMPRESS(string_to_compress)：返回二进制码
+UNCOMPRESS(string_to_uncompress)
+
+#### 7 聚合函数
+
+若在没使用group by时使用聚合函数，相当于把所有的行都归于一组来进行处理。除非特殊说明，一般聚合函数会忽略掉NULL.
+AVG([DISTINCT] expr): 返回expr的平均值，distinct选项用于忽略重复值
+COUNT([DISTINCT] expr)：返回select中expr的非0值个数，返回值为bigint类型
+group_concat:连接组内的非空值，若无非空值，则返回NULL
+
+```sql
+        GROUP_CONCAT([DISTINCT] expr [,expr ...]
+             [ORDER BY {unsigned_integer | col_name | expr}
+                    [ASC | DESC] [,col_name ...]]
+            [SEPARATOR str_val])
+```
+
+MAX([DISTINCT] expr)
+MIN([DISTINCT] expr)
+
+SUM([DISTINCT] expr)
+VAR_POP(expr)
+VARIANCE(expr)：同VAR_POP(expr)，但是这是标准sql的一个扩展函数
+VAR_SAMP(expr)
+STD(expr): 这是标准sql的一个扩展函数
+STDDEV(expr)：这个函数是为了跟oracle兼容而设置的
+STDDEV_POP(expr)：这个是sql标准函数
+
+STDDEV_SAMP(expr)：样本标准差
+
+#### 8 格式或类型转化函数
+
+FORMAT(X,D[,locale])：将数字X转化成'#,###,###.##'格式，D为保留的小数位数
+CONV(N,from_base,to_base)：改变数字N的进制，返回值为该进制下的数字构成的字符串
+INET_ATON(expr)：ip字符串转数字
+INET_NTOA(expr)：数字转ip字符串
+CAST(expr AS type)：转换数据类型
+CONVERT(expr,type), CONVERT(expr USING transcoding_name)： type可以为BINARY[(N)]，CHAR[(N)]，DATE，DATETIME， DECIMAL[(M[,D])]，DECIMAL[(M[,D])]，TIME，UNSIGNED [INTEGER]等等。transcoding_name如utf8等等
+
+#### MySQL DATA_FORMAT函数
+
+https://dev.mysql.com/doc/refman/5.6/en/date-and-time-functions.html#function_date-format
+
+https://www.w3school.com.cn/sql/func_date_format.asp
+
+| %a   | 缩写星期名                                     |
+| ---- | ---------------------------------------------- |
+| %b   | 缩写月名                                       |
+| %c   | 月，数值                                       |
+| %D   | 带有英文前缀的月中的天                         |
+| %d   | 月的天，数值(00-31)                            |
+| %e   | 月的天，数值(0-31)                             |
+| %f   | 微秒                                           |
+| %H   | 小时 (00-23)                                   |
+| %h   | 小时 (01-12)                                   |
+| %I   | 小时 (01-12)                                   |
+| %i   | 分钟，数值(00-59)                              |
+| %j   | 年的天 (001-366)                               |
+| %k   | 小时 (0-23)                                    |
+| %l   | 小时 (1-12)                                    |
+| %M   | 月名                                           |
+| %m   | 月，数值(00-12)                                |
+| %p   | AM 或 PM                                       |
+| %r   | 时间，12-小时（hh:mm:ss AM 或 PM）             |
+| %S   | 秒(00-59)                                      |
+| %s   | 秒(00-59)                                      |
+| %T   | 时间, 24-小时 (hh:mm:ss)                       |
+| %U   | 周 (00-53) 星期日是一周的第一天                |
+| %u   | 周 (00-53) 星期一是一周的第一天                |
+| %V   | 周 (01-53) 星期日是一周的第一天，与 %X 使用    |
+| %v   | 周 (01-53) 星期一是一周的第一天，与 %x 使用    |
+| %W   | 星期名                                         |
+| %w   | 周的天 （0=星期日, 6=星期六）                  |
+| %X   | 年，其中的星期日是周的第一天，4 位，与 %V 使用 |
+| %x   | 年，其中的星期一是周的第一天，4 位，与 %v 使用 |
+| %Y   | 年，4 位                                       |
+| %y   | 年，2 位                                       |
+
+~~~~text
+'%Y-%m-%d %T' '%Y-%m-%d %H:%i:%s' XXXX-XX-XX XX:XX:XX 24小时制
+'%Y-%m-%d %H' xxxx-xx-xx xx 保留年月日和小时
+~~~~
+
+#### mysql 关于时间的类型
+
+> 时间的类型
+
+|   类型    | 字节数 |                  取值                   |        零值         | 获取当前值                          |
+| :-------: | :----: | :-------------------------------------: | :-----------------: | ----------------------------------- |
+|   YEAR    |   1    |                1901~2155                |        0000         | now()                               |
+|   DATE    |   4    |          1000-01-01~9999-12-31          |     0000-00-00      | current_date, now()                 |
+|   TIME    |   3    |          -938:59:59~838:59:59           |      00:00:00       | current_time, current_time(), now() |
+| DATETIME  |   8    | 1000-01-01 00:00:00~9999-12-31 23:59:59 | 0000-00-00 00:00:00 | now()                               |
+| TIMESTAMP |   4    |      19700101080001~20380119111407      |   00000000000000    | current_timestamp                   |
+
+> 关于YEAR
+
+| 输入格式     | 具体例子              | 备注                                                         |
+| ------------ | --------------------- | ------------------------------------------------------------ |
+| 'YYYY'或YYYY | 1901，'1901'          | 如果超过了范围，就会插入0000。                               |
+| ‘YY’或YY     | 01, '01'，‘1’表示2001 | ‘00’\~~‘69’转换为2000\~~2069，‘70’~~‘99’转换为1970~1999。数字同。<br>**'00'和‘0’转换为2000， 而00和0被转换为0000** |
+
+
+
+> 关于DATE类型
+
+| 输入格式                           | 具体例子                                                   | 说明                                                         |
+| ---------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
+| YYMMDD或'YYMMDD'或'YY-MM-DD'       | ‘00-01-01’，'00-1-1',表示2000-01-01， 191101表示2019-11-01 | 其中，YY的取值，00\~~69转换为2000\~~2069，70\~~99转换为1970~~1999。字母同。<br>任何标点都可以用来做间隔符。如’YY/MM/DD‘，’YY@MM@DD‘，’YY.MM.DD‘等分隔形式。 |
+| YYYYMMDD或'YYYYMMDD'或'YYYY-MM-DD' | 40080308表示4008-03-08                                     | ’00‘\~~’69‘转换为2000\~~2069，’70‘\~~’99‘转换为1970~~1999。<br>任何标点都可以用来做间隔符。如’YYYY/MM/DD‘，’YYYY@MM@DD‘，’YYYY.MM.DD‘等分隔形式。<br>**数字0表示零值0000-00-00。** |
+
+> 关于TIME类型
+
+| 格式                                      | 具体例子                                     | 说明                                                         |
+| ----------------------------------------- | -------------------------------------------- | ------------------------------------------------------------ |
+| 'D HH:MM:SS', 'D HH:MM','D HH'            | ‘2 11：30：50’，Time类型会转换为59：30：50。 | D表示天数，取值范围是0~~34。保存时，小时的值等于（D\*24+HH） |
+| ‘HH:MM:SS’,'HH:MM','SS'，'HHMMSS', HHMMSS |                                              | 如果输入0或者‘0’，那么TIME类型会转换为null                   |
+
+> DateTime
+
+datetime类型使用8个字节来表示日期和时间。\*\*MySQL中以‘YYYY-MM-DD HH:MM:SS’的形式来显示
+
+1，‘YYYY-MM-DD HH:MM:SS’或‘YYYYMMDDHHMMSS’格式的字符串表示。这种方式可以表达的范围是‘1000-01-01 00:00:00’~~‘9999-12-31 23:59:59’。举个例子，比如我现在输入‘2008-08-08 08:08:08’，dateTime类型转换为2008-08-08 08:08:08，输入‘20080808080808’，同样转换为2008-08-08 08:08:08。
+
+2，MySQL中还支持一些不严格的语法格式，任何的标点都可以用来做间隔符。情况与date类型相同，而且时间部分也可以使用任意的分隔符隔开，这与Time类型不同，Time类型只能用‘:’隔开呢。
+举个例子，比如我现在输入‘2008@08@08 08\*08\*08’，数据库中dateTime类型统一转换为2008-08-08 08:08:08。
+
+3，‘YY-MM-DD HH:MM:SS’或‘YYMMDDHHMMSS’格式的字符串表示。其中‘YY’的取值，‘00'\~~‘69’转换为2000\~~2069，‘70’\~~‘99’转换为1970~~1999。与year型和date型相同。举个例子，比如我现在输入‘69-01-01 11:11:11’，数据库中插入2069-01-01 11:11:11；比如我现在输入‘70-01-01 11:11:11’，数据库中插入1970-01-01 11:11:11。
+
+4，当然这种格式化的省略YY的简写也是支持一些不严格的语法格式的，比如用‘@’，‘\*’来做间隔符。
+
+>  timestamp类型
+
+timestamp类型使用4个字节来表示日期和时间。timestamp类型的范围是从1970-01-01 08:00:01~~2038-01-19 11:14:07。
+
+MySQL中也是以‘YYYY-MM-DD HH:MM:SS’的形式显示timestamp类型的值。从其形式可以看出，timestamp类型与dateTime类型显示的格式是一样的。
+
+给timestamp类型的字段复制的表示方法基本与dateTime类型相同。值得注意的是，timestamp类型范围比较小，没有dateTime类型的范围那么大。所以输入值时要保证在timestamp类型的有效范围内。
+
+
+
+#### MySQL中的交并差
+
+aname：![image-20210109185635634](img/image-20210109185635634.png)
+
+bname: ![image-20210109185711567](img/image-20210109185711567.png)
+
+> 并集
+
+~~~sql
+SELECT oname,odesc FROM object_a
+UNION ALL
+SELECT oname,odesc FROM object_b
+~~~
+
+![image-20210109185948788](img/image-20210109185948788.png)
+
+~~~sql
+# union 自带去重
+select * from aname union select * from bname
+~~~
+
+![image-20210109190049474](img/image-20210109190049474.png)
+
+> 交集
+
+~~~sql
+select * from aname join bname on aname.name = bname.bname
+~~~
+
+![image-20210109193943868](img/image-20210109193943868.png)
+
+> 差集
+
+~~~sql
+select * from aname left join bname on aname.name = bname.bname where bname.bname is null
+select * from aname right join bname on aname.name = bname.bname where aname.name is null
+~~~
+
+![image-20210109194239678](img/image-20210109194239678.png)
+
+![image-20210109194405827](img/image-20210109194405827.png)
+
+
+
+#### mysql case when的用法
+
+可以认为case when是**一个函数，传入一条数据，返回一个值**。所以他可以使用在任何需要值的地方，比如select后面，聚合函数的入参， where字句后面，用于赋值。
+
+case 具有两种格式：简单case函数和case搜索函数。
+
+- **简单case函数**
+
+  ~~~sql
+  CASE sex
+      WHEN '1' THEN '男'
+      WHEN '2' THEN '女'
+      ELSE '其他' 
+      END
+  ~~~
+
+- **case搜索函数**
+
+  ~~~sql
+  case when sex = '1' then '男'
+       when sex = '2' then '女'
+       else '其他'
+       end
+  ~~~
+
+简单case函数写法简单，比较简洁。case搜索函数功能比较强大。
+
+case函数只返回第一个符合条件的值，剩下的case部分自动被忽略。类似于java的if else。
+
+> case when 使用在select后面
+
+
+
+- 统计亚洲和北美洲的人口数量![image-20210130144748378](img/image-20210130144748378.png)
+
+  ~~~sql
+  select (case when country in ('中国', '印度', '日本') then '亚洲'
+           when country in ('美国', '加拿大', '墨西哥') then '北美洲'
+           else '其他'
+           end) as `洲`, sum(population) as `人口`
+           from table_A
+           group by `洲`;
+  ~~~
+
+- 统计各个国家不同性别的人
+
+  ![image-20210130151453697](img/image-20210130151453697.png)
+
+  ~~~sql
+  select country as `国家`,
+         sum(case sex when 1 then population else 0 end) as `男`,
+         sum(case sex when 2 then population else 0 end) as `女` 
+  from table_a 
+  group by country
+  ~~~
+
+> case when使用在where后面
+
+- 规定所有学生都有code，并且男生(sex = 1)的code以nan开头，女生的code已nv开头，找出表中的错误数据。
+
+  ![image-20210130162539667](img/image-20210130162539667.png)
+
+  ```SQl
+  select * from table_b where 1=1 and 
+  	(case when code is null then 1
+  		  when sex = 1 and code not like 'nan%' then 1
+  	      when sex = 0 and code not like 'nv%' then 1
+  	      else 0
+  	      end ) = 1
+  ```
+
+  

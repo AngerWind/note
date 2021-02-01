@@ -417,8 +417,8 @@ public @interface ComponentScan {
        如果type被设置为FilterType#ANNOTATION，classes请填写注解，spring将会对标有该注解的类进行处理（exclude或者include）
        @ComponentScan(excludeFilters = {@Filter(type = FilterType.ANNOTATION, value = {Component.class})})表示排除被Component及其衍生注解标注的类
        
-       如果type被设置为FilterType#ASSINGABLE_TYPE，classes请填写类
-       @ComponentScan(includeFilters = {@Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})})表示要讲SimpleScopeMetadataResolver注册成bean（即使他没有被@Component标注）
+       如果type被设置为FilterType#ASSINGABLE_TYPE，classes请填写类或者接口，spring将会对该类及其子类进行处理（exclude or include）
+       @ComponentScan(includeFilters = {@Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})})表示要将SimpleScopeMetadataResolver及其子类注册成bean（即使他没有被@Component标注）
        
        如果type被设置为FilterType#CUSTOM，classes请填写自定义的过滤器，该过滤器需要继承TypeFilter接口，自定义TypeFilter可以选择实现以下任何Aware接口，并且将在匹配之前调用它们各自的方法：
        EnvironmentAware
@@ -443,7 +443,321 @@ public @interface ComponentScan {
 
 > @Component的源码解析
 
-处理@Configuration的代码从ConfigurationClassPaser#doProcessConfigurationClass()开始
+处理@Configuration的代码从ConfigurationClassParser#doProcessConfigurationClass()开始
 
 ![image-20201215135237192](img/image-20201215135237192.png)
+
+从上面可以看出来，因为每一个@ComponentScan是在for循环中处理的，所以也就验证了上面所说的：**若存在多个ComponentScan，每个ComponentScan之间是单独扫描的，不存在联系**
+
+下面进入this.componentScanPaser.paser()方法中
+
+![image-20201217140308950](img/image-20201217140308950.png)
+
+下面来开下useDefaultFilters的作用：
+
+进入到ClassPathBeanDefinitionScanner的构造方法里面
+
+![image-20201217140819004](img/image-20201217140819004.png)
+
+![image-20201217141119902](img/image-20201217141119902.png)
+
+从上面可以看出来,useDefaultFilters会导致注册一个默认的AnnotationTypeFilter类型的includeFilters, 这就相当于
+
+```java
+@ComponentScan(includeFilters = {
+        @Filter(type = FilterType.ANNOTATION, value = {Component.class})
+})
+```
+
+下面进入doScan()方法来看下
+
+![image-20201217142412978](img/image-20201217142412978.png)
+
+进入findCandidateComponents()
+
+![image-20201217194954624](img/image-20201217194954624.png)
+
+进入到ClassPathScanningCandidateComponentProvider#scanCandidateComponents()方法
+
+![image-20201218101556595](img/image-20201218101556595.png)
+
+下面进入到第一个isCandidateComponent()方法，从下面验证：**在同一个ComponentScan中，excludeFilters的优先级大于includeFilters**
+
+![image-20201218102416027](img/image-20201218102416027.png)
+
+我们上面还记得，如果@ComponentScan的useDefaultFilters = true的话，会向includeFilters中注册一个Filter，debug图片如下，可以看到，这是一个AnnotationTypeFilter，扫描的注解是Component。
+
+![image-20201218103050571](img/image-20201218103050571.png)
+
+下面进入到AnnotationTypeFilter的match()方法，该方法定义在TypeFilter接口中。
+
+#### 关于spring Environment的说明
+
+spring中的Environment是一个集成了properties和profile两个方面的集合。
+
+其中properties就是引用的各种配置了，包括配置中心的配置，系统配置，各种框架的配置，数据库的配置。
+
+而profile翻译成中文就是配置文件，很容易让人怀疑他表示的是类似于一系列配置的集合。而事实上他仅仅就是一个字符串而已，这个profile主要是配合@Profile功能使用。与配置没有什么关系。
+
+> PropertySource
+
+对于应用的各种的配置来说，其对应的接口是PropertySource, 这个PropertySource接口不是表示单个配置，而是表示一类配置的集合。**他有一个name属性和一个T类型的source属性，这个T类型中存储的就是具体的配置了。**
+
+![image-20210101200808260](img/Spring/image-20210101200808260.png)
+
+这个接口有众多的子类，表示不同种类的配置，如EnumerablePropertySource（可枚举的PropertySource，即通过getPropertyNames()方法可以获取所有的keyName），MapPropertySource，CommandLinePropertySource等等子类，但是查看他们的方法你会发现，**绝大多数的PropertySource只允许在创建的时候通过构造函数传入具体的配置，而不允许创建完之后改变配置**。
+
+![image-20210101201824917](img/Spring/image-20210101201824917.png)
+
+> PropertySources
+
+PropertySources接口对应的就是多个PropertySource的集合了，一般一个应用的所有的配置都放在这里面。
+
+PropertySources有一个重要的实现：**MutablePropertySources，意为可变的PropertySources，但是这里的可变并不是配置可变。而是提供了操控PropertySource优先级的能力。**
+
+一个应用中那么多配置，重要有个优先级吧，查看MutablePropertySources你会发现他有个List<PropertySource<?>>的属性，这里面保存的就是各种PropertySource了，**在List里面排在前面的即index小的优先级最高**。（apollo设置spring配置的时候会调用它的addFirst方法把配置放在最前面，即index=0的位置，这样就保证了配置中心的配置优先级最高）。
+
+这是调试的截图：
+
+![image-20210101212124270](img/Spring/image-20210101212124270.png)
+
+可以看到一个PropertySources中保存了非常多的PropertySource对象，而一个PropertySource对象中又保存了非常多的配置。
+
+**并且可以发现他同样没有提供修改配置的方法，只提供了修改PropertySource优先级的方法以及一个replace方法。**
+
+![image-20210101203715905](img/Spring/image-20210101203715905.png)
+
+> PropertyResolver与ConfigurablePropertyResolver
+
+有了PropertySources保存各种配置项，可以通过其获得配置。但是如果我们需要将配置项解析为不同类型呢？比如需要的配置项是Int，而需要的配置项的类型是String类型。如果我们需要解析一个字符串中的占位符（${prop.name:defaultVale}）并把它替换为对应的配置项呢？如果我们需要验证某个必要的配置项在PropertySources中是否存在呢？这时候PropertyResolver接口就来了。
+
+但是呢，其子类AbstractPropertyResolver并不自己解析属性，而是依赖PropertyPlaceholderHelper和DefaultConversionService这两个类来进行解析属性（单一责任原则？）
+
+
+
+![image-20210101213642464](img/Spring/image-20210101213642464.png)
+
+#### 关于CommandLineRunner和ApplicationRunner接口的说明
+
+https://cloud.tencent.com/developer/article/1524264
+
+https://www.jianshu.com/p/5d4ffe267596
+
+![image-20210113202117314](img/image-20210113202117314.png)
+
+![image-20210113202146309](img/image-20210113202146309.png)
+
+
+
+> 主要功能（总结现在前面）
+
+- Spring boot的`CommandLineRunner`和`ApplicationRunner`接口主要用于实现在应用初始化后，去执行一段代码块逻辑，这段初始化代码在整个应用生命周期内**只会执行一次**。
+
+- 只需要实现这两个接口并实现其中的方法，然后像普通的bean一样注册到spring容器里面即可。
+
+- **可以在这两个接口的实现类内autowired依赖**，因为接口调用的时候context已经创建出来了。
+
+- **在这两个接口中抛出异常将会导致spring容器启动失败**
+- 通过标注@Order注解或者实现Order，PriorityOrdered接口来控制执行顺序，**PriorityOrdered整体优先Order**，**顺序的数字越低优先级越高，未实现Order，PriorityOrdered接口或者标注@Order默认最低优先级**（看源码可以知道，这两个类是放在一个list里面比较顺序，这就**导致了这两个接口的实现类根据顺序交替执行，而不是先全部执行完某一类接口的实现类在执行另一个接口的实现类**）
+
+> 两者区别
+
+![img](img/5225109-f48c0c7425b63375.png)
+
+发现二者的官方javadoc一样，区别在于接收的参数不一样。**CommandLineRunner的参数是最原始的参数，没有做任何处理。ApplicationRunner的参数是ApplicationArguments，是对原始参数做了进一步的封装。**
+
+ApplicationArguments是对参数（main方法）做了进一步的处理，可以解析--name=value的，我们就可以通过name来获取value（而CommandLineRunner只是获取--name=value）
+
+![img](img/5225109-6525665739459c55.png)
+
+**--getOptionNames()方法可以得到foo这样的key的集合。**
+ **--getOptionValues(String name)方法可以得到bar这样的集合的value。**
+
+```java
+@Component
+public class MyApplicationRunner implements ApplicationRunner{
+
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        System.out.println("===MyApplicationRunner==="+                           Arrays.asList(args.getSourceArgs()));
+        System.out.println("===getOptionNames========"+args.getOptionNames());
+        System.out.println("===getOptionValues======="+args.getOptionValues("foo"));
+System.out.println("==getOptionValues========"+args.getOptionValues("developer.name"));
+    }
+}
+// 启动类
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class,args);
+    }
+}
+```
+
+![img](img/5225109-0769f6adc418896d.png)
+
+打印结果：
+
+![image-20210113203527632](img/image-20210113203527632.png)
+
+> 顺序控制
+
+可以通过标注@Order注解或者实现Order，PriorityOrdered接口来控制CommandLineRunner和ApplicationRunner的顺序，**PriorityOrdered默认比Order优先**，**顺序的数字越低优先级越高，未实现Order接口或者标注@Order默认最低优先级**（看源码可以知道，这两个类是放在一个list里面比较顺序，这就导致了这两个类会交替执行，而不是先全部执行完某一类接口的实现类在执行另一个接口的实现类）
+
+> 源码解析
+
+在spring-boot1.5.22.release版本中，这两个接口的实现执行的时机在于SpringApplication初始化之后，调用的run方法中被调用的。
+
+~~~java
+public ConfigurableApplicationContext run(String... args) {
+		// 创建 StopWatch 对象，用于统计 run 方法启动时长。
+		StopWatch stopWatch = new StopWatch();
+		// 启动统计。
+		stopWatch.start();
+		ConfigurableApplicationContext context = null;
+		FailureAnalyzers analyzers = null;
+		// 配置 headless 属性。
+		configureHeadlessProperty();
+		// 获得 SpringApplicationRunListener 数组，
+		// 该数组封装于 SpringApplicationRunListeners 对象的 listeners 中。
+		SpringApplicationRunListeners listeners = getRunListeners(args);
+		// 启动监听，遍历 SpringApplicationRunListener 数组每个元素，并执行。
+		listeners.starting();
+		try {
+			//创建 ApplicationArguments 对象
+			ApplicationArguments applicationArguments = new DefaultApplicationArguments(
+					args);
+			// 加载属性配置，包括所有的配置属性（如：application.properties 中和外部的属性配置）
+			ConfigurableEnvironment environment = prepareEnvironment(listeners,
+					applicationArguments);
+			// 打印 Banner
+			Banner printedBanner = printBanner(environment);
+			// 创建容器
+			context = createApplicationContext();
+            analyzers = new FailureAnalyzers(context);
+			// 准备容器，组件对象之间进行关联
+			prepareContext(context, environment, listeners, applicationArguments,
+					printedBanner);
+			// 初始化容器
+			refreshContext(context);
+			// 初始化操作之后执行。
+			afterRefresh(context, applicationArguments);
+            // 调用监听器的完成动作
+            listeners.finished(context, null);
+			// 停止时长统计
+			stopWatch.stop();
+			// 打印启动日志
+			if (this.logStartupInfo) {
+				new StartupInfoLogger(this.mainApplicationClass)
+						.logStarted(getApplicationLog(), stopWatch);
+			}
+            return context;
+		}catch (Throwable ex) {
+			// 异常处理
+			handleRunFailure(context, listeners, analyzers, ex);
+			throw new IllegalStateException(ex);
+		}
+		
+	}
+~~~
+
+其中在afterRefresh方法中， 因为是在afterRefresh中调用这两个接口，所以其他的bean都已经被实例化好了（懒加载除外），所以可以在这两个类里面使用自动注入。
+
+~~~java
+protected void afterRefresh(ConfigurableApplicationContext context, ApplicationArguments args) {
+        // 调用CommandLineRunner和ApplicationRunner
+		callRunners(context, args);
+	}
+~~~
+
+~~~java
+	private void callRunners(ApplicationContext context, ApplicationArguments args) {
+		List<Object> runners = new ArrayList<Object>();
+        
+       // 获取容器中所有实现了ApplicationRunner接口的类
+		runners.addAll(context.getBeansOfType(ApplicationRunner.class).values());
+        // 获取容器中所有实现了ApplicationRunner接口的类
+		runners.addAll(context.getBeansOfType(CommandLineRunner.class).values());
+        // 通过Order接口，@Order注解，PriorityOrdered接口来排序
+		AnnotationAwareOrderComparator.sort(runners);
+		for (Object runner : new LinkedHashSet<Object>(runners)) {
+            // 调用两个类的run方法
+			if (runner instanceof ApplicationRunner) {
+				callRunner((ApplicationRunner) runner, args);
+			}
+			if (runner instanceof CommandLineRunner) {
+				callRunner((CommandLineRunner) runner, args);
+			}
+		}
+	}
+
+	private void callRunner(ApplicationRunner runner, ApplicationArguments args) {
+		try {
+			(runner).run(args);
+		}
+		catch (Exception ex) {
+			throw new IllegalStateException("Failed to execute ApplicationRunner", ex);
+		}
+	}
+
+	private void callRunner(CommandLineRunner runner, ApplicationArguments args) {
+		try {
+            // 这里可以看到调用CommandLineRunner传入的参数其实就是ApplicationArguments.getSourceArgs()
+			(runner).run(args.getSourceArgs());
+		}
+		catch (Exception ex) {
+			throw new IllegalStateException("Failed to execute CommandLineRunner", ex);
+		}
+	}
+~~~
+
+下面来看下AnnotationAwareOrderComparator如何对两个接口排序的呢？一路追踪下去可以到实现了Comparator<Object>接口的OrderComparator类的doCompare方法，
+
+~~~java
+    private int doCompare(Object o1, Object o2, OrderSourceProvider sourceProvider) {
+        // 判断两者是否是实现的同一个接口，PriorityOrdered接口整体优先Order接口
+        // 这里没有对@Order注释做处理，不知道为什么，但是文档写着@Order接口是有用的。。。。
+		boolean p1 = (o1 instanceof PriorityOrdered);
+		boolean p2 = (o2 instanceof PriorityOrdered);
+		if (p1 && !p2) {
+			return -1;
+		}
+		else if (p2 && !p1) {
+			return 1;
+		}
+        // 不是实现同一个接口的话，上面就return出去了，所以这里比较实现同一个接口的类的顺序
+		int i1 = getOrder(o1, sourceProvider);
+		int i2 = getOrder(o2, sourceProvider);
+		return (i1 < i2) ? -1 : (i1 > i2) ? 1 : 0;
+	}
+
+	protected int getOrder(Object obj) {
+		Integer order = findOrder(obj);
+        // 这里如果不是Order的实现类的话就是最低的优先级了
+		return (order != null ? order : Ordered.LOWEST_PRECEDENCE);
+	}
+
+	private int getOrder(Object obj, OrderSourceProvider sourceProvider) {
+		Integer order = null;
+		if (sourceProvider != null) {
+			Object orderSource = sourceProvider.getOrderSource(obj);
+			if (orderSource != null && orderSource.getClass().isArray()) {
+				Object[] sources = ObjectUtils.toObjectArray(orderSource);
+				for (Object source : sources) {
+					order = findOrder(source);
+					if (order != null) {
+						break;
+					}
+				}
+			}
+			else {
+				order = findOrder(orderSource);
+			}
+		}
+		return (order != null ? order : getOrder(obj));
+        
+    protected Integer findOrder(Object obj) {
+		return (obj instanceof Ordered ? ((Ordered) obj).getOrder() : null);
+	}
+~~~
 

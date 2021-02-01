@@ -851,6 +851,25 @@ oa[1] = li; // Correct.
 Integer i = (Integer) lsa[1].get(0); // OK 
 ```
 
+### 6.对泛型上下界的应用
+
+~~~~java
+// 泛型对于extend的应用常常发生于确定了上界的时候
+// 比如Map中的putAll（）方法
+// 在这个方法中，上界在创建被调用map的实例的时候已经确定了， 这样通过？ extend K就可以限制传入的map的key的类型是泛型k的子类。
+void putAll(Map<? extends K, ? extends V> m);
+~~~~
+
+~~~~java
+// 泛型对于super的应用常常发生于确定了下界的时候
+// 比如Collections的sout方法
+// 在这个方法中，需要排序的目标类list的泛型T确定了下界，这样通过? super T就可以现在传入进来的Comparator的泛型是T的父类，这样Comparator才能正确处理list
+    public static <T> void sort(List<T> list, Comparator<? super T> c) {
+        list.sort(c);
+    }
+
+~~~~
+
 
 
 ## [深入理解java的clone](<https://www.iteye.com/topic/483469>)
@@ -1109,5 +1128,8 @@ clone一个有100个元素的int数组，用系统默认的clone比静态copy方
 
 
 
+## Java8
 
+### lambda表达式、函数接口、方法引用、流、可选方法
 
+### 接口中的静态方法和[默认方法](https://liushiming.cn/2020/02/23/java-default-methods/)。
