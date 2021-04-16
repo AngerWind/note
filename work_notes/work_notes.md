@@ -242,6 +242,8 @@ git log --graph --pretty=oneline --abbrev-commit显示图像表示的分支数�
 
 git log --grep 搜索提交说明中的关键字
 
+**git log -1 -- [file path] 显示文件变化，即使文件被删除也能正常工作**
+
 
 
 #### git 将本地项目推送到远程仓库
@@ -712,6 +714,33 @@ git fetch --prune
 # 同git fetch
 git remote update
 ~~~
+
+### git 实用技巧
+
+> 查看文件是在哪一个commit中被删除的？
+
+~~~shell
+# 显示文件的变化，即使文件被删除也能正常工作。
+git log -1 -- [file path]
+~~~
+
+> 从远程分支创建本地分支
+
+~~~shell
+git switch -c test_branch origin/test_branch
+~~~
+
+> 删除本地分支与远程分支
+
+~~~shell
+git branch -D test_branch # 删除本地分支
+git push origin :test_branch # 删除远程分支， 相当于推送了一个空的本地分支到远程分支上。
+git remote prune origin #从远程仓库同步分支情况到本地仓库，针对远程分支被删除而本地分支还保留的情况，只要同步一下分支情况即可删除对应的本地分支。
+~~~
+
+
+
+
 
 ## Linux 命令使用
 
@@ -2927,4 +2956,101 @@ case函数只返回第一个符合条件的值，剩下的case部分自动被忽
   	      end ) = 1
   ```
 
+
+
+#### mysql 多表连接删除
+
+https://www.jb51.net/article/107813.htm
+
+假设有张学生表student(id, name, age, class_id),  班级表class(id, class_name)
+
+- 单表的删除 -----------------删除id为3的学生的记录
+
+  ~~~mysql
+  delete from student s where s.id = 3;
+  ~~~
+
+- 多表连接删除---------------------删除A班级的张三同学的记录
+
+  需要删除记录的表跟在delete后面, 连接条件所用到的表放在from后面
+
+  ~~~mysql
+  # 下面使用了两个表进行连接， 但是只需要删除s表中的记录， 使用delete s进行表示
+  # 如果使用delete s, c 会将s表和c表中的记录一起删除。
+  delete s from student s, class c where s.class_id = c.id and s.name = '张三' and c.class_name = 'A';
+  ~~~
   
+  使用高级连接进行删除
+
+  ~~~mysql
+  delete s from student s join class c on s.class_id = c.id where s.name = '张三' and c.class_name = 'A';
+  ~~~
+
+  
+
+
+
+#### Runnable Callable Future Executor Executors ExecutorService
+
+线程池的基本思想还是一种对象池的思想，开辟一块内存空间，里面存放了众多(未死亡)的线程，池中线程执行调度由池管理器来处理。当有线程任务时，从池中取一个，执行完成后线程对象归池，这样可以避免反复创建线程对象所带来的性能开销，节省了系统的资源。
+
+在Java5之前，要实现一个线程池是相当有难度的，现在Java5为我们做好了一切，我们只需要按照提供的API来使用，即可享受线程池带来的极大便利。
+
+Java5的线程池分好多种：具体的可以分为两类，固定尺寸的线程池、可变尺寸连接池。
+
+Executor框架主要包含三个部分：
+
+**任务：**包括Runnable和Callable，其中Runnable表示一个可以异步执行的任务，而Callable表示一个会产生结果的任务。 Runnable和Callable的区别在于Callable可以有返回值并且可以抛出异常而Runnable无法做到这一点。
+
+**任务的执行：**包括Executor框架的核心接口Executor以及其子接口ExecutorService。在Executor框架中有两个关键类ThreadPoolExecutor和ScheduledThreadPoolExecutor实现了ExecutorService接口。
+
+**异步计算的结果：**包括接口Future和其实现类FutureTask。
+
+**Executors**：用于创建各种线程池的工具类。
+
+
+
+#### java Queue
+
+Queue接口和List接口一样继承自Collection，遵循先进先出的原则，其实现类有两类，一类是容量有限的队列，一类是容量无线的队列
+
+![image-20210309205101093](img/image-20210309205101093.png)
+
+Queue接口中定义了六个方法
+
+- add， offer
+
+  - 相同：添加元素
+
+  - 不同：一些队列有大小限制，因此如果想在一个满的队列中加入一个新项，多出的项就会被拒绝。
+
+    这时offer返回false表示添加失败，而add抛出异常表示添加失败
+  
+- poll， remove：
+
+  - 相同：从队列删除第一个元素并返回。
+  - 不同：当队列为空时，poll返回null而remove抛出异常
+
+- peek， element：
+
+  - 相同：查询队首元素而不删除
+  - 不同：当队列为空时，peek返回null而element抛出异常
+
+
+
+Queue又有子接口Deque，表示的是双端队列
+
+addFirst
+
+![image-20210309210444000](img/image-20210309210444000.png)
+
+
+
+
+
+
+
+
+
+
+
