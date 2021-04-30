@@ -3050,7 +3050,130 @@ addFirst
 
 
 
+### Janino编译器
 
 
 
+#### 简介
 
+   Janino 是一个极小、极快的 开源Java 编译器（Janino is a super-small, super-fast Java™ compiler.）。Janino 不仅可以像 JAVAC 一样将 Java 源码文件编译为字节码文件，还可以编译内存中的 Java 表达式、块、类和源码文件，加载字节码并在 JVM 中直接执行。Janino 同样可以用于静态代码分析和代码操作。
+
+项目地址：https://github.com/janino-compiler/janino
+
+官网地址：http://janino-compiler.github.io/janino/    <font color=red>官网简单一看即可，更重要的是看javadoc</font>
+
+
+#### ExpressEvaluator
+
+~~~java
+ public static void main(String[] args) throws Exception {
+        // Create "ExpressionEvaluator" object.
+        IExpressionEvaluator ee = CompilerFactoryFactory.getDefaultCompilerFactory().newExpressionEvaluator();
+        // 设置返回值类型
+        ee.setExpressionType(double.class);
+        // 设置参数名与类型
+        ee.setParameters(new String[] { "total" }, new Class[] { double.class });
+        // 设置抛出异常的类型
+        ee.setThrownExceptions(new Class[]{Exception.class});
+        // 设置表达式体
+        ee.cook("total*100");
+        // 传入参数并执行表达式体, 没有参数时传入null
+        Double res = (Double)ee.evaluate(new Object[]{7.5D});
+        System.out.println(res);
+
+    }
+~~~
+
+#### ScriptEvaluator
+
+~~~java
+public static void main(String[] args) throws CompileException, InvocationTargetException {
+        // ScriptEvaluator可以用于编译和执行代码块
+        // 如果有return的返回值，则该块必须返回该类型的值。
+        // 作为一项特殊功能，它允许声明方法。方法声明的位置和顺序无关紧要。
+        ScriptEvaluator se = new ScriptEvaluator();
+        se.setParameters(new String[] { "arg1", "arg2" }, new Class[] { String.class, int.class });
+        se.cook(
+                ""
+                        + "System.out.println(arg1);\n"
+                        + "System.out.println(arg2);\n"
+                        + "\n"
+                        + "static void method1() {\n"
+                        + "    System.out.println(\"run in method1()\");\n"
+                        + "}\n"
+                        + "\n"
+                        + "public static void method2() {\n"
+                        + "    System.out.println(\"run in method2()\");\n"
+                        + "}\n"
+                        + "\n"
+                        + "method1();\n"
+                        + "method2();\n"
+                        + "\n"
+
+        );
+        se.evaluate(new Object[]{"aaa",22});
+    }
+~~~
+
+#### ClassBodyEvaluator
+
+ClassBodyEvaluator的作用是编译类的主体，然后生成一个用于反射的Class对象。
+
+![image-20210430194947060](img/image-20210430194947060.png)
+
+#### Janino使用Compiler
+
+~~~java
+public static void main(String[] args) throws IOException, CompileException, ClassNotFoundException,
+            NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+
+        ICompiler compiler = new CompilerFactory().newCompiler();
+        // 用于保存编译后的class字节码的map
+        Map<String, byte[]> classes = new HashMap<String, byte[]>();
+        // 设置字节码生产器为MapResourceCreator
+        compiler.setClassFileCreator(new MapResourceCreator(classes));
+
+        // Now compile two units from strings:
+        compiler.compile(new Resource[] {
+            new StringResource("pkg1/A.java",
+                "package pkg1; public class A { public static int meth() { return pkg2.B.meth(); } }"),
+            new StringResource("pkg2/B.java",
+                "package pkg2; public class B { public static int meth() { return 77;            } }"),});
+
+        // Set up a class loader that uses the generated classes.
+        ClassLoader cl = new ResourceFinderClassLoader(new MapResourceFinder(classes), // resourceFinder
+            ClassLoader.getSystemClassLoader() // parent
+        );
+        Assert.assertEquals(77, cl.loadClass("pkg1.A").getDeclaredMethod("meth").invoke(null));
+    }
+~~~
+
+#### Janino使用ClassLoader
+
+~~~java
+ClassLoader cl = new JavaSourceClassLoader(
+    this.getClass().getClassLoader(),  // parentClassLoader
+    new File[] { new File("srcdir") }, // optionalSourcePath
+    (String) null,                     // optionalCharacterEncoding
+    DebuggingInformation.NONE          // debuggingInformation
+);
+ 
+// Load class A from "srcdir/pkg1/A.java", and also its superclass
+// B from "srcdir/pkg2/B.java":
+Object o = cl.loadClass("pkg1.A").newInstance();
+ 
+// Class "B" implements "Runnable", so we can cast "o" to
+// "Runnable".
+((Runnable) o).run(); 
+~~~
+
+#### Debug
+
+idea貌似可以调试，但是无法看到生成的java文件，所以两样一抹黑
+
+```
+org.codehaus.janino.source_debugging.enable=true\
+org.codehaus.janino.source_debugging.dir=C:\tmp\
+```
+
+![image-20210430195942917](img/image-20210430195942917.png)
