@@ -224,8 +224,18 @@ new Reflections(new ConfigurationBuilder()
 
 - 如果本地已经clone了仓库并且有了master，还想拉取dev分支到本地怎么办呢？
 
-  使用git fetch拉取所有的远程分支到本地，然后git checkout -b dev origin/dev，dev和origin/dev自动建立追踪
+  使用git fetch拉取所有的远程分支到本地，然后`git checkout -b dev origin/dev`，dev和origin/dev自动建立追踪
 
+  ~~~shell
+  git checkout -b dev_local origin/dev # 根据origin/dev生产dev_local并自动跟踪
+  git checkout --track origin/dev # 根据远程分支生成同名的本地分支并自动跟踪
+  
+  git switch -c dev origin/dev # 同上
+  git switch --track origin/dev
+  ~~~
+  
+  
+  
   
 
 #### git 查看本地分支的远程分支
@@ -2986,7 +2996,20 @@ https://www.jb51.net/article/107813.htm
   delete s from student s join class c on s.class_id = c.id where s.name = '张三' and c.class_name = 'A';
   ~~~
 
-  
+
+
+
+#### 重命名列
+
+~~~~sql
+-- 使用change可以改变列名和列类型， first和after用于更新后列的定位
+ALTER TABLE aaa CHANGE old_column_name new_column_NAME datatype[first | after column_name ]
+
+-- mysql 8.0以后新增 rename column to
+alter table aaa rename column old_column_name to new_column_name;
+~~~~
+
+
 
 
 
@@ -3010,39 +3033,104 @@ Executor框架主要包含三个部分：
 
 
 
-#### java Queue
-
-Queue接口和List接口一样继承自Collection，遵循先进先出的原则，其实现类有两类，一类是容量有限的队列，一类是容量无线的队列
-
-![image-20210309205101093](img/image-20210309205101093.png)
-
-Queue接口中定义了六个方法
-
-- add， offer
-
-  - 相同：添加元素
-
-  - 不同：一些队列有大小限制，因此如果想在一个满的队列中加入一个新项，多出的项就会被拒绝。
-
-    这时offer返回false表示添加失败，而add抛出异常表示添加失败
-  
-- poll， remove：
-
-  - 相同：从队列删除第一个元素并返回。
-  - 不同：当队列为空时，poll返回null而remove抛出异常
-
-- peek， element：
-
-  - 相同：查询队首元素而不删除
-  - 不同：当队列为空时，peek返回null而element抛出异常
 
 
+### java队列
 
-Queue又有子接口Deque，表示的是双端队列
+####  Queue
 
-addFirst
+~~~java
+public interface Queue<E> extends Collection<E>
+~~~
 
-![image-20210309210444000](img/image-20210309210444000.png)
+设计用于数据处理之前容纳数据的集合。 除了基本的Collection操作外，队列还提供其他插入，提取和检查操作。 这些方法中的每一种都以两种形式存在：一种在操作失败时引发异常，另一种返回一个特殊值（null/false, 取决于具体操作）。 **插入操作的后一种形式是专门为与容量受限的Queue实现一起使用而设计的**； 在大多数实现中，插入操作不会失败。 
+
+| 操作 | 抛出异常 |   返回特定值   |
+| :--: | :------: | :------------: |
+| 插入 |   add    | offer（false） |
+| 去除 |  remove  |  poll（null）  |
+| 检查 | element  |  peek（null）  |
+
+队列通常但不一定以FIFO（先进先出）的方式对元素进行排序。 例外情况包括优先级队列（根据提供的比较器对元素进行排序或元素的自然排序）和LIFO队列（或堆栈），对LIFO进行排序（后进先出）。每个Queue实现必须指定其排序属性。
+Queue实现通常不允许插入null元素，尽管某些实现（例如LinkedList不允许插入null 。 即使在允许的实现中，也不应将null插入到Queue ，因为poll方法还将null用作特殊的返回值，以指示该队列不包含任何元素。
+Queue实现通常不定义方法equals和hashCode的基于元素的版本，而是从Object类继承基于身份的版本，因为对于具有相同元素但顺序属性不同的队列，基于元素的相等性并不总是很好定义的
+
+#### Deque
+
+双端队列。 大多数Deque实现对它们可能包含的元素数量没有固定的限制，但是此接口支持容量受限的双端队列以及没有固定大小限制的双端队列。
+
+|      |          头 | 部         |         尾 | 部        |
+| :--: | ----------: | :--------- | ---------: | :-------- |
+|      |    引发异常 | 特殊值     |   引发异常 | 特殊值    |
+| 插入 |    addFirst | offerFirst |    addLast | offerLast |
+| 去除 | removeFirst | pollFirst  | removeLast | pollLast  |
+| 检查 |    getFirst | peekFirst  |    getLast | peekLast  |
+
+ 当双端队列用作队列时，将导致FIFO（先进先出）行为。 元素在双端队列的末尾添加，并从开头删除。 继承自Queue接口的方法与Deque方法完全等效，如下表所示：
+
+| Queue方法 |  Deque方法  |
+| :-------: | :---------: |
+|    add    |   addLast   |
+|   offer   |  offerLast  |
+|  remove   | removeFirst |
+|   poll    |  pollFirst  |
+|  element  |  getFirst   |
+|   peek    |  peekFirst  |
+
+ 当双端队列用作堆栈时，元素从双端队列的开头被压入并弹出。 堆栈方法完全等同于Deque方法，如下表所示：
+
+| 堆栈方法 |  Deque方法  |
+| :------: | :---------: |
+|   push   |  addFirst   |
+|   pop    | removeFirst |
+|   peek   |  peekFirst  |
+
+
+此接口提供了两种删除内部元素的方法： 
+
+|             方法              |              功能              |
+| :---------------------------: | :----------------------------: |
+| removeFirstOccurrence(Object) | 移除从队首开始首次出现的该元素 |
+| removeLastOccurrence(Object)  | 移除从队尾开始首次出现的该元素 |
+
+尽管严格不要求Deque实现禁止插入null元素，但强烈建议这样做。
+
+#### BlockingQueue
+
+~~~~java
+BlockingQueue<E> extends Queue<E>
+~~~~
+
+当检索和移除元素时支持等待队列由空转为非空， 添加元素时支持等待队列由不可用转为可用。
+
+BlockingQueue方法有四种形式，它们以不同的方式处理操作，这些操作无法立即满足，但将来可能会满足：
+
+- 一种抛出异常
+
+- 第二种返回特殊值（ null或false ，具体取决于操作）
+
+- 第三个块将无限期地阻塞当前线程，直到操作成功为止
+
+- 第四个块仅在给定的最大时间限制内放弃。 
+
+下表总结了这些方法：
+
+|      | 引发异常  | 返回特殊值 |  堵塞  |         超时         |
+| :--: | :-------: | :--------: | :----: | :------------------: |
+| 插入 |  add(e)   |  offer(e)  | put(e) | offer(e, time, unit) |
+| 去除 | remove()  |   poll()   | take() |   poll(time, unit)   |
+| 检查 | element() |   peek()   | 不适用 |        不适用        |
+
+- BlockingQueue不接受null元素。 实现会在尝试add ， put或offer null抛出NullPointerException 。null值用作标记值，以指示poll操作失败
+- BlockingQueue可能受容量限制。 在任何给定时间，它都可能具有remainingCapacity容量，超过该容量就不能put其他元素而不会阻塞。 没有任何内部容量约束的BlockingQueue始终返回Integer.MAX_VALUE的剩余容量。
+- BlockingQueue实现被设计为主要用于生产者-消费者队列，但另外还支持Collection接口。 因此，例如，可以使用remove(x)从队列中remove(x)任意元素。 但是，这样的操作通常不能非常有效地执行，并且仅用于偶尔的使用，例如当取消排队的消息时。
+  BlockingQueue实现是线程安全的。 所有排队方法都是使用内部锁或其他形式的并发控制来原子地实现其效果的。 然而，大量的Collection操作addAll ， containsAll ， retainAll和removeAll不一定原子除非在实现中另有规定执行。 因此，例如，仅在c添加一些元素之后， addAll(c)可能会失败（引发异常）。
+- BlockingQueue本质上不支持任何类型的“关闭”或“关闭”操作，以指示将不再添加任何项目。 此类功能的需求和使用往往取决于实现。 例如，一种常见的策略是让生产者插入特殊的流尾对象或有毒对象，当消费者采取这种方法时会对其进行相应的解释。
+  使用示例，基于典型的生产者-消费者方案。 请注意， BlockingQueue可以安全地与多个生产者和多个消费者一起使用。
+
+
+
+
 
 
 
