@@ -3265,3 +3265,84 @@ org.codehaus.janino.source_debugging.dir=C:\tmp\
 ```
 
 ![image-20210430195942917](img/image-20210430195942917.png)
+
+
+
+#### java8 default和static方法
+
+> static方法
+
+在接口中可以定义一个或者多个static方法，默认为public。子类不会继承接口中的静态方法，但是子类可以继承抽象类中的静态方法
+
+~~~java
+public interface HelloInterface {
+    static void say(){}
+}
+
+public abstract class SimpleAbstractClass {
+    public static void say1(){}
+}
+
+public class HelloInterfaceImpl extends SimpleAbstractClass implements HelloInterface {
+    public void sayHello() {
+        // 接口中的static方法不会被继承， 还是要通过类名.方法名调用
+        HelloInterface.say();
+        // 抽象类中的static方法可以被继承
+        say1();
+    }
+}
+~~~
+
+> default方法
+
+在接口中可以定义一个或者多个default方法，默认为public。default方法可以调用抽象方法
+
+~~~java
+public interface HelloInterface2 {
+    void sayHello(String say);
+    default void play(String sport) {
+        // default方法中调用抽象方法
+        sayHello("haha");
+    }
+}
+~~~
+
+当子类实现的两个接口中有相同方法签名（方法名相同，参数类型及顺序相同）的default方法时， 子类必须实现该default方法。否则编译失败。
+
+当子类实现的接口中有与抽象类中相同方法签名的default方法时， 默认调用父类的方法。
+
+当子类实现的两个接口或者接口和抽象类有相同的方法签名， 但是两个方法的返回值不同时，将会编译失败。
+
+
+
+
+
+
+
+#### IDEA 查看jdk源码
+
+https://blog.csdn.net/rain_zhao_0102/article/details/106041697
+
+> 前言
+
+最近想研究下jdk的ClassLoader。发现jdk 1.8下没有包含sun.*的源码。所以在idea中打开sun.*下的类，都只能查看通过反编译得到的代码，由于缺少相应的注释，且某些变量变成了val1，val2等，可读性变得很差，给源码的学习效率造成影响。
+我们可以通过引入外部的源码文件依赖，使得idea在打开sun.*包下的类时，可以找到并打开对应的源码
+
+1. 下载OpenJDK源码到本地, sun包的源码就在src\share\classes目录下
+
+   ~~~shell
+   git clone https://github.com/openjdk-mirror/jdk.git
+   cd jdk
+   git checkout jdk8u/jdk8u/master
+   ~~~
+
+2. 在项目中添加源码路径
+   在idea中打开项目，右上角点击file -> project structure
+
+   ![image-20210617201809321](img/image-20210617201809321.png)
+
+3. 在弹出窗口选择SDKs -> 右侧窗口选择 sourcepath -> 点击左下方“+” 添加刚才下载的源码路径，点ok。
+
+   ![image-20210617202019299](img/image-20210617202019299.png)
+
+可以发现，sun包下的类已经可以读取到相应的java文件源码了
