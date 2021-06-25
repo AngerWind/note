@@ -141,3 +141,325 @@ public class Animal2NonNull {
 
 #### 枚举序列化与反序列化
 
+
+
+## Jackson 常用注解
+
+#### @JsonAnySetter和@JsonAnyGetter
+
+@JsonAnyGetter用于序列化时，将Map属性中的kv对作为json的标准属性，即map中的key将作为json的key而不再被包装在map中。
+
+@JsonAnySetter用于反序列化时，当json串有识别不了的属性时，可以使用一个map将其全部的接收下来。
+
+- 标注在Map类型的字段上
+- 或者非静态的两个类型的参数上，第一个参数为key，第二个参数为value
+
+> 使用场景
+
+当我们用一个Bean去接收参数的时候，就不用怕不同的接口参数不同，而去写好几个不同的Bean了，只需要一个Bean然后里面存放共有的属性和一个Map就行了，需要的字段直接从Map中拿就好了，省了很多的事情。
+
+~~~java
+@Data
+public  class ExtendableBean {
+        private String name;
+        @JsonAnySetter
+        private Map<String, String> properties = Maps.newHashMap();
+        @JsonAnyGetter
+        public Map<String, String> getProperties() {
+            return properties;
+        }
+        // @JsonAnySetter, 标注在字段上或者方法上都可以
+        public void setProp(String key, String value) {
+            this.properties.put(key, value);
+        }
+    }
+~~~
+
+序列化ExtendableBean：
+
+~~~java
+    @SneakyThrows
+    @Test
+    public void serialized (){
+        ExtendableBean extendableBean = new ExtendableBean("zhangsan");
+        extendableBean.setProp("key1", "value1");
+        extendableBean.setProp("key2", "value2");
+        new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(extendableBean); 
+    }
+}
+// 可以看到map中的key和value被当做整个json的key和value
+//{
+//  "name" : "zhangsan",
+//  "key1" : "value1",
+//  "key2" : "value2"
+//}
+~~~
+
+反序列化：
+
+~~~java
+	@SneakyThrows
+    @Test
+    public void deserialized(){
+        String json = "{\n" +
+                "  \"name\" : \"zhangsan\",\n" +
+                "  \"key1\" : \"value1\",\n" +
+                "  \"key2\" : \"value2\"\n" +
+                "}";
+        ExtendableBean extendableBean = new ObjectMapper().readValue(json, ExtendableBean.class);
+        System.out.println(extendableBean);
+    }
+// name=zhangsan, properties={key1=value1, key2=value2}
+// 可以看到无法识别的json属性被放在的map中
+~~~
+
+
+
+
+
+#### @JsonGetter，@JsonSetter，@JsonProperty
+
+这三个注解用来指定json和java中字段的对应关系
+
+JsonGetter标注在getter方法上，序列化时指定getter属性对应的json的key。
+
+JsonSetter标注在setter方法上，反序列化将指定的key应用在setter方法上。
+
+JsonProperty标注在字段上，指定json和java的对应关系。
+
+~~~java
+public class People {
+
+    // @JsonProperty("USERNAME")
+    private String username;
+
+    @JsonGetter("USERNAME")
+    public String getUsername() {
+        return username;
+    }
+
+    @JsonSetter("USERNAME")
+    public void setUsername(String username) {
+        this.username = username;
+    }
+}
+~~~
+
+**@JsonProperty还可以放在枚举类上，指示枚举类的序列化与反序列化。**
+
+~~~java
+public enum Status {
+    @JsonProperty("ready")
+    READY,
+    @JsonProperty("notReady")
+    NOT_READY,
+    @JsonProperty("notReadyAtAll")
+    NOT_READY_AT_ALL;
+}
+~~~
+
+
+
+#### @JsonPropertyOrder
+
+序列化时字段排序，alphabetic指定是否使用字母排序。value和alphabetic两个使用一个就好。
+
+~~~java
+@JsonPropertyOrder(value = {"time","name"}, alphabetic = true)
+@Data
+public class JsonTestModel {
+    String name;
+    Date time;
+}
+~~~
+
+
+
+#### @JsonRowValue
+
+标注在字段或者方法上，表示该属性序列化后的字符串是其本身， 而不需要加双引号
+
+~~~java
+    @SneakyThrows
+    public static void main(String[] args) {
+        RawBean bean = new RawBean("My bean", "{\"attr\":false}");
+        String result = new ObjectMapper()
+                .writerWithDefaultPrettyPrinter()
+                .writeValueAsString(bean);
+        System.out.println(result);
+    }
+    @Data
+    @AllArgsConstructor
+    public static class RawBean {
+        public String name;
+        @JsonRawValue
+        public String json;  // 添加注释， json将会原样输出， 不加的时候，json会被添加上引号
+    }
+~~~
+
+使用注解时：
+
+~~~json
+{
+  "name" : "My bean",
+  "json" : {"attr":false}
+}
+~~~
+
+不使用时：
+
+~~~json
+{
+  "name" : "My bean",
+  "json" : "{\"attr\":false}"
+}
+~~~
+
+
+
+#### @JsonValue
+
+@JsonValue修饰一个字段或者无参有返回值的方法。指示jackson使用指定的字段或者方法序列化整个实例。多个@JsonValue将会报错。
+
+~~~java
+    @Data
+    @AllArgsConstructor
+    public class Student{
+        @JsonValue
+        private String name;
+        private Integer age;
+
+        // 使用toString()方法序列化实例
+        // @JsonValue
+        public String toString() {
+            return "Student{" +
+                    "name='" + name + '\'' +
+                    ", age=" + age +
+                    '}';
+        }
+    }
+
+    @Test
+    @SneakyThrows
+    public void test(){
+        Student student = new Student("zhangsan", 18);
+        String s = new ObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(student);
+        System.out.println(s);  // "zhangsan"
+    }
+~~~
+
+#### @JsonCreator
+
+Jackson在反序列化的时候，会使用实体的默认无参构造函数来实例化一个对象，然后使用对象的setter方法来初始化属性值。如果没有无参构造的话会报错。
+
+我们可以使用@JsonCreator来指定反序列化时候的构造函数，或者静态工厂方法。**Jackson会在调用@JsonCreator方法后继续调用setter方法进行属性的赋值。**
+
+@JsonProperty可以标注在构造函数参数或者静态工厂方法上，指示要传入的json的key。
+
+@ConstructorProperties只能放在构造方法上，效果同上。
+
+~~~java
+public static class Student{
+        private String name;
+        private Integer age;
+    
+        @JsonCreator // 调用构造方法后，依旧会调用age的setter方法。
+        public Student(@JsonProperty("name")String name){
+            this.name = name;
+            this.age = 10;
+        }
+
+        // @JsonCreator和@ConstructorProperties搭配使用，不需要使用@JsonProperty， @ConstructorProperties只能使用在构造方法上
+        // @JsonCreator
+        // @ConstructorProperties({"name", "age"})
+        // public Student(String name, Integer age){
+        //     this.name = name;
+        //     this.age = age;
+        // }
+
+        // 工厂方法
+        @JsonCreator
+        public static Student getInstance(@JsonProperty("name")String name, @JsonProperty("age")Integer age){
+            return new Student(name, age);
+        }
+    }
+~~~
+
+
+
+#### @JsonRootName
+
+指定序列化的json的根包装，使用时需要开启SerializationFeature.WRAP_ROOT_VALUE，否则无效。
+
+对于这类json，反序列化时需要开启DeserializationFeature.UNWRAP_ROOT_VALUE。
+
+~~~java
+    @JsonRootName("student")
+    @AllArgsConstructor
+    @NoArgsConstructor
+    @Data
+    public static class Student{
+        private String name;
+        private Integer age;
+    }
+
+    @Test
+    @SneakyThrows
+    public void test(){
+        Student student = new Student("zhangsan", 18);
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.enable(SerializationFeature.WRAP_ROOT_VALUE);
+        String s = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(student);
+        System.out.println(s);
+
+        objectMapper.enable(DeserializationFeature.UNWRAP_ROOT_VALUE);
+        Student student1 = objectMapper.readValue(s, Student.class);
+        System.out.println(student1);
+    }
+~~~
+
+~~~json
+{
+  "student" : {
+    "name" : "zhangsan",
+    "age" : 18
+  }
+}
+JsonRootNameTest.Student(name=zhangsan, age=18)
+~~~
+
+对于序列化为xml时，默认情况下跟标签就是其类名。使用@JsonRootName可以指定根标签的名称， 还可以使用@JsonRootName的namespace属性。并且在使用XmlObject时不需要开启什么特性，感觉这个注解就是为xml而生的。
+
+~~~java
+    @JsonRootName(value = "student", namespace = "stu")
+    @Data
+    public static class Student{
+        private String name;
+        private Integer age;
+    }
+
+    @Test
+    @SneakyThrows
+    public void xml(){
+        Student student = new Student("zhangsan", 18);
+        XmlMapper xmlMapper = new XmlMapper();
+        String s = xmlMapper.writerWithDefaultPrettyPrinter().writeValueAsString(student);
+        System.out.println(s);
+
+        Student student1 = xmlMapper.readValue(s, Student.class);
+        System.out.println(student1);
+    }
+~~~
+
+~~~xml
+<student xmlns="stu">
+  <name xmlns="">zhangsan</name>
+  <age xmlns="">18</age>
+</student>
+
+JsonRootNameTest.Student(name=zhangsan, age=18)
+~~~
+
+
+
+#### 
