@@ -1,3 +1,5 @@
+### Jackson Serialization And Deserialization Annotations
+
 #### @JsonDeserialize 和 @JsonSerialize
 
 > - @JsonDeserialize反序列化时使用，标注在setter或者字段上，需要使用 using 属性指定处理参数的类，该类需要继承 JsonDeserializer 类，并重写 deserialize()。
@@ -462,4 +464,130 @@ JsonRootNameTest.Student(name=zhangsan, age=18)
 
 
 
-#### 
+#### @JacksonInject
+
+指示jackson反序列化的时候被标注字段的值将由ObjectMapper注入。按照JacksonInject的使用可以分为按id注入和按类型注入。
+
+> 按id注入
+
+~~~java
+    @Data
+    public static class Student{
+        private String name;
+        private Integer age;
+        @JacksonInject(value = "date")
+        private Date date;
+    }
+
+    @Test
+    @SneakyThrows
+    public void test(){
+        String json = "{\"name\":\"zhangsan\",\"age\":18}";
+        ObjectMapper objectMapper = new ObjectMapper();
+        InjectableValues.Std std = new InjectableValues.Std();
+        std.addValue("date", new Date());
+        objectMapper.setInjectableValues(std);
+        Student student = objectMapper.readValue(json, Student.class); // name=zhangsan, age=18, date=Thu Jul 01 16:49:28 CST 2021
+    }
+~~~
+
+> 按type注入
+
+~~~java
+    @Data
+    public static class Student{
+        private String name;
+        private Integer age;
+        @JacksonInject
+        private Date date;
+    }
+    @Test
+    @SneakyThrows
+    public void test1(){
+        String json = "{\n" +
+                "  \"name\" : \"zhangsan\",\n" +
+                "  \"age\" : 18\n" +
+                "}";
+        ObjectMapper objectMapper = new ObjectMapper();
+        InjectableValues.Std std = new InjectableValues.Std();
+        std.addValue(Date.class, new Date());
+        objectMapper.setInjectableValues(std);
+        Student student = objectMapper.readValue(json, Student.class); // name=zhangsan, age=18, date=Thu Jul 01 16:52:26 CST 2021
+    }
+~~~
+
+
+
+#### @JsonAlias
+
+反序列化时指定多个json字段对应一个java字段
+
+~~~java
+    @Data
+    public static class Student{
+        @JsonAlias({"Name", "namE"})
+        private String name;
+        private Integer age;
+    }
+
+    @Test
+    @SneakyThrows
+    public void test1(){
+        String json = "{\"namE\" : \"zhangsan\",  \"age\" : 18}";
+        ObjectMapper objectMapper = new ObjectMapper();
+        Student student = objectMapper.readValue(json, Student.class); // name=zhangsan, age=18
+    } 
+~~~
+
+
+
+### Jackson Property Inclusion Annotations
+
+
+
+#### @JsonIgnoreProperties
+
+标注在类上，用于序列化和反序列化时忽略标注类的对应属性
+
+~~~java
+@JsonIgnoreProperties({ "id" })
+public class BeanWithIgnore {
+    public int id;
+    public String name;
+}
+~~~
+
+
+
+#### @JsonIgnore
+
+标注在字段上， 指示jackson序列化和反序列时忽略该字段
+
+~~~java
+public class BeanWithIgnore {
+    @JsonIgnore
+    public int id;
+
+    public String name;
+}
+~~~
+
+
+
+#### @JsonInclude
+
+用于序列化时指示jackson忽略对应的字段。
+
+标注在类上将引用于该类的所有字段。
+
+标注在
+
+#### @JsonIgnoreType
+
+
+
+
+
+
+
+#### @JsonAutoDetect
