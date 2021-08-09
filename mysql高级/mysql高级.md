@@ -67,7 +67,7 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
 
    - id是select的序列号，**有几个select就有几个id，并且id的顺序是按照select出现的顺序递增的**
 - **id越大优先级越高， id相同从上到下执行**
-   
+  
    - select查询分为简单查询和复杂查询，复杂查询分为三类：简单子查询（出现在where和select后面的查询），派生表（from语句中的子查询），union查询
 - 如果该行是其他行的联合结果，比如union，则id为null
   
@@ -133,6 +133,8 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
      ~~~
 
      ![image-20210808214817241](img/mysql高级/image-20210808214817241.png)
+     
+     
 
 3. table：
 
@@ -143,8 +145,6 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
    \<deriverN>：表示该行使用的是id为N生成的衍生表
 
    \<subqueryN>：表示该行使用的id为N的子查询的
-
-   
 
    
 
@@ -173,7 +173,7 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
    - eq_ref：与前表的每一行结合，都只有一行从该表中读取。并且因为使用了索引，所以可以快速定位。常见于通过`=`比较具有primary key 和 unique not null index的索引列。
 
      ~~~mysql
-  SELECT * FROM ref_table,other_table WHERE ref_table.key_column=other_table.column;
+    SELECT * FROM ref_table,other_table WHERE ref_table.key_column=other_table.column;
      ~~~
 
      const与与eq_ref之间的不同在于：eq_ref的表与前表的每一行结合都只有一行被读取。
@@ -183,37 +183,92 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
    - ref：与前表的每一行结合，都只有少量行从该表中读取。因为索引是有序的，只需要定位到第一行，在做一个小范围查找即可快速定位所有值。常见于通过`=`，`<>`比较普通的索引列。
 
      ~~~mysql
-  SELECT * FROM ref_table WHERE key_column=expr;
+    SELECT * FROM ref_table WHERE key_column=expr;
      
-  SELECT * FROM ref_table,other_table
-       WHERE ref_table.key_column=other_table.column;
+     SELECT * FROM ref_table,other_table
+     WHERE ref_table.key_column=other_table.column;
      ~~~
-   
+     
    - fulltext：使用了fulltext索引
-   
+
    - ref_or_null
-   
+
    - index_merge
-   
+
    - unique_subquery
-   
+
    - range：只有给定范围内的行才会通过索引被检索，出现在一个索引列通过 `=`，`<>`，`>`，`>=`，`<`，`<=`，`IS NULL`，`<=>`，`BETWEEN`，`LIKE`，`IN()`进行比较时。type为range的时候ref为null
-   
+
    - index：与前表的每一次结合都要按照索引的顺序做一次前表扫描，与all不同的是扫描索引数。
-   
+
      - If the index is a covering index（覆盖索引） for the queries and can be used to satisfy all data required from the table, only the index tree is scanned. In this case, the `Extra` column says `Using index`. An index-only scan usually is faster than `ALL` because the size of the index usually is smaller than the table data.
-     - A full table scan is performed using reads from the index to look up data rows（回填表数据） in index order. `Uses index` does not appear in the `Extra` column.
-     - 如果index要回填表数据的话，做完索引数扫描后还要进行全表扫描，实际上index比all还要慢一下，但是因为index是按照索引的顺序进行全表扫描的，所以当使用order by的时候index还是比all要快的。
-   
+     
+     - A full table scan is performed using reads from the index to look up data rows（回填表数据、回表操作） in index order. `Uses index` does not appear in the `Extra` column.
+
+   - 如果index要回填表数据的话，做完索引数扫描后还要进行全表扫描，实际上index比all还要慢一下，但是因为index是按照索引的顺序进行全表扫描的，所以当使用order by的时候index还是比all要快的。 
+
    - all：与前表的每一行结合都要做一次全表扫描，扫描硬盘
-   
+
    - null：mysql能够在优化阶段分解查询语句，在执行阶段用不着在访问表
-   
+
+   - **<font color=red>案例说明ref，index，all出现的情况</font>**
+
+     https://blog.csdn.net/yuanchangliang/article/details/107798724
+
+     ~~~sql
+     CREATE TABLE `student` (
+       `id` int(11) NOT NULL AUTO_INCREMENT,
+       `name` varchar(255) DEFAULT NULL,
+       `cid` int(11) DEFAULT NULL,
+       PRIMARY KEY (`id`),
+       KEY `name_cid_INX` (`name`,`cid`),
+       KEY `name_INX` (`name`)
+     ) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8
+     ~~~
+
+     > 执行1
+     ~~~mysql
+     EXPLAIN SELECT * FROM student WHERE name='小红';
+     ~~~
+
+     ![在这里插入图片描述](img/mysql高级/20200804204541501.png)
+
+     1. possible_key表示可以使用两个索引
+     2. key表示实际使用了name_cin_INX
+     3. extra中的using index表示使用了覆盖索引，猜测这也是使用name_cid_INX索引原因
+     4. 因为是通过name定位，符合name_cid_INX索引的最左前缀原则，能够通过索引快速定位name=‘小红’的某几行，所以type=ref
+     5. 如果name_cid_INX是唯一索引，type=eq_ref
+
+     > 执行二
+     
+     ~~~mysql
+     EXPLAIN SELECT * FROM student WHERE cid=1;
+   ~~~
+     
+     ![img](img/mysql高级/20200804204713765.png)
+     
+     1. 使用到了name_cid_INX索引，但是因为要通过cid进行过滤，而cid在索引中是乱序的（只有在name相同时，cid才是有序的，即小范围有序），所以需要通过扫描索引树来定位cid=1的数据。并且type为index。
+     
+     > 总结
+     
+     当有索引可以使用时
+     
+     - **实际使用了索引， 并且where中的列符合最左前缀原则，并且索引为primary key或者 unique key， type=eq_ref**
+     - **实际使用了索引，并且where中的列符合最左前缀原则，但是索引为普通索引，type=ref**
+     - **实际使用了索引，where中的列不符合最左前缀原则，这样就只能扫描索引树来定位符合条件的值。ref=index。**
+       - **如果还需要回表操作，实际上是比all更慢的。如果是单值索引，可以提升order by的效率**
+       - **但是如果不需要回表操作，也就是使用了覆盖索引，index比all快。**
+     - **实际没有使用索引，这是因为**
+       - **表数据太小，使用index还需要回表，还不如全表扫描**
+       - **表数据大的时候，比如在time字段上建立索引，然后where time between and, 但是mysql估算出between and包含了该表的大部分数据，这种情况下，一个表扫描可能更快，因为它要求更少量的查询。但是，如果这样的一个查询使用了 LIMIT 来检索只是少量的记录时，MySql 还是会使用索引，因为它能够更快地找到这点记录并将其返回。**
+
 5. possible_key：
 
    表示哪些索引可以用于查找表中的列。查询涉及到的字段上若存在索引，则该索引将被列出，但是不一定使用。
 
 6. key：**（如何决定使用的key？？？？）**
+
+   <font color=red>一个表可以有多个可以使用的索引， 但是执行的时候只能使用一个或者不使用</font>
 
    实际使用到的索引，如果为null则没有使用到索引
 
@@ -227,7 +282,19 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
 
    上图显示了一个常量""用于比较t1上的idx_t1索引，test.t1.ID(库表列)用于比较t2和t3上的primary key。
 
-9. row
+9. row：扫描的行
 
-10. extra
+10. extra：包含不适合在其他列中显示但是非常重要的其他信息。
+
+    - using filesort：mysql使用了一个不基于索引的排序。
+
+      <font color=red>解决using filesort可以让order by的字段与where中的字段相同，或与where中的字段组成复合索引</font>
+
+      下面基于(1, 2, 3)建立的索引。在第一条sql中，使用了col1进行过滤，并使用col3进行排序，因为中间缺少col2所以col3无法通过索引排序。而第二天sql中，通过col1过滤完后刚好通过col2，col3进行排序，可以使用索引排序。（\G表示竖着显示结果）
+
+      ![image-20210809221726639](img/mysql高级/image-20210809221726639.png)
+
+    - using temporary：使用了临时表保存中间结果，常见于order by和 group by。
+
+    - using index：使用了覆盖索引
 
