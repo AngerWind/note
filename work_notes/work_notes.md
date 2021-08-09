@@ -1362,6 +1362,319 @@ http://aiezu.com/article/linux_curl_command.html
 |                                                              |                                                              |                                                              |
 |                                                              |                                                              |                                                              |
 
+#### scp 主机之间拷贝文件
+
+格式： scp -r user@host:path user@host:path， 
+
+选项：-r 递归拷贝
+
+~~~shell
+# 分别以用户tiger1， tiger2登录192.168.0.1， 192.168.0.2
+# 然后将tiger1机器上的jdk拷贝到tiger2机器上的/opt/module路径下
+# 输入命令后会要求分别输入tiger1的密码和tiger2的密码
+scp -r tiger1@192.168.0.1:/opt/module/jdk tiger2@192.168.0.2:/opt/module
+
+# 如果tiger1就是本机还可以省略用户和地址
+scp -r /opt/module/jdk tiger2@192.168.0.2:/opt/module
+~~~
+
+
+
+#### rsync 主机之间同步文件
+
+http://www.ruanyifeng.com/blog/2020/08/rsync.html
+
+r表示remote， sync表示同步， 使用该命令需要两台机器都安装有rsync命令
+
+rsync 默认使用 SSH 进行远程登录和数据传输。
+
+rsync 的最大特点是会检查发送方和接收方已有的文件，仅传输有变动的部分（默认规则是文件大小或修改时间有变动）
+
+格式： rsync  user@host:path user@host:path 
+
+-r表示递归同步
+
+-a表示递归同步，并且同步元信息（比如修改时间、权限等）。由于 rsync 默认使用文件大小和修改时间决定文件是否需要更新，所以`-a`比`-r`更有用
+
+-v表示显示同步过程
+
+~~~shell
+# 分别以用户tiger1， tiger2登录192.168.0.1， 192.168.0.2
+# 然后将tiger1机器上的jdk拷贝到tiger2机器上的/opt/module路径下
+# 输入命令后会要求分别输入tiger1的密码和tiger2的密码
+# 这样在tiger2主机上就会生产/opt/module/jdk
+sync -av tiger1@192.168.0.1:/opt/module/jdk tiger2@192.168.0.2:/opt/module
+
+# 如果只想拷贝jdk下的所有文件, 可以在jdk下后面添加/
+sync -av tiger1@192.168.0.1:/opt/module/jdk/ tiger2@192.168.0.2:/opt/module
+
+# 如果tiger1就是本机还可以省略用户和地址
+scp -r /opt/module/jdk tiger2@192.168.0.2:/opt/module
+~~~
+
+`-n` 参数
+
+如果不确定 rsync 执行后会产生什么结果，可以先用`-n`或`--dry-run`参数模拟执行的结果。
+
+ ```bash
+$ rsync -anv source/ destination
+ ```
+
+上面命令中，`-n`参数模拟命令执行的结果，并不真的执行命令。`-v`参数则是将结果输出到终端，这样就可以看到哪些内容会被同步。
+
+ `--delete` 参数
+
+默认情况下，rsync 只确保源目录的所有内容（明确排除的文件除外）都复制到目标目录。它不会使两个目录保持相同，并且不会删除文件。如果要使得目标目录成为源目录的镜像副本，则必须使用`--delete`参数，这将删除只存在于目标目录、不存在于源目录的文件。
+
+ ```bash
+ $ rsync -av --delete source/ destination
+ ```
+
+上面命令中，`--delete`参数会使得`destination`成为`source`的一个镜像。
+
+
+
+#### ssh 登录主机
+
+格式： ssh -l port user@host
+
+port表示ssh的端口，user表示登录的用户名，host表示登录机器的地址。
+
+端口默认为22.
+
+不写user默认为当前用户的用户名
+
+~~~shell
+# 当前登录用户为tiger
+ssh 192.168.0.1
+
+# 上面相当于
+ssh -l 22 tiger@192.168.0.1
+~~~
+
+修改ssh端口
+
+~~~shell
+vim /etc/ssh/sshd_config
+
+# 添加并保持
+Port 12345
+
+# 重启ssh
+systemctl restart sshd
+~~~
+
+
+
+#### ssh免密登录
+
+https://blog.csdn.net/universe_hao/article/details/52296811
+
+首先，说明一下我们要做的是，serverA 服务器的 usera 用户免密码登录 serverB 服务器的 userb用户。
+
+我们先使用usera 登录 serverA 服务器
+
+~~~shell
+[root@serverA ~]# su - usera
+[usera@serverA ~]$ pwd
+/home/usera
+~~~
+
+然后在serverA上生成密钥对
+
+~~~shell
+[usera@serverA ~]$ ssh-keygen -t rsa
+Generating public/private rsa key pair.
+Enter file in which to save the key (/home/usera/.ssh/id_rsa): 
+Created directory '/home/usera/.ssh'.
+Enter passphrase (empty for no passphrase): 
+Enter same passphrase again: 
+Your identification has been saved in /home/usera/.ssh/id_rsa.
+Your public key has been saved in /home/usera/.ssh/id_rsa.pub.
+The key fingerprint is:
+39:f2:fc:70:ef:e9:bd:05:40:6e:64:b0:99:56:6e:01 usera@serverA
+The key's randomart image is:
++--[ RSA 2048]----+
+|          Eo*    |
+|           @ .   |
+|          = *    |
+|         o o .   |
+|      . S     .  |
+|       + .     . |
+|        + .     .|
+|         + . o . |
+|          .o= o. |
++-----------------+
+~~~
+
+![img](img/work_notes/20160824101737397)
+
+
+此时会在/home/usera/.ssh目录下生成密钥对
+
+```shell
+[usera@serverA ~]$ ls -la .ssh
+总用量 16
+drwx------  2 usera usera 4096  8月 24 09:22 .
+drwxrwx--- 12 usera usera 4096  8月 24 09:22 ..
+-rw-------  1 usera usera 1675  8月 24 09:22 id_rsa
+-rw-r--r--  1 usera usera  399  8月 24 09:22 id_rsa.pub
+```
+
+然后将公钥上传到serverB 服务器的，并以userb用户登录
+
+```shell
+[usera@portalweb1 ~]$ ssh-copy-id userb@10.124.84.20
+The authenticity of host '10.124.84.20 (10.124.84.20)' can't be established.
+RSA key fingerprint is f0:1c:05:40:d3:71:31:61:b6:ad:7c:c2:f0:85:3c:cf.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '10.124.84.20' (RSA) to the list of known hosts.
+userb@10.124.84.29's password: 
+Now try logging into the machine, with "ssh 'userb@10.124.84.20'", and check in:
+
+  .ssh/authorized_keys
+
+to make sure we haven't added extra keys that you weren't expecting.
+```
+
+
+这个时候usera的公钥文件内容会追加写入到userb的 .ssh/authorized_keys 文件中
+
+```shell
+[usera@serverA ~]$ cat .ssh/id_rsa.pub 
+ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEA2dpxfvifkpswsbusPCUWReD/mfTWpDEErHLWAxnixGiXLvHuS9QNavepZoCvpbZWHade88KLPkr5XEv6M5RscHXxmxJ1IE5vBLrrS0NDJf8AjCLQpTDguyerpLybONRFFTqGXAc/ximMbyHeCtI0vnuJlvET0pprj7bqmMXr/2lNlhIfxkZCxgZZQHgqyBQqk/RQweuYAiuMvuiM8Ssk/rdG8hL/n0eXjh9JV8H17od4htNfKv5+zRfbKi5vfsetfFN49Q4xa7SB9o7z6sCvrHjCMW3gbzZGYUPsj0WKQDTW2uN0nH4UgQo7JfyILRVZtwIm7P6YgsI7vma/vRP0aw== usera@serverA
+```
+
+查看serverB服务器userb用户下的 ~/.ssh/authorized_keys文件，内容是一样的，此处我就不粘贴图片了。
+
+```shell
+[userb@serverB ~]$ cat .ssh/authorized_keys 
+ssh-rsa AAAAB3NzaC1yc2EAAAABIwAAAQEA2dpxfvifkpswsbusPCUWReD/mfTWpDEErHLWAxnixGiXLvHuS9QNavepZoCvpbZWHade88KLPkr5XEv6M5RscHXxmxJ1IE5vBLrrS0NDJf8AjCLQpTDguyerpLybONRFFTqGXAc/ximMbyHeCtI0vnuJlvET0pprj7bqmMXr/2lNlhIfxkZCxgZZQHgqyBQqk/RQweuYAiuMvuiM8Ssk/rdG8hL/n0eXjh9JV8H17od4htNfKv5+zRfbKi5vfsetfFN49Q4xa7SB9o7z6sCvrHjCMW3gbzZGYUPsj0WKQDTW2uN0nH4UgQo7JfyILRVZtwIm7P6YgsI7vma/vRP0aw== usera@serverA
+```
+
+另外我们要注意，.ssh目录的权限为700，其下文件authorized_keys和私钥的权限为600。否则会因为权限问题导致无法免密码登录。我们可以看到登陆后会有known_hosts文件生成。
+
+```shell
+[useb@serverB ~]$ ls -la .ssh
+total 24
+drwx------.  2 useb useb 4096 Jul 27 16:13 .
+drwx------. 35 useb useb 4096 Aug 24 09:18 ..
+-rw-------   1 useb useb  796 Aug 24 09:24 authorized_keys
+-rw-------   1 useb useb 1675 Jul 27 16:09 id_rsa
+-rw-r--r--   1 useb useb  397 Jul 27 16:09 id_rsa.pub
+-rw-r--r--   1 useb useb 1183 Aug 11 13:57 known_hosts
+```
+
+这样做完之后我们就可以免密码登录了
+
+```shell
+[usera@serverA ~]$ ssh userb@10.124.84.20
+```
+
+另外，将公钥拷贝到服务器的~/.ssh/authorized_keys文件中方法有如下几种：
+1、将公钥通过scp拷贝到服务器上，然后追加到~/.ssh/authorized_keys文件中，这种方式比较麻烦。scp -P 22 ~/.ssh/id_rsa.pub user@host:~/。
+2、通过ssh-copy-id程序，就是我演示的方法，ssh-copyid user@host即可
+3、可以通过cat ~/.ssh/id_rsa.pub | ssh -p 22 user@host ‘cat >> ~/.ssh/authorized_keys’，这个也是比较常用的方法，因为可以更改端口号。
+
+
+
+
+
+#### su和sudo
+
+su user：在当前shell窗口开启一个新的shell窗口，并且切换用户的身份为指定的用户。`su`与`su root`相同
+
+> su与su - 的区别
+
+su user只是切换用户的身份，但是不切换用户环境变量。
+
+切换用户的同时切换用户环境变量需要使用 `su - root`
+
+~~~shell
+# 当前执行用户为tiger
+# 添加用户环境变量
+vim ~/.profile
+# 添加
+export PATH=$PATH:/home/tiger/bin
+~~~
+
+![image-20210417204501699](img/work_notes/image-20210417204501699.png)
+
+![image-20210417204655180](img/work_notes/image-20210417204655180.png)
+
+
+
+> sudo与sudo -i
+
+sudo command是将当前用户的权限提升为root权限并执行command命令
+
+执行该命令需要用户是sudoers。不是sudoers将无法使用。
+
+可以将sudoers理解为root的私人账户， 即必要时候可以使用root的权限。
+
+![image-20210417205120797](img/work_notes/image-20210417205120797.png)
+
+
+
+将用户提升为sudoers：
+
+1. 切换到root用户
+
+2. 修改/etc/sudoers文件
+
+3. 在%whell下面输入`tiger ALL=ALL ALL`或者`tiger ALL=ALL NOPASSWD:ALL`
+
+   NOPASSWD的意思是在使用sudo时不需要密码
+
+   ![image-20210417210637282](img/work_notes/image-20210417210637282.png)
+
+sudo -i: 为了频繁的执行某些只有超级用户才能执行的权限，而不用每次输入密码，可以使用该命令。
+
+> sudo与su的区别
+
+- su是切换用户身份， 需要使用su -才会切换到root的用户环境变量。而sudo是使用root的身份执行命令，使用sudo时使用的是root的用户环境变量 
+- su 输入的密码是指定用户的密码， 而sudo输入的是root的密码。
+
+
+
+#### alias命令别名
+
+http://c.biancheng.net/linux/alias.html
+
+命令别名可以将一串长的命令生成一个别名，当使用这个别名命令时就相当于使用那个长的命令。
+
+> 定义别名
+
+```shell
+# 等号（=）前后不能有空格，否则就会出现语法错误了。
+# 如果value中有空格或tab，则value一定要使用引号（单、双引号都行）括起来。
+alias [name[=value]]
+```
+
+~~~shell
+[tiger@hadoop103 ~]$ alias hv="hadoop version"
+[tiger@hadoop103 ~]$ hv
+Hadoop 3.2.1
+~~~
+
+> 查看别名
+
+- 直接使用`alias`即可查看所有定义的别名 
+
+- 使用alias加参数查看指定的别名
+
+~~~shell
+[tiger@hadoop103 ~]$ alias
+alias egrep='egrep --color=auto'
+alias home='cd ~'
+alias hv='hadoop version'
+
+[tiger@hadoop103 ~]$ alias hv
+alias hv='hadoop version'
+~~~
+
+
+
 
 
 #### nohup
