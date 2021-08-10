@@ -1,0 +1,6 @@
+backward index scan 倒叙索引？
+
+using where表示需要回表操作？
+
+explain中先查的是驱动表！！！
+如何理解小表驱动大表？
