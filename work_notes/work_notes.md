@@ -3620,11 +3620,24 @@ public interface HelloInterface2 {
 }
 ~~~
 
-当子类实现的两个接口中有相同方法签名（方法名相同，参数类型及顺序相同）的default方法时， 子类必须实现该default方法。否则编译失败。
+**当子类实现的两个接口中有相同方法签名（方法名相同，参数类型及顺序相同）的default方法时， 子类必须实现该default方法。否则编译失败。**
 
-当子类实现的接口中有与抽象类中相同方法签名的default方法时， 默认调用父类的方法。
+**当子类实现的接口中有与抽象类中相同方法签名的default方法时， 默认调用父类的方法。**
 
-当子类实现的两个接口或者接口和抽象类有相同的方法签名， 但是两个方法的返回值不同时，将会编译失败。
+**当子类实现的两个接口或者接口和抽象类有相同的方法签名， 但是两个方法的返回值<font color=red>不兼容</font>，将会编译失败。**
+
+下面代码是可以编译成功的， 因为Integer兼容Number。但是UserServiceImpl返回Number就不兼容了
+
+~~~java
+    public interface UserService{ Number add(String name); }
+
+    public interface UserService1{ Integer add(String name); }
+
+    public static class UserServiceImpl implements UserService, UserService1{
+        @Override
+        public Integer add(String name) { return null; }
+    }
+~~~
 
 
 
@@ -3658,4 +3671,257 @@ https://blog.csdn.net/rain_zhao_0102/article/details/106041697
 
    ![image-20210617202019299](img/image-20210617202019299.png)
 
-可以发现，sun包下的类已经可以读取到相应的java文件源码了
+可以发现，sun包下的类已经可以读取到相应的java
+
+
+
+
+
+#### Ubuntu 安装OpenLDAP
+
+https://otodiginet.com/software/how-to-install-openldap-on-ubuntu-20-04-lts/
+
+https://www.cnblogs.com/xwdreamer/p/3469951.html
+
+> Install OpenLDAP
+
+~~~shell
+sudo apt update
+sudo apt -y install slapd ldap-utils
+~~~
+
+- 在使用apt安装ldap的使用遇到了一下问题：
+
+  ~~~shell
+  sudo apt-get update
+  sudo: unable to resolve host {hostname}: Temporary failure in name resolution
+  ~~~
+
+  解决办法在https://askubuntu.com/questions/1343609/sudo-unable-to-resolve-host-hostname-temporary-failure-in-name-resolution
+
+  ![image-20210719194724400](img/image-20210719194724400.png)
+
+  问题在于没有在hosts中配置hostname为127.0.0.1， 导致无法解析hostname，在hosts中添加上就行了。
+
+- 安装到一半会要求输入管理员密码
+
+  <font color=red>需要注意的是不要在SecureCRT中安装，不然看不到安装的图形界面</font>
+
+  ![image-20210719195344204](img/image-20210719195344204.png)
+
+  ![image-20210719195401970](img/image-20210719195401970.png)
+
+- 安装完成后可以使用如下命令查看是否安装成功
+
+  ~~~shell
+  sudo slapcat
+  ~~~
+
+  ![image-20210719195506277](img/image-20210719195506277.png)
+
+  
+
+> Configure OpenLDAP
+
+刚安装的ldap还处于最初始的配置， 需要对其进行重新配置如下：
+
+~~~shell
+dpkg-reconfigure slapd
+~~~
+
+使用该命令后会出现如下几个界面， 好好看英文说明，很简单。
+
+![image-20210719200552378](img/image-20210719200552378.png)
+
+![image-20210719200605720](img/image-20210719200605720.png)
+
+![image-20210719200625132](img/image-20210719200625132.png)
+
+![image-20210719200641200](img/image-20210719200641200.png)
+
+![image-20210719200652171](img/image-20210719200652171.png)
+
+![image-20210719200658653](img/image-20210719200658653.png)
+
+![image-20210719200702158](img/image-20210719200702158.png)
+
+安装完成后查看并启动OpenLDAP
+
+~~~shell
+service slapd status
+service slapd start
+~~~
+
+> 相关
+
+- ldap配置文件在/etc/ldap目录下的ldap.conf
+
+- 关于ldap.conf的配置说明可以使用man ldap.conf查看
+
+- 关于OpenLDAP的有关命令如下， 参数使用-h查看， 详细帮助使用man命令查看
+
+  ![image-20210719202131724](img/image-20210719202131724.png)
+
+  ![image-20210719202136876](img/image-20210719202136876.png)
+
+
+
+
+
+#### 关于WeekReference的说明
+
+https://www.jianshu.com/p/964fbc30151a
+
+WeakReference如字面意思，弱引用， **当一个对象仅仅被weak reference（弱引用）指向, 而没有任何其他strong reference（强引用）指向的时候, 如果这时GC运行, 那么这个对象就会被回收，不论当前的内存空间是否足够，这个对象都会被回收。**
+
+> 认识WeakReference类
+
+WeakReference继承Reference，其中只有两个构造函数：
+
+```java
+public class WeakReference<T> extends Reference<T> {
+    public WeakReference(T referent) { super(referent); }
+    public WeakReference(T referent, ReferenceQueue<? super T> q) { 
+        super(referent, q); 
+    }
+}
+```
+
+WeakReference(T referent)：referent就是被弱引用的对象，可以如下使用，并且通过get()方法来获取被引用对象。
+
+```java
+WeakReference<Apple> appleWeakReference = new WeakReference<>(apple);
+Apple apple2 = appleWeakReference.get();
+```
+
+WeakReference(T referent, ReferenceQueue<? super T> q)：与上面的构造方法比较，多了个ReferenceQueue，**在对象被回收后，会把弱引用对象，也就是WeakReference对象或者其子类的对象，放入队列ReferenceQueue中，注意不是被弱引用的对象，被弱引用的对象已经被回收了。**
+
+> 使用WeakReference
+
+下面是使用继承WeakReference的方式来使用软引用，并且不使用ReferenceQueue。
+
+```java
+public class Apple {
+    private String name;
+    public Apple(String name) {
+        this.name = name;
+    }
+    /**
+     * 覆盖finalize，在回收的时候会执行。
+     * @throws Throwable
+     */
+    @Override
+    protected void finalize() throws Throwable {
+        super.finalize();
+        System.out.println("Apple： " + name + " finalize。");
+    }
+}
+```
+
+继承WeakReference的Salad
+
+```java
+public class Salad extends WeakReference<Apple> {
+    public Salad(Apple apple) {super(apple);}
+}
+```
+
+Clent调用和输出
+
+```java
+public class Client {
+    public static void main(String[] args) {
+        Salad salad = new Salad(new Apple("红富士"));
+        //通过WeakReference的get()方法获取Apple
+        System.out.println("Apple:" + salad.get());
+        System.gc();
+        try {
+            //休眠一下，在运行的时候加上虚拟机参数-XX:+PrintGCDetails，输出gc信息，确定gc发生了。
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        //如果为空，代表被回收了
+        if (salad.get() == null) {
+            System.out.println("clear Apple");
+        }
+    }
+}
+```
+
+输出如下：
+
+```rust
+Apple:Apple{name='红富士'}, hashCode:1846274136
+[GC (System.gc()) [PSYoungGen: 3328K->496K(38400K)] 3328K->504K(125952K), 0.0035102 secs] [Times: user=0.00 sys=0.00, real=0.01 secs] 
+[Full GC (System.gc()) [PSYoungGen: 496K->0K(38400K)] [ParOldGen: 8K->359K(87552K)] 504K->359K(125952K), [Metaspace: 2877K->2877K(1056768K)], 0.0067965 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+Apple： 红富士 finalize。
+clear Apple。
+```
+
+>  ReferenceQueue的使用
+
+```java
+public class Client2 {
+    public static void main(String[] args) {
+        ReferenceQueue<Apple> appleReferenceQueue = new ReferenceQueue<>();
+        WeakReference<Apple> appleWeakReference = new WeakReference<Apple>(new Apple("青苹果"), appleReferenceQueue);
+        WeakReference<Apple> appleWeakReference2 = new WeakReference<Apple>(new Apple("毒苹果"), appleReferenceQueue);
+
+        System.out.println("=====gc调用前=====");
+        Reference<? extends Apple> reference = null;
+        while ((reference = appleReferenceQueue.poll()) != null ) {
+            //不会输出，因为没有回收被弱引用的对象，并不会加入队列中
+            System.out.println(reference);
+        }
+        System.out.println(appleWeakReference.get());
+        System.out.println(appleWeakReference2.get());
+
+        System.out.println("=====调用gc=====");
+        System.gc();
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        System.out.println("=====gc调用后=====");
+
+        //下面两个输出为null,表示对象被回收了
+        System.out.println(appleWeakReference.get());
+        System.out.println(appleWeakReference2.get());
+
+        //输出结果，并且就是上面的appleWeakReference、appleWeakReference2，再次证明对象被回收了
+        Reference<? extends Apple> reference2 = null;
+        while ((reference2 = appleReferenceQueue.poll()) != null ) {
+            //如果使用继承的方式就可以包含其他信息了
+            System.out.println("appleReferenceQueue中：" + reference2);
+        }
+    }
+}
+```
+
+结果输出如下：
+
+```csharp
+=====gc调用前=====
+Apple{name='青苹果'}, hashCode:1627674070
+Apple{name='毒苹果'}, hashCode:1360875712
+=====调用gc=====
+Apple： 毒苹果 finalize
+Apple： 青苹果 finalize
+=====gc调用后=====
+null
+null
+appleReferenceQueue中：java.lang.ref.WeakReference@6e0be858
+appleReferenceQueue中：java.lang.ref.WeakReference@61bbe9ba
+```
+
+可以看到在队列中（ReferenceQueue），调用gc之前是没有内容的，调用gc之后，对象被回收了，并且弱引用对象appleWeakReference和appleWeakReference2被放入了队列中。
+
+
+
+### JDK动态代理
+
+#### JDK动态代理的使用
+
