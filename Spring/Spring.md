@@ -761,3 +761,93 @@ protected void afterRefresh(ConfigurableApplicationContext context, ApplicationA
 	}
 ~~~
 
+
+
+
+
+#### 关于ShutdownHook的说明
+
+> ShutdownHook的作用
+
+在java程序中，很容易在进程结束时添加一个钩子，即ShutdownHook。通常在程序启动时加入以下代码即可
+
+```java
+Runtime.getRuntime().addShutdownHook(new Thread(){
+    @Override
+    public void run() {
+        System.out.println("I'm shutdown hook...");
+    }
+});
+```
+
+有了ShutdownHook我们可以
+
+- 在进程结束时做一些善后工作，例如释放占用的资源，保存程序状态等
+- 为优雅（平滑）发布提供手段，在程序关闭前摘除流量
+
+> 何时被调用
+
+我们通过`Runtime.getRuntime().addShutdownHook()`是其实调用了`ApplicationShutdown#add()`方法并保存在了Map里面。
+
+当调用runHooks时将调用所有的hook并行执行。
+
+~~~java
+private static IdentityHashMap<Thread, Thread> hooks;
+
+static synchronized void add(Thread hook) {
+        if(hooks == null)
+            throw new IllegalStateException("Shutdown in progress");
+
+        if (hook.isAlive())
+            throw new IllegalArgumentException("Hook already running");
+
+        if (hooks.containsKey(hook))
+            throw new IllegalArgumentException("Hook previously registered");
+
+        hooks.put(hook, hook);
+    }
+
+    static void runHooks() {
+        Collection<Thread> threads;
+        synchronized(ApplicationShutdownHooks.class) {
+            threads = hooks.keySet();
+            hooks = null;
+        }
+
+        for (Thread hook : threads) {
+            hook.start();
+        }
+        for (Thread hook : threads) {
+            try {
+                hook.join();
+            } catch (InterruptedException x) { }
+        }
+    }
+~~~
+
+那么ApplicationShutdown#runHooks()在什么时候调用呢？
+
+~~~java
+ static {
+        try {
+            Shutdown.add(1 /* shutdown hook invocation order */,
+                false /* not registered if shutdown in progress */,
+                new Runnable() {
+                    public void run() {
+                        runHooks();
+                    }
+                }
+            );
+            hooks = new IdentityHashMap<>();
+        } catch (IllegalStateException e) {
+            // application shutdown hooks cannot be added if
+            // shutdown is in progress.
+            hooks = null;
+        }
+    }
+~~~
+
+
+
+
+
