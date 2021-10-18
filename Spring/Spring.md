@@ -851,3 +851,65 @@ static synchronized void add(Thread hook) {
 
 
 
+#### 关于AQS的说明
+
+> 框架基础
+
+AQS，线程同步器其实就是一个获取和释放共享资源，以及获取共享资源失败如何处理的框架，在其内部维护了两个重要的东西：
+
+- voliatle int state(代表共享资源)，获取共享资源和释放共享资源的过程大致上就是对共享资源的修改。
+
+  ![image-20211017235902218](img/Spring/image-20211017235902218.png)
+
+- 一个FIFO的双向链表(代表抢锁失败的线程的一个队列)， **其基础逻辑就是把获取共享资源失败的线程加入到队列结尾，并将线程park住。队列头部是一个代表占用线程的一个虚拟节点，该节点释放共享资源的时候会唤醒他的下一个节点(如果需要唤醒的话)。**
+
+AQS定义了两种资源共享方式：**Exclusive(独占，即某一时刻只能有一个线程能够成功获得锁，比如互斥锁ReentrantLock)， Share(共享，即某一时刻可以有多个线程获得锁， 比如Semaphore、CountDownLatch )。**
+
+不同的线程同步器竞争共享资源的方式也不同，使用AQS的时候只要实现对共享资源state的获取与释放即可，至于具体的获取资源失败的线程的队列的维护(获取资源失败入队列，释放资源出队列并唤醒下一节点， 中断或者获取资源超时出队列)交给AQS维护就好了。
+
+自定义的同步器实现主要可以实现一下集中方法：
+
+    ~~~java
+// 尝试以独占的方式获取资源，成功返回true，否则false
+protected boolean tryAcquire(int);
+// 尝试释放资源，成功释放返回true， 否则false
+protected boolean tryRelease(int arg);
+
+// 尝试以共享共享的方式获取资源， 获取失败返回负值。
+// 如果在共享模式下获取成功但后续节点在共享模式获取不能成功，则为零。
+// 如果在共享模式下获取成功并且后续节点在共享模式获取也可能成功，则为正值。
+protected int tryAcquireShared(int arg);
+protected boolean tryReleaseShared(int arg);
+
+// 该线程是否正在独占资源，只有用到condition才需要实现他
+protected boolean isHeldExclusively();
+    ~~~
+
+一般来说，自定义同步器要么是独占方法，要么是共享方式，**他们也只需实现tryAcquire-tryRelease、tryAcquireShared-tryReleaseShared中的一种即可**。但AQS也支持自定义同步器同时实现独占和共享两种方式，如ReentrantReadWriteLock。
+
+
+
+> 节点状态解析
+
+对于每一个等待获取资源的线程， AQS都会将其包装成一个Node节点并把它加入到队列中。Node节点中包含了等待线程的引用，该线程获取锁的模式(独占/共享)，当前节点的前后节点的引用，以及最重要的节点的等待状态，共有5种取值CANCELLED、SIGNAL、CONDITION、PROPAGATE、0。
+
+- **CANCELLED**(1)：表示当前结点已取消调度。当timeout或被中断（响应中断的情况下），会触发变更为此状态，进入该状态后的结点将不会再变化。
+- **SIGNAL**(-1)：表示后续结点正在或者马上被park住，当前节点释放资源后需要unpark后续节点
+- **CONDITION**(-2)：表示结点等待在Condition上，当其他线程调用了Condition的signal()方法后，CONDITION状态的结点将**从等待队列转移到同步队列中**，等待获取同步锁。
+- **PROPAGATE**(-3)：该状态是只在共享模式下使用的一个中间状态，表示下一个acquireShared操作需要无条件的唤醒下一个节点，该状态后续为专门讲到。
+- **0**：新结点入队时的默认状态。
+
+注意，**负值表示结点处于有效等待状态，而正值表示结点已被取消。所以源码中很多地方用>0、<0来判断结点的状态是否正常**。
+
+
+
+> 独占模式解析
+
+
+
+
+
+
+
+
+
