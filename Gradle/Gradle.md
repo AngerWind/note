@@ -235,7 +235,7 @@ Gradle 的核心是有意为的自动化提供很少的内容。所有有用的�
 
 > 插件的分类
 
-
+插件的分类主要有两种， 脚本插件和二进制插件， 二进制插件主要是通过实现Plugin接口或者gradle DSL语言编写的，可以出在在jar包中。脚本插件是额外的build scirpt， 用来进一步配置构建过程。
 
 > Binary Plugin
 
@@ -330,9 +330,9 @@ Gradle 的核心是有意为的自动化提供很少的内容。所有有用的�
   }
   ```
 
-- 插件的获取规则
+- 插件的解析策略
 
-  使用plugins DSL引入插件，只允许使用插件的id和version，所以gradle需要某种方法来获取插件所在依赖的groupid，artifactid和version。获取规则就是${plugin.id}:${plugin.id}.gradle.plugin:${plugin.version}
+  使用plugins DSL引入插件，只允许使用插件的id和version，所以gradle需要某种方法来获取插件所在依赖的groupid，artifactid和version。获取规则就是${plugin.id}:${plugin.id}.gradle.plugin:${plugin.version}，gradle将会使用这个gav在仓库中寻找该插件。
 
 - 发布插件到私有仓库
 
@@ -378,7 +378,7 @@ Gradle 的核心是有意为的自动化提供很少的内容。所有有用的�
 
   使用pluginManagement{}块对插件进行管理，该block块只能出现在settings.gradle文件中。
 
-  - 定义插件仓库
+  - 自定义插件仓库
 
     默认情况下，plugins DSL从公开的[Gradle Plugin Portal](https://plugins.gradle.org/)中获取并解析插件。
 
@@ -399,14 +399,333 @@ Gradle 的核心是有意为的自动化提供很少的内容。所有有用的�
     ~~~
 
     上面指定Gradle先从本地maven仓库获取插件，然后从阿里云插件仓库，maven中央仓库，gradle的公开仓库获取插件，最后从位于'./ivy-repo'的lvy仓库获取插件。如果不写gradlePluginPortal()就不会从gradle的公开仓库获取插件。
+    
+  - 插件版本管理
+
+    ~~~groovy
+    // settings.gradle 在settings文件中定义插件的版本， 使用了变量
+    pluginManagement {
+      plugins {
+            id 'com.example.hello' version "${helloPluginVersion}"
+        }
+    }
+    // build.gradle 使用插件可以不指定版本
+    plugins {
+        id 'com.example.hello'
+    }
+    
+    // gradle.properties 在gradle.properties中指定插件的版本
+    helloPluginVersion=1.0.0
+    ~~~
+
+  - 自定义插件解析策略
+
+    如上插件解析策略所说，gradle将会在仓库中寻找gav为${plugin.id}:${plugin.id}.gradle.plugin:${plugin.version}的jar包来获取插件，但是我们也可以自定义解析策略
+
+    ~~~groovy
+    pluginManagement {
+            resolutionStrategy {
+            eachPlugin {
+                // id为com.example.plugin的插件, namesapce为com.plugin，name为plugin
+                if (requested.id.namespace == 'com.example') {
+                    useVersion("1.0") // 使用指定的版本
+                    useModule('com.example:sample-plugins:1.0.0') // 使用指定的gav
+                }
+            }
+        }
+    }
+    ~~~
+
+    
 
 - Including the plugin from an external jar defined as a buildscript dependency (see [Applying plugins using the buildscript block](https://docs.gradle.org/current/userguide/plugins.html#sec:applying_plugins_buildscript)).
 
-- Defining the plugin as a source file under the buildSrc directory in the project (see [Using buildSrc to extract functional logic](https://docs.gradle.org/current/userguide/organizing_gradle_projects.html#sec:build_sources)).
+  如果因为某种原因而无法使用plugins DSL来应用插件， 还有一种老旧的写法
 
-- Defining the plugin as an inline class declaration inside a build script.
+  ~~~groovy
+  buildscript {
+      repositories {
+          gradlePluginPortal()
+      }
+      dependencies {
+          // 引入指定的插件的jar包
+          classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.8.5'
+      }
+  }
+  
+  // 应用插件
+  apply plugin: 'com.jfrog.bintray'
+  ~~~
+
+- 脚本插件
+
+  ~~~groovy
+  // 脚本插件可以存放在文件系统
+  apply from: 'other.gradle'
+  ~~~
+
+  
+
+#### 官方文档翻译-构建的生命周期(Understanding the Build Lifecycle)
+
+gradle是一门基于依赖的编程语言，这意味着你可以定义task以及他们的依赖关系，gradle确保这些task将会按照依赖的顺序来执行，每个task只执行一次。这些task组成一个dag。build script就是用来配置这样一个dag。
+
+> 构建步骤
+
+gradle有三个不同的步骤
+
+- 初始化
+
+  Gradle支持单项目与多项目构建。在初始化阶段，Gradle将会决定哪些项目参与构建，并为每个项目创建一个[Project](https://docs.gradle.org/current/dsl/org.gradle.api.Project.html)实例
+
+- 配置
+
+  在这个阶段，Project实例将会被配置，所有参与构建的项目的build script都将被执行。
+
+- 执行
+
+  Gradle确定要执行的task， task由传递给`gradle`命令的参数来决定，然后执行这些任务。
+
+> Settings文件
+
+在build script之外，Gradle还定义了一个settings文件， 该文件将在初始化阶段执行。在多项目构建中，该文件是必须的，并且要存在根项目的目录下。该文件中定义了哪些项目是这个多项目构建的一部分。对于单项目构建来说，他是可选的。除了定义包含的项目之外，您可能还需要将libraries添加到您的构建脚本类路径（请参阅[组织 Gradle 项目](https://docs.gradle.org/current/userguide/organizing_gradle_projects.html#organizing_gradle_projects)）。让我们首先来看一个单项目构建：
+
+~~~groovy
+// settings.gradle
+rootProject.name = 'basic'
+println 'This is executed during the initialization phase.'
+
+// build.gradle
+println 'This is executed during the configuration phase.'
+
+tasks.register('configured') {
+    println 'This is also executed during the configuration phase, because :configured is used in the build.'
+}
+
+tasks.register('test') {
+    doLast {
+        println 'This is executed during the execution phase.'
+    }
+}
+
+tasks.register('testBoth') {
+	doFirst {
+	  println 'This is executed first during the execution phase.'
+	}
+	doLast {
+	  println 'This is executed last during the execution phase.'
+	}
+	println 'This is executed during the configuration phase as well, because :testBoth is used in the build.'
+}
+~~~
+
+执行`gradle test testBoth`输出
+
+~~~text
+This is executed during the initialization phase.
+This is executed during the configuration phase.
+This is executed during the configuration phase as well, because :testBoth is used in the build.
+This is executed during the execution phase.
+This is executed first during the execution phase.
+This is executed last during the execution phase.
+~~~
+
+> 初始化
+
+Gradle如何决定单项目构建还是多项目构建？
+
+如果你在一个没有settings.gradle的项目中执行Gradle，Gradle将会使用一下方式来查找settings.gradle文件。
+
+- 先查找父目录，如果没有就当做一个单项目构建
+- 如果找到，检查当前项目是否是settings.gradle定义的多项目构建的一部分。如果是，作为多项目构建。否则当做当项目构建。
+
+如果你在有settings.gradle的项目中执行Gradle
+
+- 如果settings.gradle定义了多项目构建，执行多项目构建
+- 如果settings.gradle没有定义多项目构建， 执行单项目构建
+
+settings.gradle的自动查找只适用于具有默认项目结构层次的项目，对于其他结构层次的项目，需要在settings.gradle所在的目录执行Gradle。查看[Executing tasks by their fully qualified name](https://docs.gradle.org/current/userguide/intro_multi_project_builds.html#sec:executing_tasks_by_fully_qualified_name)关于如何在根目录下执行部分构建。
+
+然后Gradle为每一个项目创建Project对象，默认每个Project对象的名称与其顶级目录相同，并且除根项目外的每个项目都有一个父项目。任何项目都可以有子项目。
+
+> 单项目构建的配置与执行
+
+对于单项目构建，初始化之后的流程非常简单。build script针对在初始化阶段创建的Project对象执行。任何Gradle查找名称与传递给命令行参数的名称相同的任务。如果任务存在，他们讲按照传递给他们的顺序作为单独的构建执行。
+
+多项目构建的配置与执行将在[Configuration and Execution](https://docs.gradle.org/current/userguide/multi_project_configuration_and_execution.html#configuration_and_execution)中讨论
 
 
 
+> 监听生命周期
 
+build script可以在构建的整个生命周期接收到通知，监听通知一般采用两种形式：实现特定的监听器接口， 或者提供一个闭包以在接收到通知时执行。下面例子使用闭包的形式，实现特定接口可以查看api文档。（api文档在哪里？）
 
+- Project Evaluation
+
+  下面是一个示例，该示例将一个`test`任务添加到每个具有`hasTests`true 属性值的项目。
+
+  ~~~groovy
+   // build.gradle
+  allprojects {
+      afterEvaluate { project ->
+          if (project.hasTests) {
+              println "Adding test task to $project"
+              project.task('test') {
+                  doLast {
+                      println "Running tests for $project"
+                  }
+              }
+          }
+      }
+  }
+  // project-a.gradle
+  hasTests = true
+  ~~~
+
+  Output of `gradle -q test`
+
+  ```
+  > gradle -q test
+  Adding test task to project ':project-a'
+  Running tests for project ':project-a'
+  ```
+
+  本示例使用方法`Project.afterEvaluate()`添加一个闭包，该闭包在项目评估后执行。
+
+  也可以在评估任何项目时收到通知。此示例执行一些项目评估的自定义日志记录。请注意，`afterProject`无论项目评估成功还是失败并出现异常，都会收到通知。
+
+- Notifications
+
+  ```groovy
+  // build.gradle
+  gradle.afterProject { project ->
+      if (project.state.failure) {
+          println "Evaluation of $project FAILED"
+      } else {
+          println "Evaluation of $project succeeded"
+      }
+  }
+  ```
+
+  Output of `gradle -q test`
+
+  ```groovy
+  Groovy``Kotlin
+  > gradle -q test
+  Evaluation of root project 'build-project-evaluate-events' succeeded
+  Evaluation of project ':project-a' succeeded
+  Evaluation of project ':project-b' FAILED
+  
+  FAILURE: Build failed with an exception.
+  
+  * Where:
+  Build file '/home/user/gradle/samples/project-b.gradle' line: 1
+  
+  * What went wrong:
+  A problem occurred evaluating project ':project-b'.
+  > broken
+  
+  * Try:
+  > Run with --stacktrace option to get the stack trace.
+  > Run with --info or --debug option to get more log output.
+  > Run with --scan to get full insights.
+  
+  * Get more help at https://help.gradle.org
+  
+  BUILD FAILED in 0s
+  ```
+
+  您还可以将[ProjectEvaluationListener](https://docs.gradle.org/current/javadoc/org/gradle/api/ProjectEvaluationListener.html)添加到[Gradle](https://docs.gradle.org/current/dsl/org.gradle.api.invocation.Gradle.html)以接收这些事件。
+
+- Task Creation
+
+  将任务添加到项目后，您可以立即收到通知。这可用于在任务在构建文件中可用之前设置一些默认值或添加行为。
+
+  以下示例在`srcDir`创建每个任务时设置其属性。
+
+  ```groovy
+// build.gradle
+  tasks.whenTaskAdded { task ->
+    task.ext.srcDir = 'src/main/java'
+  }
+  
+  tasks.register('a')
+  
+  println "source dir is $a.srcDir"
+  ```
+  
+  输出 `gradle -q a`
+  
+  ```
+  gradle -q a
+  source dir is src/main/java
+  ```
+
+  
+  您还可以将[Action](https://docs.gradle.org/current/javadoc/org/gradle/api/Action.html)添加到[TaskContainer](https://docs.gradle.org/current/javadoc/org/gradle/api/tasks/TaskContainer.html)以接收这些事件。
+  
+- Task execution graph ready
+
+  在填充任务执行图后，您可以立即收到通知。
+
+  您还可以将[TaskExecutionGraphListener](https://docs.gradle.org/current/javadoc/org/gradle/api/execution/TaskExecutionGraphListener.html)添加到[TaskExecutionGraph](https://docs.gradle.org/current/javadoc/org/gradle/api/execution/TaskExecutionGraph.html)以接收这些事件。
+
+- Task execution
+
+  您可以在任何任务执行前后立即收到通知。
+
+  以下示例记录每个任务执行的开始和结束。请注意，`afterTask`无论任务是成功完成还是因异常而失败，都会收到通知。
+
+  ~~~groovy
+  // build.gradle
+  tasks.register('ok')
+  
+  tasks.register('broken') {
+        dependsOn ok
+        doLast {
+            throw new RuntimeException('broken')
+        }
+    }
+  
+    gradle.taskGraph.beforeTask { Task task ->
+        println "executing $task ..."
+    }
+  
+    gradle.taskGraph.afterTask { Task task, TaskState state ->
+        if (state.failure) {
+            println "FAILED"
+        }
+        else {
+            println "done"
+        }
+    }
+  ~~~
+  
+  输出`gradle -q broken`
+  
+  ~~~groovy
+  executing task ':ok' ...
+    done
+    executing task ':broken' ...
+    FAILED
+  
+    FAILURE: Build failed with an exception.
+  
+    * Where:
+      Build file '/home/user/gradle/samples/build.gradle' line: 6
+    
+    * What went wrong:
+      Execution failed for task ':broken'.
+    > broken
+  
+    * Try:
+    > Run with --stacktrace option to get the stack trace.
+    > Run with --info or --debug option to get more log output.
+    > Run with --scan to get full insights.
+  
+    * Get more help at https://help.gradle.org
+  
+    BUILD FAILED in 0s
+  ~~~
+  
+  
