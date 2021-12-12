@@ -748,9 +748,13 @@ git push origin :test_branch # 删除远程分支， 相当于推送了一个空
 git remote prune origin #从远程仓库同步分支情况到本地仓库，针对远程分支被删除而本地分支还保留的情况，只要同步一下分支情况即可删除对应的本地分支。
 ~~~
 
+> 取消git对文件的track
 
+首先可以使用.gitignore让git忽略不需要track的文件， 但是只限于未track的文件
 
+如果是已经track的文件，可以使用`git rm -r --cached`来取消git的该文件的track
 
+如果想要取消track的文件是在是太多了， 可以使用`git rm -r --cached *`取消对所有文件的track， 然后再gitignore文件中添加忽略文件， 然后使用`git add .`把需要track的文件添加回来， 这样需要忽略的文件就取消track了。
 
 ## Linux 命令使用
 
