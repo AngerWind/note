@@ -59,21 +59,92 @@ https://blog.csdn.net/yeziwang9/article/details/83770703
 
 为了明白**delegate**的概念，我们必须首先解释清楚在闭包中关键字**this**的意义。一个闭包通常定义了一下三个量：
 
-- **this** 指的是离闭包定义最近的类的对象。如果实在内部类中定义的那就是内部类对象。
+- **this** 指的是离闭包定义最近的类或者类的对象。如果实在内部类中定义的那就是内部类。
 
-- **owner** 指的是闭包定义所在的外层包裹对象，这个对象可能是类也可能是另一个闭包。【这是因为闭包是可以嵌套定义的。】
+- **owner** 指的是闭包定义所在的外层包裹对象，如果闭包是在类中定义的，他与this相同，如果是在闭包中定义的，就是该闭包。【这是因为闭包是可以嵌套定义的。】
 
-- **delegate** 默认与owner相同， 当区别在于delegate是可以设置的。其意义在于当在闭包中调用的方法或变量在当前闭包中没有定义时，就会去委托对象上寻找。在gradle中，会将delegate对象设置为当前闭包要配置的对象。
+- **delegate** 默认与owner相同， 当区别在于delegate是可以设置的。其意义在于当在闭包中调用的方法或变量在当前闭包中没有定义时，就会根据该闭包的委托策略去this，owner，delegate上面寻找。在gradle中，会将delegate对象设置为当前闭包要配置的对象。
 
+  ~~~groovy
+  class Student {
+      static def static_closure = {
+          println "static_closure this: " + this
+          println "static_closure owner: " + owner
+          println "static_closure delegate: " + delegate
+          // static_closure this: class Student
+          // static_closure owner: class Student
+          // static_closure delegate: class Student
+  
+          def static_inner_closure = {
+              println "static_inner_closure this: " + this
+              println "static_inner_closure owner: " + owner
+              println "static_inner_closure delegate: " + delegate
+          }
+          static_inner_closure.call()
+          // static_inner_closure this: class Student
+          // static_inner_closure owner: Student$__clinit__closure2@4d48bd85
+          // static_inner_closure delegate: Student$__clinit__closure2@4d48bd85
+      }
+  
+      def instance_closure = {
+          println "instance_closure this: " + this
+          println "instance_closure owner: " + owner
+          println "instance_closure delegate: " + delegate
+          // instance_closure this: Student@4f63e3c7
+          // instance_closure owner: Student@4f63e3c7
+          // instance_closure delegate: Student@4f63e3c7
+  
+          def instance_inner_closure = {
+              println "instance_inner_closure this: " + this
+              println "instance_inner_closure owner: " + owner
+              println "instance_inner_closure delegate: " + delegate
+          }
+          instance_inner_closure.call()
+          // instance_inner_closure this: Student@4f63e3c7
+          // instance_inner_closure owner: Student$_closure1@dca2615
+          // instance_inner_closure delegate: Student$_closure1@dca2615
+      }
+  }
+  
+  Student.static_closure.call()
+  new Student().instance_closure.call()
+  ~~~
+  
+  设置闭包的委托策略
+  
+  ~~~groovy
+  class Child {
+      String name
+      def say = {
+          println "my name is ${name}"
+      }
+  }
+  
+  class Parent {
+      String name
+  }
+  
+  def p = new Parent(name: "parent")
+  def c = new Child(name: "child")
+  c.say()
+  c.say.delegate = p // 设置delegate
+  c.say.resolveStrategy = Closure.DELEGATE_FIRST // 默认策略 OWNER_FIRST
+  c.say()
+  // my name is child
+  // my name is parent
+  ~~~
+  
   下面调用dependencies方法传入了一个闭包，但是在该闭包中没有testImplementation方法，所以会转而去delegate对象上寻找。而该delegate对象被配置为project.dependencies对象。
-
-~~~groovy
-dependencies {
-    assert delegate == project.dependencies
-    testImplementation('junit:junit:4.13')
-    delegate.testImplementation('junit:junit:4.13')
-}
-~~~
+  
+  ~~~groovy
+  dependencies {
+      assert delegate == project.dependencies
+      testImplementation('junit:junit:4.13')
+      delegate.testImplementation('junit:junit:4.13')
+  }
+  ~~~
+  
+  
 
 > 默认导入
 
