@@ -2541,7 +2541,7 @@ ZOOMAIN="-Dzookeeper.4lw.commands.whitelist=* ${ZOOMAIN}"
 
 ## 相关类说明
 
-#### LeaderLatch
+### LeaderLatch
 
 主要用于Leader的选举， 即多个LeaderLatch进行选举， 只有一个成为Leader，其他的成为follower，follower对leader进行监控，leader断开连接或者主动释放后自动从其他follower中选举出一个leader。
 
@@ -2854,6 +2854,288 @@ private void checkLeadership(List<String> children) throws Exception {
             
  // 添加监听器，并执回调
  client.getData().usingWatcher(watcher).inBackground(callback).forPath(ZKPaths.makePath(latchPath, watchPath));
+        }
+    }
+~~~
+
+
+
+
+
+### LeaderSelector
+
+LeaderSelector主要用于分布式的情况下， 多台机器轮流执行某件事情。比如说从数据库消费数据然后删除。
+
+> 工作原理
+
+1. 在LeaderSelector的构造方法里面将会在leaderPath下创建一个分布式锁
+2. 执行start方法后，leaderSelector将会提交一个任务到executorService线程池里面。
+3. 该任务调用分布式锁的acquire方法进行抢锁，抢锁成功后调用listener的takeLeaderShip方法然后释放掉分布式锁。
+4. 如果调用LeaderSelector的autoRequeue方法，将会一直重复步骤2,3
+
+基本的伪代码如下：
+
+~~~java
+InterProcessMutex mutex = new InterProcessMutex(client, leaderPath);
+requeue();
+
+public void requeue() {
+    executorService.submit(() -> {
+    mute.acquire();
+    listerner.takeLeadership();
+    mute.release();
+    if(autoRequeue) {
+        requeue();
+    }
+});
+}
+~~~
+
+> 使用说明
+
+构造参数
+
+~~~java
+// leaderPath 竞争leader的zk路径
+// executorService 线程池，用于执行竞选的任务
+// listener 监听器， 当selector竞选成功时会调用监听器的takeLeadership方法
+public LeaderSelector(CuratorFramework client, String leaderPath, CloseableExecutorService executorService, LeaderSelectorListener listener)
+~~~
+
+关键方法
+
+~~~java
+// 开始竞选
+public void start();
+// 判断当前是否是leader
+public boolean hasLeadership();
+// 获取当前leader
+public Participant getLeader()
+// 获取当前leader和所有竞选者
+public Collection<Participant> getParticipants()
+// 重新加入选举，只竞选一次还是一直竞选取决于autoRequeue
+public boolean requeue()
+// 退出选举
+public synchronized void interruptLeadership()
+~~~
+
+LeaderSelectorListener
+
+因为LeaderSelectorListener除了takeLeadership方法需要实现，还需要实现ConnectionStateListener的void stateChanged()方法对zk连接状态改变做出处理。
+
+可以使用LeaderSelectorListenerAdapter，这个类已经实现了stateChanged方法。
+
+~~~java
+public interface LeaderSelectorListener extends ConnectionStateListener{
+    public void  takeLeadership(CuratorFramework client) throws Exception;
+}
+~~~
+
+> 使用案例
+
+5个LeaderSelector竞选，当选两次后退出竞选
+
+~~~java
+@Slf4j
+public class LeaderSelectorTest {
+    static int CLINET_COUNT = 5;
+    static String LOCK_PATH = "/leader_selector";
+
+    @Before
+    public void before() {
+        LoggerContext lc = (LoggerContext)LoggerFactory.getILoggerFactory();
+        lc.getLogger("org").setLevel(Level.ERROR);
+    }
+
+    /**
+     * 5个LeaderSelector竞选，当选两次后退出竞选
+     */
+    @Test
+    public void test() throws Exception {
+
+        List<CuratorFramework> clientsList = Lists.newArrayListWithCapacity(CLINET_COUNT);
+        for (int i = 0; i < CLINET_COUNT; i++) {
+            ExponentialBackoffRetry retryPolicy = new ExponentialBackoffRetry(1000, 3, 5000);
+            CuratorFramework zkClient = CuratorFrameworkFactory.builder()
+                .connectString("127.0.0.1:2181")
+                .sessionTimeoutMs(5000)
+                .connectionTimeoutMs(5000)
+                .retryPolicy(retryPolicy)
+                .build();
+            zkClient.start();
+            zkClient.blockUntilConnected();
+            SimpleLeaderSelector exampleClient = new SimpleLeaderSelector(zkClient, LOCK_PATH, "client_" + i);
+
+            clientsList.add(zkClient);
+            exampleClient.start();
+        }
+
+        System.in.read();
+        clientsList.forEach(CuratorFramework::close);
+    }
+
+    static class SimpleLeaderSelector extends LeaderSelectorListenerAdapter implements Closeable {
+        private final LeaderSelector leaderSelector;
+        private final AtomicInteger leaderCount = new AtomicInteger(0);
+
+        public SimpleLeaderSelector(CuratorFramework client, String path, String name) {
+            leaderSelector = new LeaderSelector(client, path, this);
+            leaderSelector.setId(name);
+
+            // 该方法能让客户端在释放leader权限后 重新加入leader权限的争夺中
+            leaderSelector.autoRequeue();
+        }
+
+        public void start() throws IOException {
+            leaderSelector.start();
+        }
+
+        @Override
+        public void close() throws IOException {
+            leaderSelector.close();
+        }
+
+        @Override
+        public void takeLeadership(CuratorFramework client) throws Exception {
+            leaderCount.incrementAndGet();
+            log.info("{} 竞选成功, 当前当选次数：{}", this.leaderSelector.getId(), this.leaderCount.get());
+            log.info("当前leader和所有竞选者：{}", leaderSelector.getParticipants());
+            if (leaderCount.get() == 2) {
+                log.info("{} 退出选举", this.leaderSelector.getId());
+                leaderSelector.close();
+            }
+            log.info("{} 完成操作，释放leader\n", this.leaderSelector.getId());
+        }
+    }
+}
+~~~
+
+> 源码解析
+
+~~~java
+public void start() {
+        Preconditions.checkState(state.compareAndSet(State.LATENT, State.STARTED), "Cannot be started more than once");
+
+        Preconditions.checkState(!executorService.isShutdown(), "Already started");
+        Preconditions.checkState(!hasLeadership, "Already has leadership");
+
+  		// LeaderSelectorListener继承了ConnectionStateListener
+        client.getConnectionStateListenable().addListener(listener);
+        requeue();
+    }
+~~~
+
+~~~~java
+public boolean requeue() {
+        Preconditions.checkState(state.get() == State.STARTED, "close() has already been called");
+        return internalRequeue();
+    }
+
+private synchronized boolean internalRequeue() {
+    	// 防止多次调用start、requeue，多次提交任务
+        if ( !isQueued && (state.get() == State.STARTED) ) {
+            isQueued = true;
+            // 提交任务给executorService进行竞争
+            Future<Void> task = executorService.submit(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    try {
+                        doWorkLoop();
+                    }
+                    finally {
+                        // 设置isQueued = false
+                        clearIsQueued();
+                        // 如果调用了autoRequeue()将会设置为true
+                        // 提交一个任务重新加入竞争
+                        // 如果为false，selector只会做一次leader
+                        // 如果为true会导致selector一直竞争
+                        if ( autoRequeue.get() ) {
+                            internalRequeue();
+                        }
+                    }
+                    return null;
+                }
+            });
+            ourTask.set(task);
+
+            return true;
+        }
+        return false;
+    }
+~~~~
+
+~~~java
+private void doWorkLoop() throws Exception {
+        KeeperException exception = null;
+    	// 一堆的Exception处理， 主要看doWork()方法
+        try {
+            doWork();
+        } catch ( KeeperException.ConnectionLossException e ) {
+            exception = e;
+        } catch ( KeeperException.SessionExpiredException e ) {
+            exception = e;
+        } catch ( InterruptedException ignore ) {
+            Thread.currentThread().interrupt();
+        }
+        if ( (exception != null) && !autoRequeue.get() )   // autoRequeue should ignore connection loss or session expired and just keep trying
+        {
+            throw exception;
+        }
+    }
+~~~
+
+~~~java
+void doWork() throws Exception {
+        hasLeadership = false;
+        try {
+            // 分布式锁，获取不到锁会堵塞，直到获取到
+            mutex.acquire();
+            hasLeadership = true;
+            try {
+                if ( debugLeadershipLatch != null ) {
+                    debugLeadershipLatch.countDown();
+                }
+                if ( debugLeadershipWaitLatch != null ) {
+                    debugLeadershipWaitLatch.await();
+                }
+                // 调用listener回调
+                listener.takeLeadership(client);
+            } catch ( InterruptedException e ) {
+                Thread.currentThread().interrupt();
+                throw e;
+            } catch ( Throwable e ) {
+                ThreadUtils.checkInterrupted(e);
+            } finally {
+                clearIsQueued();
+            }
+        } catch ( InterruptedException e ) {
+            // 调用interruptLeadership可能会导致takeLeadership抛出中断异常
+            Thread.currentThread().interrupt();
+            throw e;
+        } finally {
+            
+            if ( hasLeadership ) {
+                hasLeadership = false;
+                // 调用interruptLeadership会设置终端位
+                boolean wasInterrupted = Thread.interrupted();  // clear any interrupted tatus so that mutex.release() works immediately
+                try {
+                    // 释放掉锁，leadership给其他竞选者
+                    mutex.release();
+                } catch ( Exception e ) {
+                    if ( failedMutexReleaseCount != null ) {
+                        failedMutexReleaseCount.incrementAndGet();
+                    }
+
+                    ThreadUtils.checkInterrupted(e);
+                    log.error("The leader threw an exception", e);
+                    // ignore errors - this is just a safety
+                } finally {
+                    // 还原中断位
+                    if ( wasInterrupted ) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
         }
     }
 ~~~
