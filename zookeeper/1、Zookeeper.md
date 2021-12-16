@@ -3142,7 +3142,250 @@ void doWork() throws Exception {
 
 
 
+### PathChildrenCache
 
+> 使用说明
+
+StartMode：
+
+- NORMAL：异步初始化
+- BUILD_INITIAL_CACHE：同步初始化
+- POST_INITIALIZED_EVENT：与NORMAL相同，只是在初始化完成后会发送一个INITIALIZED类型的事件给监听器，监听器可以监听该事件从而知晓PathChildrenCache已经初始化完成了。
+
+> 源码解析
+
+start方法主要如下，可以看到主要是根据StartMode进行不同操作
+
+~~~java
+public void start(StartMode mode) throws Exception {
+    	// 检查是否已经调用过start方法了
+        Preconditions.checkState(state.compareAndSet(State.LATENT, State.STARTED), "already started");
+        mode = Preconditions.checkNotNull(mode, "mode cannot be null");
+    	// 添加对zk连接状态变更的监听器
+        client.getConnectionStateListenable().addListener(connectionStateListener);
+        switch ( mode ) {
+            case NORMAL: {
+                // 
+                offerOperation(new RefreshOperation(this, RefreshMode.STANDARD));
+                break;
+            }
+ 			case BUILD_INITIAL_CACHE: {
+                rebuild();
+                break;
+            }
+            case POST_INITIALIZED_EVENT: {
+                initialSet.set(Maps.<String, ChildData>newConcurrentMap());
+                offerOperation(new RefreshOperation(this, RefreshMode.POST_INITIALIZED));
+                break;
+            }
+        }
+    }
+~~~
+
+先看offerOperation：
+
+~~~java
+void offerOperation(final Operation operation) {
+    	// operationsQuantizer就是一个set，也就是说如果同时提交两个相同RefreshMode的Operation，第二个就会被拒绝掉。相当于优化吧
+        if ( operationsQuantizer.add(operation) ) {
+            // 如果添加operation成功就提交一个任务到线程中，这个线程池就是构造方法中传递过来的。
+            submitToExecutor  ( new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            // 当代码执行到这里的时候，相当于提交到线程池中的这个任务已经跑起来了，所以需要删除operationsQuantizer中的这个operation
+                            operationsQuantizer.remove(operation);
+                            // 这里调用了invoke方法，其实就是调用了PathChildrenCache的refresh方法
+                            operation.invoke();
+                        } catch ( InterruptedException e ) {
+                            //We expect to get interrupted during shutdown,
+                            //so just ignore these events
+                            if ( state.get() != State.CLOSED ) {
+                                handleException(e);
+                            }
+                            Thread.currentThread().interrupt();
+                        } catch ( Exception e ) {
+                            ThreadUtils.checkInterrupted(e);
+                            handleException(e);
+                        }
+                    }
+                }
+            );
+        }
+    }
+
+private synchronized void submitToExecutor(final Runnable command) {
+        if ( state.get() == State.STARTED ) {
+            executorService.submit(command);
+        }
+    }
+~~~
+
+其实offerOperation就是提交一个任务到线程池去执行当前PathChildrenCache的refresh方法，下面直接看refresh方法：
+
+~~~java
+void refresh(final RefreshMode mode) throws Exception {
+    	// 确保监听的路径存在，没有就创建
+    	// 原理就是根据ensureContainers.ensureNeeded判断是否创建路径，初始值是true，然后创建路径，设置为false
+        ensurePath();
+        final BackgroundCallback callback = new BackgroundCallback() {
+            @Override
+            public void processResult(CuratorFramework client, CuratorEvent event) throws Exception {
+                // 如果当前已经调用了close，不做任何操作
+                if ( reRemoveWatchersOnBackgroundClosed() )  {
+                    return;
+                }
+                // 成功获取到监听路径下的子节点
+                if ( event.getResultCode() == KeeperException.Code.OK.intValue() ) {
+                    processChildren(event.getChildren(), mode);
+                } 
+                // NONODE说明我们要监听的路径不存在，可能已经被别人删除了
+                // 可以先看else的情况
+                else if ( event.getResultCode() == KeeperException.Code.NONODE.intValue() ) {
+                    // 如果mode是NO_NODE_EXCEPTION，说明我们一开始调用了ensurePath()结果路径不存在，然后提交了一个RefreshMode.NO_NODE_EXCEPTION的RefreshOperation来重新创建路径，结果路径还是没有
+                    if ( mode == RefreshMode.NO_NODE_EXCEPTION ) {
+                        log.debug("KeeperException.NoNodeException received for getChildren() and refresh has failed. Resetting ensureContainers but not refreshing. Path: [{}]", path);
+                        ensureContainers.reset();
+                    } else {
+                        log.debug("KeeperException.NoNodeException received for getChildren(). Resetting ensureContainers. Path: [{}]", path);
+                        // 设置ensureContainers.ensureNeeded为true，这样下一个RefreshOperation会调用ensurePath重新创建路径
+                        ensureContainers.reset();
+                        // 如果当前不是RefreshMode.NO_NODE_EXCEPTION的话， 还会提交一个RefreshOperation到executorService中，相当于重新执行去执行ensurePath();
+                        offerOperation(new RefreshOperation(PathChildrenCache.this, RefreshMode.NO_NODE_EXCEPTION));
+                    }
+                }
+            }
+        };
+    // 对于要监听的路径，添加一个监听器childrenWatcher，并且异步获取children数据后调用callback回调
+    // 需要注意的是，调用refresh的是我们构造参数传递的线程池，而调用callback的应该是CuratorFramework里面的线程池，两者是不一样的。
+ client.getChildren().usingWatcher(childrenWatcher).inBackground(callback).forPath(path);
+    }
+~~~
+
+refresh方法就很简单了，添加一个监听器，并且获取到节点数据就在callback中调用processChildren，childrenWatcher很简单， 就是监听到任何事件都提交一个RefreshOperation到线程池中去刷新数据
+
+~~~java
+private volatile Watcher childrenWatcher = new Watcher() {
+        @Override
+        public void process(WatchedEvent event) {
+            offerOperation(new RefreshOperation(PathChildrenCache.this, RefreshMode.STANDARD));
+        }
+    };
+~~~
+
+下面来看processChildren方法：
+
+~~~java
+ private void processChildren(List<String> children, RefreshMode mode) throws Exception {
+     	// 用老的节点，删除现在还存在的节点，就是被删除的节点
+        Set<String> removedNodes = Sets.newHashSet(currentData.keySet());
+        for ( String child : children ) {
+            removedNodes.remove(ZKPaths.makePath(path, child));
+        }
+        for ( String fullPath : removedNodes ) {
+            // 调用remove从当前节点中删除已经移除了的节点，并且触发节点删除事件
+            remove(fullPath);
+        }
+        for ( String name : children )  {
+            String fullPath = ZKPaths.makePath(path, name);
+            if ( (mode == RefreshMode.FORCE_GET_DATA_AND_STAT) || !currentData.containsKey(fullPath) ) {
+                // 如果RefreshMode.FORCE_GET_DATA_AND_STAT或是这个节点是一个新的节点
+                getDataAndStat(fullPath);
+            }
+            updateInitialSet(name, NULL_CHILD_DATA);
+        }
+        maybeOfferInitializedEvent(initialSet.get());
+    }
+
+protected void remove(String fullPath) {
+    	// 从当前节点中删除一个节点
+        ChildData data = currentData.remove(fullPath);
+        if ( data != null ) {
+            // 这里就是提交一个任务到线程池中调用PathChildrenCache的callListeners方法，调用监听器回调
+            offerOperation(new EventOperation(this, new PathChildrenCacheEvent(PathChildrenCacheEvent.Type.CHILD_REMOVED, data)));
+        }
+    	// 这里下面讲
+        Map<String, ChildData> localInitialSet = initialSet.get();
+        if ( localInitialSet != null ) {
+            localInitialSet.remove(ZKPaths.getNodeFromPath(fullPath));
+            maybeOfferInitializedEvent(localInitialSet);
+        }
+    }
+~~~
+
+processChildren这里就是找到删除的数据，从现有数据中删除，然后提交删除事件到线程池中，然后如果RefreshMode.FORCE_GET_DATA_AND_STAT或是发现一个新的节点就调用getDataAndStat
+
+~~~java
+void getDataAndStat(final String fullPath) throws Exception {
+        BackgroundCallback callback = new BackgroundCallback() {
+            @Override
+            public void processResult(CuratorFramework client, CuratorEvent event) throws Exception {
+                if ( reRemoveWatchersOnBackgroundClosed() ) {
+                    return;
+                }
+                applyNewData(fullPath, event.getResultCode(), event.getStat(), cacheData ? event.getData() : null);
+            }
+        };
+    	// 一般USE_EXISTS为false，很少设置这个属性
+        if ( USE_EXISTS && !cacheData ) {
+    client.checkExists().usingWatcher(dataWatcher).inBackground(callback).forPath(fullPath);
+        } else {
+            // 只有在dataIsCompressed和cacheData都为true的情况下在需要调用decompressed，因为如果都不cacheData，也就是本地不保存节点的数据，自然也就不需要关注是否需要decompressed
+            if ( dataIsCompressed && cacheData ) {
+  client.getData().decompressed().usingWatcher(dataWatcher).inBackground(callback).forPath(fullPath);
+            } else {
+                // 获取节点数据并对当前节点（也就是新添加的子节点）添加上监听器
+        client.getData().usingWatcher(dataWatcher).inBackground(callback).forPath(fullPath);
+            }
+        }
+    }
+~~~
+
+~~~java
+private volatile Watcher dataWatcher = new Watcher() {
+        @Override
+        public void process(WatchedEvent event) {
+            try {
+                if ( event.getType() == Event.EventType.NodeDeleted ) {
+                    // 如果监听到子节点删除，就从当前数据中删除该节点，并提交一个删除事件到线程池中执行
+                    remove(event.getPath());
+                }
+                // 节点数据更新的话，提交一个任务到线程池中执行getDataAndStat方法。
+                else if ( event.getType() == Event.EventType.NodeDataChanged ) {
+                    offerOperation(new GetDataOperation(PathChildrenCache.this, event.getPath()));
+                }
+            } catch ( Exception e ) {
+                ThreadUtils.checkInterrupted(e);
+                handleException(e);
+            }
+        }
+    };
+~~~
+
+下面看applyNewData方法
+
+```java
+private void applyNewData(String fullPath, int resultCode, Stat stat, byte[] bytes) {
+    if ( resultCode == KeeperException.Code.OK.intValue() ) // otherwise - node must have dropped or something - we should be getting another event
+    {
+        ChildData data = new ChildData(fullPath, stat, bytes);
+        ChildData previousData = currentData.put(fullPath, data);
+        if ( previousData == null )  {
+            // 新节点，提交child add 事件到线程池
+            offerOperation(new EventOperation(this, new PathChildrenCacheEvent(PathChildrenCacheEvent.Type.CHILD_ADDED, data)));
+        } else if ( stat.getMzxid() != previousData.getStat().getMzxid() ) {
+            // 数据更新，提交child update 事件到线程池
+            offerOperation(new EventOperation(this, new PathChildrenCacheEvent(PathChildrenCacheEvent.Type.CHILD_UPDATED, data)));
+        }
+        updateInitialSet(ZKPaths.getNodeFromPath(fullPath), data);
+    }
+    else if ( resultCode == KeeperException.Code.NONODE.intValue() )
+    {
+        log.debug("NoNode at path {}, removing child from initialSet", fullPath);
+        remove(fullPath);
+    }
+}
+```
 
 
 
