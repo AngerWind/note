@@ -3152,6 +3152,43 @@ StartMode：
 - BUILD_INITIAL_CACHE：同步初始化
 - POST_INITIALIZED_EVENT：与NORMAL相同，只是在初始化完成后会发送一个INITIALIZED类型的事件给监听器，监听器可以监听该事件从而知晓PathChildrenCache已经初始化完成了。
 
+> 使用PathChildrenCache的坑
+
+如果先调用addListener然后调用start， 那么在初始化过程中也会产生Child_Add事件，但是这个时候zk并没有添加子节点，这个事件是在PathChildrenCache初始化数据的时候产生的。
+
+~~~java
+pathChildrenCache.getListenable().addListener(new PathChildrenCacheListener(){});
+pathChildrenCache.start();
+~~~
+
+正确的做法是先调用start传入StartMode.BUILD_INITIAL_CACHE同步初始化，然后添加listener
+
+~~~java
+pathChildrenCache.start(PathChildrenCache.StartMode.BUILD_INITIAL_CACHE);
+~~~
+
+或者先添加一个listener监听INITIALIZED初始化完成事件， 然后在初始化完成事件中添加其他监听器。然后最后调用pathChildrenCache.start(POST_INITIALIZED_EVENT);
+
+~~~java
+pathChildrenCache.getListenable().addListener(new PathChildrenCacheListener() {
+                    @Override
+                    public void childEvent(CuratorFramework client, PathChildrenCacheEvent event) throws Exception {
+                        if (event.getType().equals(PathChildrenCacheEvent.Type.INITIALIZED)) {
+                            pathChildrenCache.getListenable().addListener(new PathChildrenCacheListener() {
+                                @Override
+                                public void childEvent(CuratorFramework client, PathChildrenCacheEvent event)
+                                    throws Exception {
+                                    System.out.println(event);
+                                }
+                            });
+                        }
+                    }
+                });
+                pathChildrenCache.start(POST_INITIALIZED_EVENT);
+~~~
+
+
+
 > 源码解析
 
 start方法主要如下，可以看到主要是根据StartMode进行不同操作
@@ -3386,6 +3423,97 @@ private void applyNewData(String fullPath, int resultCode, Stat stat, byte[] byt
     }
 }
 ```
+
+下面说下在很多地方都看到的关于initialSet的代码，这种代码只会在StartMode为POST_INITIALIZED_EVENT的时候用到。只用在POST_INITIALIZED_EVENT情况下才会在start方法中初始化initialSet
+
+~~~java
+public void start(StartMode mode) throws Exception {
+        switch ( mode ) {
+            case POST_INITIALIZED_EVENT: {
+                initialSet.set(Maps.<String, ChildData>newConcurrentMap());
+                offerOperation(new RefreshOperation(this, RefreshMode.POST_INITIALIZED));
+                break;
+            }
+        }
+    }
+~~~
+
+然后在初始化过程中，在processChildren方法里面，会将需要初始化节点放入initialSet里面，key是节点的name，value是一个空数据的ChildData。
+
+因为在初始化的时候，对于所有的子节点都是要获取data和stat的，但是getDataAndStat是在回调方法中调用的，两者是异步的。所以要先放入一个空数据，然后在applyNewData方法里面，真正获取到数据的时候调用updateInitialSet方法替换掉这个空数据的ChildData。
+
+最后调用maybeOfferInitializedEvent判断initialSet中还有没有value为空数据ChildData的键值对，如果没有了，说明初始化完成，设置initialSet为null。
+
+~~~java
+private void processChildren(List<String> children, RefreshMode mode) throws Exception {
+        for ( String name : children ) {
+            String fullPath = ZKPaths.makePath(path, name);
+            if ( (mode == RefreshMode.FORCE_GET_DATA_AND_STAT) || !currentData.containsKey(fullPath) ) {
+                getDataAndStat(fullPath);
+            }
+            updateInitialSet(name, NULL_CHILD_DATA);
+        }
+        maybeOfferInitializedEvent(initialSet.get());
+    }
+~~~
+
+~~~java
+private void applyNewData(String fullPath, int resultCode, Stat stat, byte[] bytes) {
+        if ( resultCode == KeeperException.Code.OK.intValue() ) {
+            ChildData data = new ChildData(fullPath, stat, bytes);
+ 			// do something
+            updateInitialSet(ZKPaths.getNodeFromPath(fullPath), data);
+        } else if ( resultCode == KeeperException.Code.NONODE.intValue() ) {
+		// do something
+        }
+    }
+~~~
+
+下面来看看StartMode为BUILD_INITIAL_CACHE的情况，这种情况直接调用了rebuild方法，直接看该方法
+
+~~~java
+public void rebuild() throws Exception {
+        Preconditions.checkState(state.get() == State.STARTED, "cache has been closed");
+        ensurePath();
+        clear();
+        List<String> children = client.getChildren().forPath(path);
+        for ( String child : children ) {
+            String fullPath = ZKPaths.makePath(path, child);
+            // 循环获取节点的stat和data
+            internalRebuildNode(fullPath);
+            if ( rebuildTestExchanger != null ) {
+                rebuildTestExchanger.exchange(new Object());
+            }
+        }
+    	// 提交一个刷新操作，但是RefreshMode是强制获取子节点的Data和Stat
+        offerOperation(new RefreshOperation(this, RefreshMode.FORCE_GET_DATA_AND_STAT));
+    }
+~~~
+
+该方法基本逻辑就是获取路径下所有节点，然后对所有节点循环调用internalRebuildNode来获取stat和data， 最后在提交一个异步的刷新操作，强制获取所有的子节点的Data和Stat，防止在这段时间内数据发生了变更。
+
+~~~java
+    private void internalRebuildNode(String fullPath) throws Exception {
+        if ( cacheData ) {
+            try {
+                Stat stat = new Stat();
+                byte[] bytes = dataIsCompressed ? client.getData().decompressed().storingStatIn(stat).forPath(fullPath) : client.getData().storingStatIn(stat).forPath(fullPath);
+                currentData.put(fullPath, new ChildData(fullPath, stat, bytes));
+            } catch ( KeeperException.NoNodeException ignore ) {
+                // node no longer exists - remove it
+                currentData.remove(fullPath);
+            }
+        } else {
+            Stat stat = client.checkExists().forPath(fullPath);
+            if ( stat != null ) {
+                currentData.put(fullPath, new ChildData(fullPath, stat, null));
+            } else {
+                // node no longer exists - remove it
+                currentData.remove(fullPath);
+            }
+        }
+    }
+~~~
 
 
 
