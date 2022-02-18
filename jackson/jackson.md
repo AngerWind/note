@@ -47,6 +47,12 @@ public class Student {
     @JsonSerialize(using = JsonDataSerializer.class)
     @JsonDeserialize(using = JsonDataDeserializer.class)
     String address;
+    
+            // long类型转json给前端可能丢失进度, 序列化时long->string, 反序列化时string->long
+        // 其他序列化器和反序列化器可以查看这两个类所在包的其他类
+        @JsonSerialize(using = ToStringSerializer.class)
+        @JsonDeserialize(using = NumberDeserializers.LongDeserializer.class)
+        Long id;
 
     public static class JsonDataSerializer extends JsonSerializer<String> {
         @Override
@@ -246,16 +252,22 @@ public class JsonTestModel {
 
 #### @JsonRowValue
 
-标注在字段或者方法上，表示该属性序列化后的字符串是其本身， 而不需要加双引号
+标注在字段或者方法上，表示该属性序列化后的字符串是其本身， 而不需要加双引号，**单向工作**！！！
 
 ~~~java
     @SneakyThrows
     public static void main(String[] args) {
         RawBean bean = new RawBean("My bean", "{\"attr\":false}");
-        String result = new ObjectMapper()
+        ObjectMapper objectMapper = new ObjectMapper();
+        String result = objectMapper
                 .writerWithDefaultPrettyPrinter()
                 .writeValueAsString(bean);
         System.out.println(result);
+
+        // !!!!
+        // @JsonRawValue只能单向工作，下面代码将导致报错
+        // 双向工作可以再添加一个@JsonDeserialize自定义反序列化器
+        RawBean rawBean = objectMapper.readValue(result, RawBean.class);
     }
     @Data
     @AllArgsConstructor
@@ -1256,4 +1268,58 @@ public void whenSerializingUsingMixInAnnotation_thenCorrect()
 ~~~~java
 ObjectMapper mapper = new ObjectMapper();    mapper.disable(MapperFeature.USE_ANNOTATIONS);
 ~~~~
+
+
+
+#### 序列化数字转字符串
+
+> 针对单个字符串
+
+~~~java
+    @JSONField(serializeUsing = com.alibaba.fastjson.serializer.ToStringSerializer.class)
+    @JsonSerialize(using = com.fasterxml.jackson.databind.ser.std.ToStringSerializer.class)
+Long id;
+~~~
+
+> 全局设置
+
+- Jackson
+
+  - 在application.properties中，可以使用`spring.jackson.generator.write-numbers-as-strings=true`
+
+  - 单个ObjectMapper
+
+    ~~~java
+    ObjectMapper objectMapper = JsonMapper.builder()
+        .configure(JsonWriteFeature.WRITE_NUMBERS_AS_STRINGS, true)
+        .build();
+    ~~~
+
+    
+
+- fastjson
+
+  ~~~java
+  @Configuration
+  public class SessionConfig implements WebMvcConfigurer{
+      
+      @Override
+      public void configureMessageConverters(List<HttpMessageConverter<?>> converters) {
+          FastJsonHttpMessageConverter fastJsonConverter = new FastJsonHttpMessageConverter();
+          FastJsonConfig fjc = new FastJsonConfig();
+          /**
+           * 序列换成json时,将所有的long变成string
+           * 因为js中得数字类型不能包含所有的java long值
+           */
+          SerializeConfig serializeConfig = SerializeConfig.globalInstance;
+          serializeConfig.put(Long.class , ToStringSerializer.instance);
+          serializeConfig.put(Long.TYPE , ToStringSerializer.instance);
+          fjc.setSerializeConfig(serializeConfig);
+          fastJsonConverter.setFastJsonConfig(fjc);
+          converters.add(fastJsonConverter);
+      }
+  }
+  ~~~
+
+  
 
