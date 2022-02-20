@@ -98,41 +98,39 @@ echo $PS1; shopt login_shell
 
 非登录非交互式：
 
-- `bash test.sh`直接执行脚本
+- `bash test.sh`直接执行脚本, 脚本是以非登录非交互方式执行的
+- `ssh localhost a.sh`执行脚本, 脚本是以非登录非交互方式执行的
 
 非登录交互式：
 
 - 桌面环境下打开终端
 - 直接执行`bash`进入子进程
-- `ssh user@ip "echo $-; shopt login_shell"`通过ssh直接执行脚本
+- `ssh user@ip "echo $PS1; shopt login_shell"`命令是通过非登录交互式执行的
 - `su user`切换用户
+
+这里特别要区分的是ssh执行的方式，
+
+~~~shell
+$ cat b.sh
+#!/bin/bash
+ echo $- && shopt login_shell
+ 
+ # 这里执行b.sh,在脚本里面是非登录非交互式的
+$ ssh localhost bash b.sh
+hB
+login_shell     off
+
+ # 这里直接执行命令,命令时在非登录交互式下执行的
+$ ssh localhost echo $- && shopt login_shell
+himBHs
+login_shell     off
+~~~
 
 
 
 > 登录式与非登录式区别
 
-当bash以交互登录式shell调用，或者以非交互登录式shell（`bash --login`）调用时，先加载全局配置文件`/etc/profile`，然后只加载`~/.bash_profile`、`~/.bash_login` 、`~/.profile`中第一个存在并且可读的文件。
-
-此外在执行`/etc/profile`中发现有下面这段代码，下面这段代码会加载`/etc/profile.d`目录下所有可读的shell脚本
-
-~~~shell
-if [ -d /etc/profile.d ]; then
-  for i in /etc/profile.d/*.sh; do
-    if [ -r $i ]; then
-      . $i
-    fi
-  done
-  unset i
-fi
-~~~
-
-
-
-并且当交互登录式shell执行logout时，或者非交互登录式shell执行exit时，bash还会读取并执行（如果存在）`~/.bash_logout`
-
-
-
-以非登录式shell运行时，bash会从`/etc/bash.bashrc`和`~/.bashrc`中读取并执行命令
+不同的运行方式， bash在启动时加载的配置文件不同，这会导致在不同运行方式下，环境变量不同。
 
 
 
@@ -142,17 +140,11 @@ fi
 
 > 登录式shell
 
-如果是登录式的 Shell，首先会读取和执行 /etc/profiles，这是所有用户的全局配置文件。
+如果是登录式的 Shell首先会读取和执行 /etc/profiles。
 
-接着会到用户主目录中寻找 ~/.bash_profile、~/.bash_login 或者 ~/.profile，它们都是用户个人的配置文件。不同的 linux 发行版附带的个人配置文件也不同，有的可能只有其中一个，有的可能三者都有。
+接着会以 ~/.bash_profile、~/.bash_login 或者 ~/.profile的顺序**查找并执行第一个存在且可读的文件**。不同的 linux 发行版附带的个人配置文件也不同，有的可能只有其中一个，有的可能三者都有。
 
-如果三个文件同时存在的话，到底应该加载哪一个呢？它们的优先级顺序是 ~/.bash_profile > ~/.bash_login > ~/.profile。
-
-如果 ~/.bash_profile 存在，那么一切以该文件为准，并且到此结束，不再加载其它的配置文件。
-
-如果 ~/.bash_profile 不存在，那么尝试加载 ~/.bash_login。~/.bash_login 存在的话就到此结束，不存在的话就加载 ~/.profile。
-
-注意，/etc/profiles 文件还会嵌套加载 /etc/profile.d/*.sh，请看下面的代码：
+注意，/etc/profiles 文件还会嵌套加载 /etc/profile.d/*.sh（不同版本可能不同，具体请查看对应文件），请看下面的代码：
 
 ```shell
 for i in /etc/profile.d/*.sh ; do
@@ -167,7 +159,7 @@ done
 ```
 
 
-同样，~/.bash_profile 也使用类似的方式加载 ~/.bashrc：
+同样，~/.bash_profile 也使用类似的方式加载 ~/.bashrc(不同版本可能不同，具体查看对应文件)：
 
 ```shell
 if [ -f ~/.bashrc ]; then
@@ -175,7 +167,13 @@ if [ -f ~/.bashrc ]; then
 fi
 ```
 
+
+
+当登录式bash退出时，会执行~/.bash_logout
+
 > 非登录式shell
+
+如果交互非登录式shell（类似`echo $PS1; shopt login_shell`）启动时，如果/etc/bash.bashrc和~/.bashrc存在的话，将会读取并执行。
 
 如果以非登录的方式启动 Shell，那么就不会读取以上所说的配置文件，而是直接读取 ~/.bashrc。
 
@@ -186,6 +184,48 @@ if [ -f /etc/bashrc ]; then
 . /etc/bashrc
 fi
 ```
+
+
+
+如果是非登录非交互式的话，会获取变量BASH_ENV的值，并将该值当做文件名进行执行。
+
+
+
+> ssh网络调用bash
+
+特别需要注意的是，bash会尝试判断他的标准输入是否来自一个网络(`ssh localhost echo $-`)，如果 bash 确定它正在以这种方式运行，它会从 ~/.bashrc读取并执行命令，前提文件存在并且可读。如果作为 sh 调用，它将不会执行此操作。 --norc 选项可用于禁止此行为，--rcfile 选项可用于强制读取另一个文件
+
+特别坑的是，~/.bashrc的开头有这样一段代码：
+
+~~~shell
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+~~~
+
+也就是说，使用ssh执行脚本，在脚本里面是非登录非交互模式，所以即使当前bash加载了~/.bashrc文件，但是执行到了上述代码判断是非交互式就退出去了，导致和没有执行一样。所以如果希望在ssh网络调用某些脚本时，能够在脚本里面读取到某些环境变量，需要将export语句加在上述代码以前。（说的就是你，hadoop的start-dfs.sh）
+
+
+
+> sh调用bash
+
+如果使用名称 sh 调用 bash时：
+
+- 当作为登录式调用时，它首先尝试按顺序从 /etc/profile 和 ~/.profile 读取和执行命令。 
+- 当作为名为 sh 的交互式 shell 调用时，bash 查找变量 ENV并将其用作要读取和执行的文件的名称。由于作为 sh 调用的 shell 不会尝试从任何其他启动文件读取和执行命令，因此 --rcfile 选项无效。
+- 使用名称 sh 调用的非交互式 shell 不会尝试读取任何其他启动文件。
+
+> 选项
+
+`--init-file file`， `--rcfile file`: 如果是交互式shell，可以使用这两个选项指定配置文件，而不是默认的配置文件。
+
+`--noprofile`: 如果是登录式，使用该选项可以禁用默认配置文件。
+
+`--norc`：如果是交互式，使用该选项可以禁用默认配置文件。
+
+
 
 
 
@@ -519,7 +559,17 @@ str4="$name: ${url}aaa"  #这样写也可以 hello: worldaaa
   http: # /*使用贪心模式，匹配到了//aaa/b.html
   ~~~
 
-  
+
+> 字符串替换
+
+| 命令              | 解释                     | 结果                           |
+| ----------------- | ------------------------ | ------------------------------ |
+| ${file/dir/path}  | 将第一个 dir 提换为 path | /path1/dir2/dir3/my.file.txt   |
+| ${file//dir/path} | 将全部 dir 提换为 path   | /path1/path2/path3/my.file.txt |
+
+使用${file//dir/}可以将file中的dir字符串全部是删除
+
+
 
 ### shell数组
 
@@ -554,3 +604,258 @@ shell只支持一维数组
 ![image-20220215001007423](img/shell/image-20220215001007423.png)
 
 ![image-20220215002101134](img/shell/image-20220215002101134.png)
+
+
+
+### shell BASH_SOURCE和FUNCNAME变量
+
+参考https://www.cnblogs.com/sunfie/p/5943979.html
+
+> FUNCNAME
+
+在shell脚本中，FUNCNAME是一个数组，里面保存着当前shell的函数调用栈，其中${FUNCNAME[0]}是当前函数，1是外层函数，示例如下
+
+~~~shell
+#!/bin/bash
+
+function test_func()
+{
+    echo "Current $FUNCNAME, \$FUNCNAME => (${FUNCNAME[@]})"
+    another_func
+    echo "Current $FUNCNAME, \$FUNCNAME => (${FUNCNAME[@]})"
+}
+
+function another_func()
+{
+    echo "Current $FUNCNAME, \$FUNCNAME => (${FUNCNAME[@]})"
+}
+
+echo "Out of function, \$FUNCNAME => (${FUNCNAME[@]})"
+test_func
+echo "Out of function, \$FUNCNAME => (${FUNCNAME[@]})"
+~~~
+
+输出
+
+~~~shell
+Out of function, $FUNCNAME => ()
+Current test_func, $FUNCNAME => (test_func main)
+Current another_func, $FUNCNAME => (another_func test_func main)
+Current test_func, $FUNCNAME => (test_func main)
+Out of function, $FUNCNAME => ()
+~~~
+
+> BASH_SOURCE
+
+BASH_SOURCE与FUNCNAME类似，在使用source执行子脚本的时候，在子脚本里面BASH_SOURCE数组中记录着脚本的调用栈，${BASH_SOURCE[0]}表示的是当前脚本，1表示的是父脚本。${BASH_SOURCE[0]}与$BASH_SOURCE相同。
+
+但是在子脚本中，$0依旧是最外层的父脚本。
+
+~~~shell
+shen@Wind:~$ cat a.sh
+#!/bin/bash
+echo ${BASH_SOURCE[*]}
+echo $0
+. b.sh
+
+shen@Wind:~$ cat b.sh
+#!/bin/bash
+echo $0
+echo ${BASH_SOURCE[*]}
+
+shen@Wind:~$ bash a.sh
+a.sh # a.sh中的BASH_SOURCE
+a.sh # a.sh中的$0
+a.sh # b.sh中的$0依旧是与a.sh不变
+b.sh a.sh # 记录当前脚本的调用栈
+~~~
+
+
+
+### 根据状态为变量赋值
+
+| 命令                 | 解释                                                         | 备注                            |
+| -------------------- | ------------------------------------------------------------ | ------------------------------- |
+| ${file-my.file.txt}  | 若 $file 没设定,则使用 my.file.txt 作传回值                  | 有设定（ 空值及非空值）不作处理 |
+| ${file:-my.file.txt} | 若 $file 没设定或为空值,则使用 my.file.txt 作传回值          | 非空值时不作处理                |
+| ${file+my.file.txt}  | 若$file 有设定（空值或非空值）,均使用my.file.txt作传回值     | 没设定时不作处理                |
+| ${file:+my.file.txt} | 若 $file 有设定且不为空值（为非空值）,则使用 my.file.txt 作传回值 | 没设定及空值不作处理            |
+| ${file=txt}          | 若 $file 没设定,则回传 txt ,并将 $file 赋值为 txt            | 有设定（ 空值及非空值）不作处理 |
+| ${file:=txt}         | 若 $file 没设定或空值,则回传 txt ,将 $file 赋值为txt         | 非空值时不作处理                |
+| ${file?my.file.txt}  | 若 $file 没设定,则将 my.file.txt 输出至 STDERR               | 有设定（ 空值及非空值）不作处理 |
+| ${file:?my.file.txt} | 若 $file没设定或空值,则将my.file.txt输出至STDERR             | 非空值时不作处理                |
+
+
+
+### shell eval的用法
+
+格式：eval command
+
+eval用于执行命令，他与直接执行命令不同的是，eval在执行命令之前会对命令进行一遍扫描，并解析其中的变量，解析变量之后才会执行该命令
+
+- 案例1
+
+  ~~~shell
+  pipe="|"
+  eval ls $pipe grep java # eval会先解析命令成 ls | grep java然后再执行
+  ~~~
+
+- 按理2：获取位置参数的最后一个参数
+
+  ~~~shell
+  eval echo \$$# #eval会先现将$#解析成位置参数的个数，然后再执行命令
+  ~~~
+
+- 按理3
+
+  ~~~shell
+  x=100
+  ptrx=x
+  eval echo \$$prtx # eval先将命令解析成echo $x，然后再执行命令
+  ~~~
+
+  
+
+### shell 间接取值
+
+格式： ${!var}
+
+表示的意思是取$var的值，然后再使用$var的值进行再次取值
+
+案列1：
+
+~~~shell
+x=100
+ptrx=x
+# 先回去$ptr的值为x, 然后再获取$x的值, 一共做两次取值
+echo ${!ptrx} #100
+~~~
+
+案列2: 写一个交换两个变量的值的函数
+
+~~~shell
+## @description  exchange `oldvar` and `newvar`
+## @param        oldvar
+## @param        newvar
+function exchange
+{
+  local a_value=${!1}
+  local b_value=${!2}
+
+  eval "$1=$b_value"
+  eval "$2=$a_value"
+}
+
+a=100
+b=200
+
+exchange a b
+echo $a,$b #200,100
+~~~
+
+
+
+
+
+### 实验技巧
+
+#### shell获取当前执行文件的绝对路径
+
+~~~shell
+# cd -P 和 pwd -P表示使用物理路径，该选项会忽略软连接
+# 比如家目录下有test文件夹，testln软连接到test
+# cd testln将进入到testln目录下, cd -P testln将进入到test目录下
+# 在testln目录下pwd将会获得~/testln, pwd -P 将会获得~/test
+
+# -- 用于区分选项和参数，详细请查看当前笔记的关于--的记录
+$(cd -P -- "$(dirname -- "${BASH_SOURCE:-$0}")" >/dev/null && pwd -P)
+~~~
+
+#### shell --和-的用法
+
+在shell中使用命令的一般格式为command option args
+
+比如`cd -P ~`，这里的-P表示选项，~表示参数
+
+使用`man bash`可以看到
+
+![image-20220219173003137](img/shell/image-20220219173003137.png)
+
+`--` 的作用是作为option和args的分割符。`--`和`-`的作用是相等的。`--`是可选的。
+
+在一般情况下，加不加`--`都无所谓，但是在一些特殊情况下必须加`--`。
+
+比如想要创建一个名叫`-i`的目录，使用`mkdir -i`时，bash会认为-i是一个选项，但是实际上我们想要表示的是`-i`是一个参数，所以必须使用`mkdir -- -i`才能创建。
+
+cd到一个`-i`目录也是同理，必须使用`cd -- -i`。
+
+所以在shell中，使用从外部接收参数进行命令拼接时，为了防止参数被解析成选项，一般在参数面前加`--`，比如`cd -- $(dirname -- $0)`
+
+
+
+#### shell shift的作用
+
+位置参数可以用`shift`命令左移。比如`shift 3`表示原来的`$4`现在变成`$1`，原来的`$5`现在变成`$2`等等，原来的`$1`、`$2`、`$3`丢弃，`$0`不移动。不带参数的`shift`命令相当于`shift 1`。
+
+我们知道，对于位置变量或命令行参数，其个数必须是确定的，或者当 Shell 程序不知道其个数时，可以把所有参数一起赋值给变量$*。若用户要求 Shell 在不知道位置变量个数的情况下，还能逐个的把参数一一处理，也就是在 $1 后为 $2,在 $2 后面为 $3 等。在 shift 命令执行前变量 $1 的值在 shift 命令执行后就不可用了。
+
+示例如下：
+
+\#测试 shift 命令(x_shift.sh)
+
+~~~shell
+until [ $# -eq 0 ]
+do
+echo "第一个参数为: $1 参数个数为: $#"
+shift
+done
+~~~
+
+执行以上程序x_shift.sh：
+$./x_shift.sh 1 2 3 4
+
+结果显示如下：
+
+~~~shell
+第一个参数为: 1 参数个数为: 4
+第一个参数为: 2 参数个数为: 3
+第一个参数为: 3 参数个数为: 2
+第一个参数为: 4 参数个数为: 1
+~~~
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
