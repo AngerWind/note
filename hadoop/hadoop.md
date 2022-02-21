@@ -77,6 +77,44 @@ esac
 
 
 
+### hdfs写流程
+
+正常情况和异常情况
+
+
+
+
+
+### hdfs写数据DataNode选择策略
+
+节点距离感知和机架选择
+
+client读取多个block块时是串行读取
+
+
+
+### hdfs 读流程
+
+考虑节点距离最近和负载均衡 
+
+
+
+### hdfs 2nn工作机制
+
+fsImage edit_log
+
+
+
+### hdfs DataNode工作机制
+
+心跳, block块信息汇报
+
+本地存储的block块信息的数据完整性校验
+
+
+
+### hdfs 数据存储原理
+
 ### hdfs dfs命令指南
 
 
