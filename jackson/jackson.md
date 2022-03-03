@@ -522,6 +522,17 @@ JsonRootNameTest.Student(name=zhangsan, age=18)
 
 #### @JsonFormat
 
+用于格式化时间
+
+> @JsonFormat
+
+用于序列化时指定格式
+
+~~~java
+@JsonFormat(pattern="yyyy-MM-dd",timezone = "GMT+8")
+LocalDataTime localDataTime
+~~~
+
 #### @JsonUnwrapped
 
 扁平化被注解的字段
@@ -1321,5 +1332,39 @@ Long id;
   }
   ~~~
 
-  
+
+
+
+#### 格式化时间
+
+> @JsonFormat
+
+序列化时候格式化时间
+
+~~~java
+    @JsonFormat(pattern="yyyy-MM-dd",timezone = "GMT+8")
+    private LocalDateTime gmtModified;
+~~~
+
+
+
+> @JsonField
+
+fastjson用于格式化时间的注解
+
+~~~java
+    @JSONField(format="yyyy-MM-dd HH:mm:ss")
+    private LocalDateTime gmtModified;
+~~~
+
+
+
+> @DataTimeFormat
+
+spring的注解， 用于controller接收前端数据时， 指定前端数据的格式
+
+~~~java
+@DateTimeFormat(pattern = "yyyy-MM-dd")
+private Date symendtime;
+~~~
 

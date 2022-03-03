@@ -100,9 +100,9 @@ Some code
 
 
 
-## [反射框架reflections](https://github.com/ronmamo/reflections)
+#### [反射框架reflections](https://github.com/ronmamo/reflections)
 
-#### 简介
+> 简介
 
 使用Reflections可以很轻松的获取以下元数据信息：
 
@@ -113,7 +113,7 @@ Some code
 - 获取所有方法的名字
 - 获取代码里所有字段、方法名、构造器的使用
 
-#### Maven依赖
+> Maven依赖
 
 ~~~java
 <dependency>
@@ -123,7 +123,7 @@ Some code
 </dependency>
 ~~~
 
-#### 实例化
+> 实例化
 
 ```java
 // 实例化Reflections，指定扫描的包为my.package及其子包，使用默认的scanners（扫描器）
@@ -138,7 +138,7 @@ new Reflections(new ConfigurationBuilder()
      ...);
 ```
 
-#### 使用
+> 使用
 
 - 扫描子类
 
@@ -281,7 +281,7 @@ git config --global alias.co checkout
 
 
 
-## git rebase详解
+#### git rebase详解
 
 参考
 
@@ -291,7 +291,7 @@ https://www.jianshu.com/p/4a8f4af4e803
 
 《Pro Git》变基部分
 
-### 合并多个commit为一个commit
+#### 合并多个commit为一个commit
 
 当你在实现一个功能的时候，有非常多次的无用的无意义的提交的时候，会有如下几个问题：
 
@@ -466,7 +466,7 @@ git merge experiment
 
 
 
-## git stash(将修改暂存到缓存栈中)
+#### git stash(将修改暂存到缓存栈中)
 
 **使用场景:** 
 
@@ -474,7 +474,7 @@ git merge experiment
 
 
 
-#### git stash暂存的文件
+>  git stash暂存的文件
 
 默认情况下，`git stash`会缓存下列文件：
 
@@ -488,9 +488,7 @@ git merge experiment
 
 `git stash`命令提供了参数用于缓存上面两种类型的文件。使用`-u`或者`--include-untracked`可以stash untracked文件。使用`-a`或者`--all`命令可以stash当前目录下的所有修改。
 
-
-
-#### git stash或者git stash save
+> git stash或者git stash save
 
 `git stash`会把所有未提交的修改（包括暂存的和非暂存的）都保存起来,并且将当前代码切换到`HEAD`提交上.
 
@@ -525,9 +523,7 @@ $ git stash list
 stash@{0}: On autoswitch: test-cmd-stash
 ```
 
-
-
-#### 查看stash缓栈
+> 查看stash缓栈
 
 可以使用`git stash list`命令
 
@@ -538,9 +534,7 @@ stash@{1}: WIP on master: c264051 Revert "added file_size"
 stash@{2}: WIP on master: 21d80a5 added number to log
 ```
 
-
-
-#### 重新应用缓存的stash
+> 重新应用缓存的stash
 
 可以通过`git stash pop`命令恢复之前缓存的工作目录, 这个指令**将缓存堆栈中的第一个stash删除，并将对应修改应用到当前的工作目录下**。，输出如下：
 
@@ -575,7 +569,7 @@ Changes not staged for commit:
     modified:   index.html
 ```
 
-#### git stash drop移除stash
+> git stash drop移除stash
 
 可以使用`git stash drop`命令，后面可以跟着stash名字。下面是一个示例：
 
@@ -590,7 +584,7 @@ Dropped stash@{0} (364e91f3f268f0900bc3ee613f9f733e82aaed43)
 
 或者使用`git stash clear`命令，删除所有缓存的stash。
 
-#### git stash show查看指定stash的diff
+> git stash show查看指定stash的diff
 
 可以使用`git stash show`命令，后面可以跟着stash名字。示例如下：
 

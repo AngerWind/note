@@ -128,3 +128,70 @@ hdfs subcmd -help 查看子命令的帮助选项的具体功能：hdfs dfs -help
 
 
 一般在HDFS文件系统创建文件或文件夹时，若直接hadoop fs -mkdir [文件夹名]，那么创建的目录在用户目录/user下，若想建立在其他地方，必须要写完整路径。
+
+
+
+### hadoop配置
+
+hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该变量进行覆盖。日志文件末尾数字越大，文件越老
+
+> core-site.xml
+
+~~~xml
+<property>
+    <!-- namenode地址和rpc端口, 端口默认8082-->
+	<name>fs.defaultFS</name>
+	<value>hdfs://localhost:8082/</value>
+</property>
+<property>
+    <!-- webhdfs使用的用户 -->
+	<name>hadoop.http.staticuser.user</name>
+	<value>tiger</value>
+</property>
+<property>
+    <!--hadoop数据目录，默认/tmp/hadoop-${user.name}-->
+	<name>hadoop.tmp.dir</name>
+	<value>/home/tiger/hadoop-3.3.1/data</value>
+</property>
+~~~
+
+> hdfs-site.xml
+
+~~~xml
+<property>
+  <!-- dfs文件默认副本数 -->  
+  <name>dfs.replication</name>
+  <value>1</value>
+</property>
+~~~
+
+可选：
+
+~~~xml
+<property>
+    <!-- 指定webhdfs的位置和端口，默认0.0.0.0:9870-->
+    <name>dfs.namenode.http-address</name>
+    <value>hadoop:9870</value>
+</property>
+<property>
+    <!-- 指定namenode image存储位置, 默认file://${hadoop.tmp.dir}/dfs/name-->
+    <name>dfs.namenode.name.dir</name>
+    <value>file://${hadoop.tmp.dir}/dfs/name</value>
+</property>
+<property>
+    <!-- 指定namenode edits的存储位置， 默认${dfs.namenode.name.dir} -->
+    <name>dfs.namenode.edits.dir</name>
+    <value>${dfs.namenode.name.dir}</value>
+</property>
+<property>
+    <!-- 指定datanode block的存储位置，默认file://${hadoop.tmp.dir}/dfs/data -->
+    <name>dfs.datanode.data.dir</name>
+    <value>file://${hadoop.tmp.dir}/dfs/data</value>
+</property>
+<property>
+    <!-- 开启webhdfs, 默认true -->
+    <name>dfs.webhdfs.enabled</name>
+    <value>true</value>
+</property>
+~~~
+
