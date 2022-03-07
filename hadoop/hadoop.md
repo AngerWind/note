@@ -213,3 +213,53 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
 </configuration>
 ~~~
 
+
+
+
+
+#### 开启MapReduce JobHistory
+
+开启该功能可以查看MR程序的一些详细的配置信息和运行情况
+
+mapred-site.xml
+
+~~~xml
+<!-- 历史服务器端地址 -->
+<property>
+    <name>mapreduce.jobhistory.address</name>
+    <value>hadoop102:10020</value>
+</property>
+
+<!-- 历史服务器web端地址 -->
+<property>
+    <name>mapreduce.jobhistory.webapp.address</name>
+    <value>hadoop102:19888</value>
+</property>
+~~~
+
+使用mapred --daemon start historyserver启动historyserver
+
+#### 开启yarn日志聚集
+
+开启yarn日志聚集可以在程序运行的日志信息上传到hdfs系统上, 方便开发调试
+
+yarn-site.xml
+
+~~~xml
+<!-- 开启日志聚集功能 -->
+<property>
+    <name>yarn.log-aggregation-enable</name>
+    <value>true</value>
+</property>
+<!-- 设置日志聚集服务器地址 -->
+<property>  
+    <name>yarn.log.server.url</name>  
+    <value>http://hadoop102:19888/jobhistory/logs</value>
+</property>
+<!-- 设置日志保留时间为7天 -->
+<property>
+    <name>yarn.log-aggregation.retain-seconds</name>
+    <value>604800</value>
+</property>
+~~~
+
