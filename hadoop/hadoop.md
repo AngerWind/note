@@ -195,3 +195,21 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
 </property>
 ~~~
 
+> yarn-site.xml
+
+~~~xml
+<configuration>
+    <!-- 指定MR走shuffle -->
+    <property>
+        <name>yarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+    </property>
+
+    <!-- 指定ResourceManager的地址-->
+    <property>
+        <name>yarn.resourcemanager.hostname</name>
+        <value>localhost</value>
+    </property>
+</configuration>
+~~~
+
