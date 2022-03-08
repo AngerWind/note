@@ -131,7 +131,7 @@ hdfs subcmd -help 查看子命令的帮助选项的具体功能：hdfs dfs -help
 
 
 
-### hadoop配置
+### hadoop启动配置
 
 hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该变量进行覆盖。日志文件末尾数字越大，文件越老
 
@@ -192,6 +192,69 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
     <!-- 开启webhdfs, 默认true -->
     <name>dfs.webhdfs.enabled</name>
     <value>true</value>
+</property>
+~~~
+
+> yarn-site.xml
+
+~~~xml
+<configuration>
+    <!-- 指定MR走shuffle -->
+    <property>
+        <name>yarn.nodemanager.aux-services</name>
+        <value>mapreduce_shuffle</value>
+    </property>
+
+    <!-- 指定ResourceManager的地址-->
+    <property>
+        <name>yarn.resourcemanager.hostname</name>
+        <value>localhost</value>
+    </property>
+</configuration>
+~~~
+### 开启MapReduce JobHistory
+
+开启该功能可以查看MR程序的一些详细的配置信息和运行情况
+
+mapred-site.xml
+
+~~~xml
+<!-- 历史服务器端地址 -->
+<property>
+    <name>mapreduce.jobhistory.address</name>
+    <value>hadoop102:10020</value>
+</property>
+
+<!-- 历史服务器web端地址 -->
+<property>
+    <name>mapreduce.jobhistory.webapp.address</name>
+    <value>hadoop102:19888</value>
+</property>
+~~~
+
+使用mapred --daemon start historyserver启动historyserver
+
+### 开启yarn日志聚集
+
+开启yarn日志聚集可以在程序运行的日志信息上传到hdfs系统上, 方便开发调试
+
+yarn-site.xml
+
+~~~xml
+<!-- 开启日志聚集功能 -->
+<property>
+    <name>yarn.log-aggregation-enable</name>
+    <value>true</value>
+</property>
+<!-- 设置日志聚集服务器地址 -->
+<property>  
+    <name>yarn.log.server.url</name>  
+    <value>http://hadoop102:19888/jobhistory/logs</value>
+</property>
+<!-- 设置日志保留时间为7天 -->
+<property>
+    <name>yarn.log-aggregation.retain-seconds</name>
+    <value>604800</value>
 </property>
 ~~~
 
@@ -311,6 +374,6 @@ shuffle的主要过程如下：
    5. 如果环形缓冲区使用率达到了80%, 那么就会将环形一个溢写线程将这部分数据溢写到磁盘上，生成一个spill.out文件和一个spill.index文件。同时对于写线程，重置他的写数据起到到生育20%的中间位置。这样就达到了一个写缓冲区线程和一个溢写缓冲区线程同时工作， 两不耽误。
 
       如果写缓冲区
-
-
+      
+      
 
