@@ -1,4 +1,4 @@
-
+# HDFS
 
 ### HDFS概述
 
@@ -194,4 +194,123 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
     <value>true</value>
 </property>
 ~~~
+
+
+
+
+
+
+
+# MapReduce
+
+### MapReduce序列化器
+
+> 序列化器与反序列化的调用时机
+
+- 将MapTask输出的KV进行序列化， 然后转换成byte数字， 然后写入环形缓冲区
+- 在环形缓冲区溢写的时候， 需要对key进行快排， 这个时候会调用反序列化对key进行反序列化，从数组到对象，然后进行比较。
+
+> 序列化相关类
+
+对于序列化器， 有四个相关类
+
+1. Serialization
+
+   ~~~java
+   public interface Serialization<T> {
+     // 用于判断当前类是否支持某种类型的序列化
+     boolean accept(Class<?> c);
+     // 获取序列化器
+     Serializer<T> getSerializer(Class<T> c);
+     // 获取反序列化器
+     Deserializer<T> getDeserializer(Class<T> c);
+   }
+   ~~~
+
+2. Serializer
+
+   需要注意的是，open方法传入了一个OutputStream， 他的实际类型为MapTask#BlockingBuffer。调用序列化serialize方法的时候，需要调用他的write方法将序列化之后的内容写入到环形缓冲区中。
+
+   ~~~java
+   public interface Serializer<T> {
+     // 初始化方法， 传入的是一个输出流
+     void open(OutputStream out) throws IOException;
+     // 序列化方法， 该方法内部必须调用out对象的write方法将序列化后的内容写入到输出流中
+     void serialize(T t) throws IOException;
+   
+     void close() throws IOException;
+   }
+   ~~~
+
+   
+
+3. Deserializer
+
+   在初始化会传入一个输入流。在反序列化的时候，传入的对象t是通过反射创建的一个未初始化对象，你可以从in输入流里面读取数据为这个t初始化，或者忽略这个t，直接从in里面读取数据创建一个新的T对象（推荐）。
+
+   ~~~java
+   public interface Deserializer<T> {
+     // 初始化方法， 传入的是一个输入流
+     void open(InputStream in) throws IOException;
+     // 反序列化方法
+     T deserialize(T t) throws IOException;
+       
+     void close() throws IOException;
+   }
+   ~~~
+
+   
+
+> 序列化器的指定位置
+
+默认的序列化和反序列化器定义在SerializationFactory中， 一个三个类。当某一类型需要序列化和反序列化的时候， 会依次调用他们的accept方法来判断是否支持这种类型的反序列化。
+
+~~~java
+  public SerializationFactory(Configuration conf) {
+    super(conf);
+    for (String serializerName : conf.getTrimmedStrings(
+            CommonConfigurationKeys.IO_SERIALIZATIONS_KEY,
+            new String[]{WritableSerialization.class.getName(),
+                    AvroSpecificSerialization.class.getName(),
+                    AvroReflectSerialization.class.getName()})) {
+      add(conf, serializerName);
+    }
+  }
+~~~
+
+用户可以通过以下代码来覆盖默认配置
+
+~~~java
+Configuration conf = new Configuration();
+        conf.set("io.serializations", String.format("%s,%s", JavaSerialization.class, WritableSerialization.class));
+        Job job = Job.getInstance(conf);
+~~~
+
+> 内置的序列化器
+
+一共五种， 其中红色框中的是默认使用的， 自定义的时候可以参考WritableSerialization和JavaSerialization
+
+![image-20220304150822515](img/image-20220304150822515.png)
+
+
+
+
+
+Shuffle
+
+shuffle的主要过程如下：
+
+   1. MapTask初始化， 创建一个100M的字节数组作为环形缓冲区，并设置赤道位置为数组开始位置。
+
+   2. 在Mapper的map方法中调用context.write()将Mapper的输出KV写出。
+
+   3. 使用指定的Partitioner对Mapper输出的KV进行分区
+
+   4. 将分区号，KV值一同写入到环形缓冲区中，具体的写入逻辑就是
+
+   5. 如果环形缓冲区使用率达到了80%, 那么就会将环形一个溢写线程将这部分数据溢写到磁盘上，生成一个spill.out文件和一个spill.index文件。同时对于写线程，重置他的写数据起到到生育20%的中间位置。这样就达到了一个写缓冲区线程和一个溢写缓冲区线程同时工作， 两不耽误。
+
+      如果写缓冲区
+
+
 
