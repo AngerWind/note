@@ -212,6 +212,40 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
     </property>
 </configuration>
 ~~~
+windows提交到linux上时, 使用hadoop classpath查看并配置
+
+~~~xml
+
+~~~
+
+> mapred-site.xml
+
+~~~xml
+<configuration>
+  <!-- 设置mapreduce yarn模式-->
+  <property>
+    <name>mapreduce.framework.name</name>
+    <value>yarn</value>
+  </property>
+  <property>
+  <name>yarn.app.mapreduce.am.env</name>
+  <value>HADOOP_MAPRED_HOME=${HADOOP_HOME}</value>
+  </property>
+  <property>
+    <name>mapreduce.map.env</name>
+    <value>HADOOP_MAPRED_HOME=${HADOOP_HOME}</value>
+  </property>
+  <property>
+    <name>mapreduce.reduce.env</name>
+    <value>HADOOP_MAPRED_HOME=${HADOOP_HOME}</value>
+  </property>
+</configuration>
+~~~
+
+
+
+
+
 ### 开启MapReduce JobHistory
 
 开启该功能可以查看MR程序的一些详细的配置信息和运行情况
