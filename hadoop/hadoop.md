@@ -129,7 +129,21 @@ hdfs subcmd -help 查看子命令的帮助选项的具体功能：hdfs dfs -help
 
 一般在HDFS文件系统创建文件或文件夹时，若直接hadoop fs -mkdir [文件夹名]，那么创建的目录在用户目录/user下，若想建立在其他地方，必须要写完整路径。
 
+### hadoop 安装
 
+1. 下载安装包并解压
+
+2. 在/etc/profile 和 ~/.bashrc下配置环境变量
+
+   ~~~shell
+   export JAVA_HOME=/opt/module/jdk-11.0.9
+   export PATH=$JAVA_HOME/bin:$PATH
+   
+   export HADOOP_HOME=/opt/module/hadoop-3.2.1
+   export PATH=$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin
+   ~~~
+
+3. 参照hadoop启动配置对core-site.xml, hdfs-site.xml, yarn-site.xml, mapred-site.xml文件进行配置
 
 ### hadoop启动配置
 
@@ -212,12 +226,6 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
     </property>
 </configuration>
 ~~~
-windows提交到linux上时, 使用hadoop classpath查看并配置
-
-~~~xml
-
-~~~
-
 > mapred-site.xml
 
 ~~~xml
