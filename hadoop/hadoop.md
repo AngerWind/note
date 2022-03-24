@@ -419,3 +419,38 @@ shuffle的主要过程如下：
       
       
 
+### Map Join 和Reduce Join
+
+> Reduce Join
+
+1. Reduce端Join实现原理
+
+   Map端的主要工作，为来自不同表（文件）的key/value对打标签以区别不同来源的记录。然后用连接字段作为key，其余部分和新加的标志作为value，最后进行输出。
+
+   Reduce端的主要工作，在Reduce端以连接字段作为key的分组已经完成，我们只需要在每一个分组当中将那些来源于不同文件的记录（在map阶段已经打标志）分开，最后进行笛卡尔只就ok了。
+
+2. Reduce端Join的使用场景
+
+   Reduce端连接比Map端连接更为普遍，因为在map阶段不能获取所有需要的join字段，即：同一个key对应的字段可能位于不同map中，但是Reduce端连接效率比较低，因为所有数据都必须经过Shuffle过程。
+
+> Map Join
+
+1. Map端Join实现原理
+
+   map join指的是在mapreduce的map阶段先加载一个文件缓存到内存当中，这个文件可能是从磁盘读取的或网络请求的都可以。
+
+   map(key,value,context)方法中读取的数据key和value，这两个数据和先前缓存到内存中的数据一起做join后再context.write()到reduce阶段。
+
+2. 如何缓存文件到NodeManager上
+
+   DistributedCache 是一个提供给Map/Reduce框架的工具，用来缓存文件（text, archives, jars and so on）文件的默认访问协议为(hdfs://).
+
+   DistributedCache在任何Job在节点上执行之前将拷贝缓存的文件到Slave节点。文件在每个Job中只会被拷贝一次，缓存的归档文件会被在Slave节点中解压缩。 
+
+   每个存储在HDFS中的文件被放到缓存中后都可以通过一个符号链接使用。URI hdfs://namenode/test/input/file1#myfile 你可以在程序中直接使用myfile来访问 file1这个文件。 myfile是一个符号链接文件。
+
+3. 使用场景
+
+   一张表十分小、一张表很大。
+
+   在提交作业的时候先将小表文件放到该作业的DistributedCache中，然后从DistributeCache中取出该小表进行join (比如放到Hash Map等等容器中)。然后扫描大表，看大表中的每条记录的join key /value值是否能够在内存中找到相同join key的记录，如果有则直接输出结果。
