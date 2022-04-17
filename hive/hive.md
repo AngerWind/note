@@ -143,12 +143,6 @@ derby数据库是有java语言编写的轻量级数据库, 类文件大小大约
    mysql> create database hive_metadata
    ~~~
 
-6. 初始化元数据库
-
-   ~~~shell
-   bin/schematool -initSchema -dbType mysql - verbose
-   ~~~
-
 7. 在$HIVE_HOME/conf/hive-site.xml( 没有新建 ) 配置hive到mysql的连接信息
 
    ~~~xml
@@ -206,6 +200,12 @@ derby数据库是有java语言编写的轻量级数据库, 类文件大小大约
    </configuration>
    ~~~
 
+8. 初始化元数据库
+
+   ~~~shell
+   bin/schematool -initSchema -dbType mysql - verbose
+   ~~~
+   
 8. 启动hive
 
    ~~~hive
@@ -437,6 +437,21 @@ hiveServer2:
 
   在或者通过命令`netstat -tunlp | grep 10000`看端口是否被占用来判断。
 
+> 遇到的坑
+
+- hive-site.xml中需要配置hive metastore的地址
+
+- 关于 User:  not allowed to impersonate anonymous  (state=08S01,code=0)的问题， 在hive-site.xml中配置这个属性
+
+  ~~~xml
+    <property>
+      <name>hive.server2.enable.doAs</name>
+      <value>false</value>
+    </property>
+  ~~~
+
+  
+
 ### Hive日志
 
 hive日志配置文件为$HIVE_HOME/conf/hive-log4j2.properties
@@ -457,7 +472,23 @@ hiveserver2记录的客户端提交的操作日志在/tmp/username/operation_log
 
 ### Dbeaver连接Hive
 
+1. 设置host， port
 
+   ![image-20220321155437292](img/image-20220321155437292.png)
+
+2. 添加jdbc驱动
+
+   ![image-20220321160729561](img/image-20220321160729561.png)
+
+3. 设置aliyun maven
+
+   添加aliyun maven地址：https://maven.aliyun.com/repository/public/
+
+   并且移动到最上面
+
+   ![image-20220321160909098](img/image-20220321160909098.png)
+
+4. 如果下载jar包的过程中出现“Can't open 'https://maven.aliyun.com/repository/public/org/apache/curator/apache-curator/2.12.0/apache-curator-2.12.0.jar': Not Found”，  直接点忽略
 
 ### Hive DDL
 
@@ -612,3 +643,40 @@ hiveserver2记录的客户端提交的操作日志在/tmp/username/operation_log
 
 ### Hive DML
 
+- 导入数据
+
+  ~~~sql
+  load data [local] inpath '数据的 path' [overwrite] into table database_name.tbl_name [partition (partcol1=val1,…)];
+  ~~~
+
+  - local:表示从本地加载数据到 hive 表；否则从 HDFS 加载数据到 hive 表
+
+  - inpath:表示加载数据的路径, 如果指定了local，那个inpath为本地路径， 否则为hdfs路径。
+
+  - overwrite:表示覆盖表中已有数据，否则表示追加
+  - partition:表示上传到指定分区
+
+- 手动插入数据
+
+  ~~~sql
+  insert into tbl_name(column_name) values(xxx), (xxx);
+  ~~~
+
+- 根据查询结果插入数据，不支持部分字段插入
+
+  ~~~sql
+  [insert into | insert overwrite] tbl_name select ... from ...
+  ~~~
+
+  insert into 表示追加
+
+  insert overwrite表示覆盖
+
+  案例
+
+  ~~~sql
+  insert overwrite table student partition(month='201707') select id, name where month='201709'
+  insert overwrite table student partition(month='201706') select id, name where month='201709';
+  ~~~
+
+  
