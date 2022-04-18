@@ -3940,3 +3940,34 @@ appleReferenceQueue中：java.lang.ref.WeakReference@61bbe9ba
 
 
 #### 使用redis进行限流
+
+
+
+#### java格式化，修改sql
+
+在使用jdbc执行用户传入的sql时， 需要先进行sql格式化，去除掉注释、空白。如果有多个sql，还需要将他们拆分出来。
+
+可以使用druid进行格式化
+
+maven：
+
+~~~xml
+<dependency>
+    <groupId>com.alibaba</groupId>
+    <artifactId>druid</artifactId>
+    <version>1.2.8</version>
+</dependency>
+~~~
+
+java：
+
+~~~java
+		String sql = "select * from dual";		
+		// 格式化输出, 缺省大写格式
+        String result = SQLUtils.format(sql, DbType.postgresql);
+        System.out.println(result);
+        
+        // 解析出的独立语句的个数
+        List<SQLStatement> stmtList = SQLUtils.parseStatements(sql, DbType.postgresql);
+~~~
+

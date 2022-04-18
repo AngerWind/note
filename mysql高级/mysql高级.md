@@ -243,6 +243,7 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
      
      ~~~mysql
      EXPLAIN SELECT * FROM student WHERE cid=1;
+     ~~~
    ~~~
      
      ![img](img/mysql高级/20200804204713765.png)
@@ -261,6 +262,7 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
      - **实际没有使用索引，这是因为**
        - **表数据太小，使用index还需要回表，还不如全表扫描**
        - **表数据大的时候，比如在time字段上建立索引，然后where time between and, 但是mysql估算出between and包含了该表的大部分数据，这种情况下，一个表扫描可能更快，因为它要求更少量的查询。但是，如果这样的一个查询使用了 LIMIT 来检索只是少量的记录时，MySql 还是会使用索引，因为它能够更快地找到这点记录并将其返回。**
+   ~~~
 
 5. possible_key：
 
@@ -297,4 +299,12 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
     - using temporary：使用了临时表保存中间结果，常见于order by和 group by。
 
     - using index：使用了覆盖索引
+
+
+
+
+
+### MySQL binlog
+
+
 
