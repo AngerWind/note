@@ -1,4 +1,4 @@
-#### 七种join
+七种join
 
 ![image-20210807160215014](img/mysql高级/image-20210807160215014.png)
 
@@ -304,7 +304,825 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
 
 
 
-### MySQL binlog
+
+### MySQL事务
+
+- 查看存储引擎
+
+  ~~~sql
+  show variables like '%engine%';
+  ~~~
+
+- 查看默认的事务级别
+
+  ~~~sql
+  show global variables like 'tx_isolation';
+  ~~~
+
+- 查看是否自动提交与设置
+
+  ~~~sql
+  show variables like 'autocommit';
+  
+  set session autocommit = 'autocommit';
+  ~~~
+
+- 事务的开启与提交
+
+  ~~~sql
+  begin;
+  update student set name = 'zhangsan' where id = 1;
+  commit;
+  
+  begin;
+  update student set name = 'zhangsan' where id = 1;
+  rollback;
+  ~~~
+
+  
+
+> 事务并发导致的三大问题
+
+- 脏读：一个事务读取到了别的事务**修改的**但**未提交**的数据
+
+  SQL-transaction T1 modifies a row. SQL- transaction T2 then reads that row **before** T1 performs a COMMIT.  If T1 then performs a ROLLBACK, T2 will have read a row that was never committed and that may thus be considered to have never  existed.
+
+  <img src="img/mysql高级/image-20220407000058841.png" alt="image-20220407000058841" style="zoom: 60%;" />
+
+- 不可重复读：一个事务读取到了别的事务**修改（删除）**的并且**已提交**的数据
+
+  SQL-transaction T1 reads a row. SQL- transaction T2 then **modifies** or **deletes** that row and **performs** a COMMIT. If T1 then attempts to reread the row, it may <u>receive</u> the modified value or discover that the row has been deleted.
+
+  <img src="img/mysql高级/image-20220407001717868.png" alt="image-20220407001717868" style="zoom:67%;" />
+
+- 幻读：一个事务读取到了别的事务**新增的**并且**已经提交**的数据
+
+  SQL-transaction T1 reads the set of rows N that satisfy some <search condition>. SQL-transaction T2 then executes SQL-statements that generate one or more rows that satisfy the <search condition> used by SQL-transaction T1. If SQL-transaction T1 then repeats the initial read with the same <search condition>, it obtains a different collection of rows.
+
+  <img src="img/mysql高级/image-20220407001940127.png" alt="image-20220407001940127" style="zoom:67%;" />
+
+> 数据库隔离级别
+
+参考https://zhuanlan.zhihu.com/p/43493165
+
+为了解决数据库事务并发带来的**读一致性**问题, 数据库提供了四种等级的隔离来解决上面三种问题
+
+- Read Uncommitted（读未提交）：数据之间没有隔离性，脏读，不可重复读，幻读均有可能发生
+- Read Committed （读已提交）：一个事务对别的事务新增，修改，删除并且已提交的数据可见。这可以解决脏读，但是会导致不可重复读和幻读。
+- Repeatable Read （可重复读）：一个事务对别的事务新增并且已提交的数据可见，但是对修改删除并且已提交的数据不可见。这可以解决脏读和不可重复读的问题，但是没有解决幻读的问题。
+- Serializable （串行化）：串行化执行事务，可以严格保证不会出现上面三种问题，但是效率很低
+
+下面是sql92标准下定义的四种隔离级别下，可能出现的问题
+
+| 事务隔离级别     | 脏读     | 不可重复读 | 幻读     |
+| ---------------- | -------- | ---------- | -------- |
+| Read Uncommitted | 可能发生 | 可能发生   | 可能发生 |
+| Read Committed   | 不可能   | 可能发生   | 可能发生 |
+| Repeatable Read  | 不可能   | 不可能     | 可能发生 |
+| Serializable     | 不可能   | 不可能     | 不可能   |
+
+下面是mysql中四种隔离级别下，可能出现的问题
+| 事务隔离级别     | 脏读     | 不可重复读 | 幻读             |
+| ---------------- | -------- | ---------- | ---------------- |
+| Read Uncommitted | 可能发生 | 可能发生   | 可能发生         |
+| Read Committed   | 不可能   | 可能发生   | 可能发生         |
+| Repeatable Read  | 不可能   | 不可能     | **InnoDB不可能** |
+| Serializable     | 不可能   | 不可能     | 不可能           |
+
+> 如何实现事务的隔离级别
+
+1. 生成一个数据请求时间点的一致性数据快照，并用这个快照来提供一定级别（语句级别或者事务级别）的一致性读取——Multi Version Concurrency Control（MVCC）
+2. 在数据读取之前，对其加锁，阻止其他书屋对数据进行修改——Lock Based Concurrency Control（LBCC）
+
+### MySQL锁
+
+参看https://dev.mysql.com/doc/refman/5.7/en/innodb-locking.html
+
+> 锁的类型
+
+1. 表锁
+
+   ~~~shell
+   # 当前事务对table添加读锁, 即共享锁
+   lock tables some_table read; 
+   # 当前事务对table添加写锁, 即排他锁
+   lock tables some_table write;
+   # 释放表锁
+   unlock tables;
+   ~~~
+
+2. metadata lock(MDL)
+
+   MDL是另外一种**表锁**,  不需要显式使用，在访问一个表的时候会被自动加上。**MDL 的作用是ddl和dml进行隔离**。你可以想象一下，如果一个查询正在遍历一个表中的数据，而执行期间另一个线程对这个表结构做变更，删了一列，那么查询线程拿到的结果跟表结构对不上，肯定是不行的。因此，在 MySQL 5.5 版本中引入了 MDL，当对一个表做增删改查操作的时候，加 MDL读锁；当要对表做结构变更操作的时候，加 MDL 写锁. 读锁之间不互斥，因此你可以有多个线程同时对一张表增删改查。
+   
+3. 共享锁与排他锁（Shared and Exclusive Locks）
+
+   共享锁和排他锁是**两个行级别**的锁
+
+   - 共享锁又称**读锁**， 允许事务锁定一行去读取。
+
+     如果T1持有行r的s锁，那么对于T2，可以对行r加s锁，这样T1和T2都持有行r的s锁。T2不能添加x锁，必须要等待。
+
+     加锁方式：`select * from student where id = 1 lock in share mode`
+
+     释放锁:  `commit/rollback`
+
+     使用场景：一张订单表order_info, 订单明细表order_detail， 如果希望修改order_detail时不希望order_info中对应数据被修改, 可以使用共享锁将order_info中数据锁起来
+
+   - 排他锁又称**写锁**，允许事务锁定一行进行修改或者删除
+
+     如果T1持有行r的x锁，那么对于T2，无论对行r添加s锁还是x锁，都需要等待。
+
+     加锁方式：
+
+     ​    自动:  delete/update/insert默认加x锁
+
+     ​    手动: `select * from student where id = 1 for update;`
+
+4. 意向锁
+
+   意向锁是由**数据库引擎自己维护的表级别的锁**, 用户无法手动添加意向锁
+
+   - 意向共享锁( Intention Shared Lock, 简称IS锁 )
+
+     一个事务在给数据行添加共享锁前必须先获取该表的IS锁
+
+   - 意向排他锁( Intention Exclusive Lock, 简称IX锁 )
+
+     一个事务在给数据行添加x锁前必须先获取该表的IX锁
+
+    意向锁的主要用途在于, **给表添加表锁的时候, 如果没有意向锁, 需要全局扫描所有的行上面的锁. 只有所有行都没有锁的时候才可以添加上表锁. 如果有了意向锁, 可以直接通过意向锁来判断当前表中的行有没有添加行锁. 加快效率.**
+
+   意向锁与表级锁的兼容性
+
+   |      | `X`  | `IX`   | `S`    | `IS`   |
+   | :--- | :--- | :----- | :----- | ------ |
+   | `X`  | 冲突 | 冲突   | 冲突   | 冲突   |
+   | `IX` | 冲突 | 兼容的 | 冲突   | 兼容的 |
+   | `S`  | 冲突 | 冲突   | 兼容的 | 兼容的 |
+   | `IS` | 冲突 | 兼容的 | 兼容的 | 兼容的 |
+
+5. 插入意向锁
+
+   插入意向锁是间隙锁的一种, 在插入一行记录的时候, 
+
+6. 自增锁(AUTO-INC)
+
+   `AUTO-INC`特殊的表级锁，在插入到具有 `AUTO_INCREMENT`列的表中的事务使用。在最简单的情况下，如果一个事务正在向表中插入行，则任何其他事务都必须等待在该表中执行自己的插入操作，以便第一个事务插入的行接收连续的主键值。
+
+
+
+> 行锁的实现方式
+
+**当通过select for update对数据添加锁的时候, innodb添加锁的对象是索引, 即在索引项上面添加锁,  如果加锁的语句没有使用到索引的话, innodb就会添加表锁.**
+
+**记录锁, 间隙锁, 临键锁可以认为是innodb实现行锁的一种方式**.
+
+建表语句
+
+~~~sql
+CREATE TABLE `class` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) NOT NULL,
+  `age` int DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `name` (`name`),
+  KEY `age` (`age`)
+) ENGINE=InnoDB AUTO_INCREMENT=19 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+INSERT INTO test.class (id, name, age) VALUES(1, 'a', 1);
+INSERT INTO test.class (id, name, age) VALUES(8, 'b', 8);
+INSERT INTO test.class (id, name, age) VALUES(14, 'c', 14);
+INSERT INTO test.class (id, name, age) VALUES(18, 'd', 18);
+~~~
+
+使用一下语句来查询mysql8.x中当前连接所持有的锁
+
+~~~sql
+select * from performance_schema.data_locks dl join information_schema.INNODB_TRX it on dl.ENGINE_TRANSACTION_ID = it.trx_id where it.trx_mysql_thread_id = connection_id();
+~~~
+
+
+
+1. 记录锁(Record Lock)
+
+   记录锁的作用是对某个存在数据加锁, 防止其他事务对这个数据操作
+
+   共享记录锁防止其他事务修改, 删除该数据. 排他记录锁防止其他事务读取, 删除, 修改该数据.
+
+   
+
+2. 间隙锁(Gap Lock)
+
+   **间隙锁的作用的锁住一段数据不存在的间隙, 防止其他事务在这段间隙上插入数据. 保证事务的读一致性**
+
+   **因为间隙锁的唯一作用就是防止别的事务在这个间隙上插入数据, 所以两个事务可以同时对一个索引项添加间隙锁**
+
+   **对一个索引项添加间隙锁, 会锁住当前索引项与其前面一个索引项中间这一段不存在数据的间隙, 两边开区间** 
+
+   比如对id = 1的索引项上面添加间隙锁, 会锁住(-∞, 1)这一个区间段.  对id = 14的索引项添加间隙锁, 会锁住(8, 14)这一段区间
+
+   
+
+3. 临键锁(Next-Key Lock)
+
+   临键锁是间隙锁与记录锁的一种组合
+
+   对一个索引项加锁, 锁住当前记录(记录锁的作用)与当前记录前面那一段间隙(间隙锁的作用)
+
+   比如对id = 1的索引项加锁, 会锁住(-∞, 1], 对id = 18的索引项加锁, 会锁住(14, 18]
+
+   如果想要锁住(18 , +∞)这一个区间段, innodb的lock data将显示`supermun pseudo-record`
+
+   ![image-20220417163146782](img/mysql高级/image-20220417163146782.png)
+
+   
+
+4. 其实不管是记录锁, 间隙锁还是临键锁, 都是为了保证数据的读一致性和事务的隔离.  innodb会根据数据的不同而采用不同的锁的组合方式来保证上面两个特效.
+
+   下面是一些语句使用的锁的分析
+
+   - 在**唯一索引**上进行**等值查询**时, 如果**没有查询到数据**时, 将对该数据**后面的第一个存在的数据的索引项**添加间隙锁, 锁住**该索引项**与其**前面的索引项中间这段间隙**
+
+     ~~~sql
+     select * from class c where id  = 9 for update;
+     ~~~
+
+     ![image-20220416181505348](img/mysql高级/image-20220416181505348.png)
+
+     以上sql查询id = 9的数据, 但是当前表并没有id = 9的数据, 所以为了**保证读一致性**, 即防止别的事务插入id = 9的数据, 会在id = 14(9后面第一个存在的数据)上面添加一个记录锁, 锁住(8, 14)这个区间段, **两边都是开区间**. 这样别的事务就无法在这个区间段中**插入**数据(插入8-14中的任意数字都不行) 
+
+     但是如果此时另外一个事务同时执行`select * from class c where id = 10 for update`依旧是可以成功的, 因为两个事务可以在一个索引项上面添加间隙锁
+
+     ![image-20220416183231879](img/mysql高级/image-20220416183231879.png)
+
+   - 在**唯一索引**上进行**等值查询**时, 如果**查询到数据**时, 将对该数据索引项添加记录锁
+
+     使用以下语句对上表进行查询, 将添加记录锁
+
+     ~~~sql
+     begin;
+      select * from class c where id = 8 or id = 14 for update;
+      select * from performance_schema.data_locks dl join information_schema.INNODB_TRX it on dl.ENGINE_TRANSACTION_ID = it.trx_id where it.trx_mysql_thread_id = connection_id();
+     rollback;
+     ~~~
+
+     ![image-20220416131211030](img/mysql高级/image-20220416131211030.png)]
+
+     可以看到, 上面的sql通过id进行查询, 而id上面刚好有一个唯一索引, 所以记录锁是添加在primary索引上的.
+
+     并且上面的sql语句查询到了数据, 所以会在id=8和id=14的primary索引项上面添加记录锁. 
+
+     并且上面的语句还会添加一个表锁类型的意向排他锁
+
+   - 以下语句生成间隙锁, 因为在[10, 13]这个区间段没有数据, 所以添加了一个间隙锁在id = 14的索引项上面, 锁住(8, 14)这个区间段
+
+     ~~~sql
+     select * from class c where id between 10 and 13
+     ~~~
+
+     ![image-20220417162635669](img/mysql高级/image-20220417162635669.png)
+
+   - 以下语句使用间隙锁和临键锁, 因为在[10, 15]这个区间段有一个数据id = 14, 所以为了保证读一致性, 需要在id = 14的索引项上面插入一个临键锁, 锁住(8, 14]这个区间段, 同时还要在id = 18的索引项上面添加一个间隙锁, 锁住(14, 18)这个区间段
+
+     ~~~sql
+     select * from class  where id between 10 and 15 for update;
+     ~~~
+
+     ![image-20220417163541733](img/mysql高级/image-20220417163541733.png)
+
+   - 使用一下语句生成临键锁和间隙锁, 因为这里使用了age进行查询, 所以查询使用了age索引, 而**age并非唯一索引**, 即其他age=14的数据的索引项可能插入到age=14, id=14这个索引项的前面和后面, 所以为了保证读一致性, 需要在age=14, id=14这个索引项上面添加一个临键锁, 锁住age=8,id=8到age=14, id= 14这个区间段, 左开右闭.   同时在age=18, id=18的这个索引项上面添加一个间隙锁, 锁住age=14, id=14到age=18到id=18这个区间段, 两边开区间
+
+     ~~~sql
+     select * from class where age = 14 for update;
+     ~~~
+
+     ![image-20220417164406558](img/mysql高级/image-20220417164406558.png)
+
+
+
+
+
+### Innodb查看事务与锁
+
+https://www.cnblogs.com/yuanfy008/p/15169030.html
+
+> 查看事务情况
+
+在innodb中, 在information_schema.innodb_trx表中记录了所有**正在执行**的事务
+
+表中字段解释如下
+
+~~~shell
+ # 事务ID
+  `trx_id` varchar(18) NOT NULL DEFAULT '',  
+  
+  # 事务状态， 允许值是 RUNNING，LOCK WAIT， ROLLING BACK，和 COMMITTING。
+  `trx_state` varchar(13) NOT NULL DEFAULT '', 
+  
+  # 事务开始时间
+  `trx_started` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  
+  # 事务当前等待的锁的ID，如果TRX_STATE是LOCK WAIT；否则NULL。
+  `trx_requested_lock_id` varchar(105) DEFAULT NULL, 
+  
+   # 事务开始等待锁的时间
+  `trx_wait_started` datetime DEFAULT NULL,
+  
+  # 事务权重， 反映（但不一定是准确计数）更改的行数和事务锁定的行数。为了解决死锁， InnoDB选择权重最小的事务作为“受害者”进行回滚。无论更改和锁定行的数量如何，更改非事务表的事务都被认为比其他事务更重。
+  `trx_weight` bigint(21) unsigned NOT NULL DEFAULT '0', 
+  
+  # MySQL 线程 ID。 这个id很重要，如果发现某个事务一直在等待无法结束的话，可以通过这个ID kill掉。
+  `trx_mysql_thread_id` bigint(21) unsigned NOT NULL DEFAULT '0', 
+  
+  # 事务正在执行的 SQL 语句。
+  `trx_query` varchar(1024) DEFAULT NULL,
+  
+  # 交易的当前操作，如果有的话；否则 NULL。
+  `trx_operation_state` varchar(64) DEFAULT NULL,
+  
+  # InnoDB处理此事务的当前 SQL 语句时使用 的表数。
+  `trx_tables_in_use` bigint(21) unsigned NOT NULL DEFAULT '0',
+  
+  # InnoDB当前 SQL 语句具有行锁 的表数。（因为这些是行锁，而不是表锁，尽管某些行被锁定，但通常仍可以由多个事务读取和写入表。）
+  `trx_tables_locked` bigint(21) unsigned NOT NULL DEFAULT '0',
+  
+  # 事务保留的锁数。
+  `trx_lock_structs` bigint(21) unsigned NOT NULL DEFAULT '0',
+  
+  # 此事务的锁结构在内存中占用的总大小。
+  `trx_lock_memory_bytes` bigint(21) unsigned NOT NULL DEFAULT '0',
+  
+  # 此事务锁定的大致数量或行数。该值可能包括物理上存在但对事务不可见的删除标记行。
+  `trx_rows_locked` bigint(21) unsigned NOT NULL DEFAULT '0',
+  
+  # 此事务中修改和插入的行数。
+  `trx_rows_modified` bigint(21) unsigned NOT NULL DEFAULT '0',
+  `trx_concurrency_tickets` bigint(21) unsigned NOT NULL DEFAULT '0',
+  
+  # 当前事务的隔离级别。
+  `trx_isolation_level` varchar(16) NOT NULL DEFAULT '',
+  `trx_unique_checks` int(1) NOT NULL DEFAULT '0',
+  `trx_foreign_key_checks` int(1) NOT NULL DEFAULT '0',
+  `trx_last_foreign_key_error` varchar(256) DEFAULT NULL,
+  `trx_adaptive_hash_latched` int(1) NOT NULL DEFAULT '0',
+  `trx_adaptive_hash_timeout` bigint(21) unsigned NOT NULL DEFAULT '0',
+  `trx_is_read_only` int(1) NOT NULL DEFAULT '0',
+  `trx_autocommit_non_locking` int(1) NOT NULL DEFAULT '0'
+~~~
+
+其中有几个特别重要的字段
+
+~~~shell
+TRX_ID                  事务ID
+trx_state				事务的状态, running表示正在运行, lock wait表示正在等待其他事务释放锁
+TRX_REQUESTED_LOCK_ID   事务当前正在等待的锁的ID。 如果当前事务阻塞就可以看出之前的锁
+TRX_MYSQL_THREAD_ID     MySQL 线程 ID
+~~~
+
+查看所有的事务, 与当前连接正在进行的事务
+
+~~~~sql
+begin;
+select * from class c;
+select * from information_schema.INNODB_TRX;
+-- connection_id()表示当前连接的mysql线程, 即通过线程号查找当前连接正在执行的事务
+select * from information_schema.INNODB_TRX where TRX_MYSQL_THREAD_ID =  connection_id();
+commit;
+~~~~
+
+
+
+> 查看锁的情况
+
+在mysql5.x, 所有的锁的情况都会记录在information_schema.innodb_locks中, 锁等待的情况记录在information_schema.data_lock_waits中
+
+在mysql8.x, 所有的锁的情况记录在performance_schema.data_locks,  锁等待的情况记录在performance_schema.data_lock_waits中
+
+下面是data_locks字段的解释
+
+~~~shell
+# 持有或请求锁的存储引擎。
+  `ENGINE` varchar(32) NOT NULL,
+  
+  # 存储引擎持有或请求的锁的 ID。( ENGINE_LOCK_ID, ENGINE) 值的元组是唯一的。
+  # information_schema.INNODB_TRX.trx_requested_lock_id 就来源于这
+  `ENGINE_LOCK_ID` varchar(128) NOT NULL,
+  
+  # 请求锁定的事务的存储引擎内部 ID 
+  # 来源information_schema.INNODB_TRX.TRX_ID
+  `ENGINE_TRANSACTION_ID` bigint(20) unsigned DEFAULT NULL,
+  
+  # 创建锁的会话的线程 ID
+  `THREAD_ID` bigint(20) unsigned DEFAULT NULL,
+  
+  `EVENT_ID` bigint(20) unsigned DEFAULT NULL,
+  `OBJECT_SCHEMA` varchar(64) DEFAULT NULL,
+  `OBJECT_NAME` varchar(64) DEFAULT NULL,
+  `PARTITION_NAME` varchar(64) DEFAULT NULL,
+  `SUBPARTITION_NAME` varchar(64) DEFAULT NULL,
+  
+  # 锁定索引的名称
+  `INDEX_NAME` varchar(64) DEFAULT NULL,
+  `OBJECT_INSTANCE_BEGIN` bigint(20) unsigned NOT NULL,
+  
+  # 锁的类型。该值取决于存储引擎。对于 InnoDB，允许的值为 RECORD行级锁和 TABLE表级锁。
+  `LOCK_TYPE` varchar(32) NOT NULL,
+  
+  # 如何请求锁定。
+  # 该值取决于存储引擎。为 InnoDB，允许值是 S[,GAP]，X[,GAP]， IS[,GAP]，IX[,GAP]， AUTO_INC，和 UNKNOWN。AUTO_INC和UNKNOWN 指示间隙锁定以外的锁定模式 （如果存在）
+  `LOCK_MODE` varchar(32) NOT NULL,
+  
+  # 锁定请求的状态。
+  # 该值取决于存储引擎。对于 InnoDB，允许的值为 GRANTED（锁定已持有）和 WAITING（正在等待锁定）。
+  `LOCK_STATUS` varchar(32) NOT NULL,
+  `LOCK_DATA` varchar(8192) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
+~~~
+
+上面需要特别注意的字段是
+
+~~~shell
+ENGINE_LOCK_ID  					锁的id
+ENGINE_TRANSACTION_ID				持有锁的事务id, 记录在information_schema.innodb_trx中
+INDEX_NAME							该锁锁住的索引的名称
+LOCK_TYPE							record表示行锁, table表示表锁
+LOCK_MODE							锁的模式.  
+									当为行锁时, [X]表示排他临键锁, [X,GAP]表示排他间隙锁, [X,REC_NOT_GAP]表示排他记录锁
+									当为行锁时, [S]表示共享临键锁, [S,GAP]表示共享间隙锁, [S,REC_NOT_GAP]表示共享记录锁
+									当为表锁时, [IX]表示意向排他锁, [IS]表示意向共享锁, [AUTO_INC]表示自增锁
+LOCK_DATA							当前锁锁住的索引项的值
+~~~
+
+查看当前事务所持有的锁
+
+~~~~sql
+-- connection_id()表示当前mysql连接的线程id, 通过线程id查询事务id, 然后查询持有的表
+select * from performance_schema.data_locks dl join information_schema.INNODB_TRX it on dl.ENGINE_TRANSACTION_ID = it.trx_id where it.trx_mysql_thread_id = connection_id();
+~~~~
+
+
+
+### MySQL当前读和快照读
+
+https://blog.csdn.net/mingtiannihaoabc/article/details/107018110
+
+快照读：普通的select就是快照读，通过MVCC实现。读取到的数据是针对当前事务最新的数据, 但从整个数据库来看可能读取的是老数据. 能够实现`快照读-写`并发情况下的读一致性
+
+当前读：读取的数据库记录，都是当前最新的版本，会对当前读取的数据进行加锁，防止其他事务修改数据, 如下操作都是当前读：
+
+- select lock in share mode (共享锁)
+
+- select for update (排他锁)
+- update (排他锁)
+- insert (排他锁)
+- delete (排他锁)
+- 串行化事务隔离级别
+
+下面有这样一个实验, 当前事务隔离级别是可重复读
+
+|      | 事务A                                      | 事务B                              | 结果                                                         | 分析                                                         |
+| ---- | ------------------------------------------ | ---------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 1    | begin;                                     |                                    |                                                              |                                                              |
+| 2    | select * from class;                       |                                    | ![image-20220409211534399](img/mysql高级/image-20220409211534399.png) | select是`快照读`, 导致事务A创建了一个ReadView, 记录了当前最大事务id+1, 当前最小活跃事务id, 当前事务id, 当前活跃的事务id |
+| 3    |                                            | begin;                             |                                                              |                                                              |
+| 4    |                                            | insert into class values (6, 'b'); |                                                              |                                                              |
+| 5    |                                            | select * from class;               | ![image-20220409211727131](img/mysql高级/image-20220409211727131.png) | id为6的数据的trx_id是当前事务B的id, 所以该条记录对当前事务可见, 符合MVCC |
+| 6    |                                            | commit;                            |                                                              |                                                              |
+| 7    | select * from class;                       |                                    | ![image-20220409211825030](img/mysql高级/image-20220409211825030.png) | RR模式下, 使用步骤2创建的ReadView进行可见性判断. id为6的数据的trx_id大于等于ReadView中记录的最大事务id+1,  所以该条记录对于事务A不可见 |
+| 8    | update class set name = 'yy' where id = 6; |                                    | ![image-20220409211903470](img/mysql高级/image-20220409211903470.png) | update是`当前读`, 能够读取到最新的数据, 并对数据加锁. 所以能够读取到id为6的数据 |
+| 9    | select * from class;                       |                                    | ![image-20220409211915591](img/mysql高级/image-20220409211915591.png) | 步骤8修改id为6的数据后, 该数据的trx_id变为了当前事务id, 所以该条记录对当前可见. |
+| 10   | commit;                                    |                                    |                                                              |                                                              |
+
+
+
+### MySQL undo log和MVCC
+
+https://zhuanlan.zhihu.com/p/66791480
+
+https://www.php.cn/mysql-tutorials-460111.html
+
+https://cloud.tencent.com/developer/article/1876227
+
+> undo log
+
+undo log是回滚日志，有两个作用：**提供回滚操作保证原子性**和**多个行版本控制(MVCC)**。
+
+在数据修改的时候，不仅记录了redo，还记录了相对应的undo，如果因为某些原因导致事务失败或回滚了，可以借助该undo进行回滚。
+
+undo log和redo log记录物理日志不一样。**redo log记录的是数据页的物理变化.** **undo log主要记录的是数据的逻辑变化**，它是逻辑日志。可以认为当delete一条记录时，undo log中会记录一条对应的insert记录，反之亦然，当update一条记录时，它记录一条对应相反的update记录。当执行rollback时，就可以从undo log中的逻辑记录读取到相应的内容并进行回滚。
+
+
+
+> MVCC
+
+MVCC主要用于`事务的读一致性`，和`发生读—写请求冲突时不用加锁`。 这个读是指的`快照读`。 并且只在可重复读(RR)和读已提交(RC)模式下工作
+
+InnoDB行记录中有三个隐藏列
+
+- row_id用于表没有主键和唯一键的时候生成聚簇索引
+- trx_id: 表示**最近修改的事务的id** ，每次一个事务对某条聚簇索引记录进行改动时，都会把该事务的`事务id`赋值给`trx_id`隐藏列。新增一个事务时，trx_id会递增，因此 trx_id 能够表示事务开始的先后顺序。
+- db_roll_ptr(roll pointer): 指向undo segment中的undo log。每次对某条聚簇索引记录进行改动时，都会把旧的版本写入到`undo日志`中，然后这个隐藏列就相当于一个指针，可以通过它来找到该记录修改前的信息。
+
+数据每次更新后，都会将旧值放到一条 undo log 中，就算是该记录的一个旧版本，随着更新次数的增多，所有的版本都会被roll_ptr 属性连接成一个链表，我们把这个链表称之为**版本链**，版本链的尾节点就是当前记录最新的值。另外，每个版本中还包含生成该版本时对应的 **事务id（trx_id）**.
+
+![img](img/mysql高级/v2-0fa8985bf75952a1b81587259797efd3_720w.jpg)
+
+
+
+
+
+
+
+Undo log分为Insert和Update两种，delete可以看做是一种特殊的update，即在记录上修改删除标记。
+
+update undo log记录了数据之前的数据信息，通过这些信息可以还原到之前版本的状态。
+
+当进行插入操作时，生成的Insert undo log在事务提交后即可删除，因为其他事务不需要这个undo log。
+
+进行删除修改操作时，会生成对应的undo log，并将当前数据记录中的db_roll_ptr指向新的undo log。
+
+
+
+**Read View(读视图)**
+事务进行`快照读`操作的时候会生产一个`读视图`(Read View)
+
+Read View几个属性
+
+trx_ids: 当前系统活跃(未提交)事务版本号集合。是系统中**不应该被当前`快照读`看到的事务id列表**
+
+low_limit_id: **创建当前read view 时**“当前系统最大事务版本号+1”。
+
+up_limit_id: **创建当前read view 时**“系统正处于活跃事务最小版本号”
+
+creator_trx_id: 创建read view的当前事务版本号；
+
+Read View主要是用来做`可见性判断`的, 即当我们某个事务执行快照读的时候，对该记录创建一个Read View读视图，把它比作条件用来判断当前事务能够看到哪个版本的数据。
+
+
+
+**Read View可见性判断条件**
+db_trx_id < up_limit_id || db_trx_id == creator_trx_id（显示）
+
+如果数据事务ID小于read view中的最小活跃事务ID，则可以肯定该数据是在当前Read View创建之前就已经提交了的 ,所以是可见的。
+
+或者数据的事务ID等于creator_trx_id ，那么说明这个数据就是当前事务自己生成的，自己生成的数据自己当然能看见，所以这种情况下此数据也是可以显示的。
+
+db_trx_id >= low_limit_id（不显示）
+
+如果数据事务ID大于read view 中的当前系统的最大事务ID，则说明该数据是在当前read view 创建之后才产生的，所以数据不显示。如果小于则进入下一个判断
+
+db_trx_id是否在活跃事务（trx_ids）中
+
+不存在：则说明read view产生的时候事务已经commit了，这种情况数据则可以显示。
+
+已存在：则代表我Read View生成时刻，你这个事务还在活跃，还没有Commit，你修改的数据，我当前事务也是看不见的。
+
+![img](img/mysql高级/v2-fef7954f5e3c7713f48b35597e7f9fb8_720w.jpg)
+
+**RR、RC生成时机**
+RC隔离级别下，是每个快照读都会生成并获取最新的Read View；
+
+RR隔离级别下，则是同一个事务中的**第一个快照读**才会创建Read View, 之后的快照读获取的都是同一个Read View，之后的查询就不会重复生成了，所以一个事务的查询结果每次都是一样的。
+
+
+
+用一张图更好的理解一下：
+
+最后我们来举个例子让我们更好理解上面的内容。
+
+比如我们有如下表：
+
+![img](img/mysql高级/v2-9fa606c971981ff9986534f957172972_720w.png)
+
+现在有一个事务id是60的执行如下语句并提交：
+
+```text
+update user set name = '强哥1' where id = 1;
+```
+
+此时undo log存在版本链如下：
+
+![img](img/mysql高级/v2-1bede18add6acd88fbc4fb0c50db2606_720w.jpg)
+
+提交事务id是60的记录后，接着有一个事务id为100的事务，修改name=强哥2，但是事务还没提交。则此时的版本链是：
+
+![img](img/mysql高级/v2-cd43dd12a224c36984bd4c12188a2835_720w.jpg)
+
+此时另一个事务发起select语句查询id=1的记录，因为trx_ids当前只有事务id为100的，所以该条记录不可见，继续查询下一条，发现trx_id=60的事务号小于up_limit_id，则可见，直接返回结果强哥1。
+
+那这时候我们把事务id为100的事务提交了，并且新建了一个事务id为110也修改id为1的记录name=强哥3，并且不提交事务。这时候版本链就是：
+
+![img](img/mysql高级/v2-dc6fa9d9b0db63312160fb61ca464dfd_720w.jpg)
+
+这时候之前那个select事务又执行了一次查询,要查询id为1的记录。
+
+如果你是已提交读隔离级别READ_COMMITED，这时候你会重新一个ReadView，那你的活动事务列表中的值就变了，变成了[110]。按照上的说法，你去版本链通过trx_id对比查找到合适的结果就是强哥2。
+
+如果你是可重复读隔离级别REPEATABLE_READ，这时候你的ReadView还是第一次select时候生成的ReadView,也就是列表的值还是[100]。所以select的结果是强哥1。所以第二次select结果和第一次一样，所以叫可重复读！
+
+
+
+### MySQL redo log
+
+https://zhuanlan.zhihu.com/p/190886874
+
+https://zhuanlan.zhihu.com/p/66791480
+
+https://zhuanlan.zhihu.com/p/408175328
+
+我们都知道，事务的四大特性里面有一个是**持久性**，具体来说就是只要事务提交成功，那么对数据库做的修改就被永久保存下来了，不可能因为任何原因再回到原来的状态。
+
+但是**mysql中使用了大量缓存，缓存存在于内存中，修改操作时会直接修改内存，而不是立刻修改磁盘**，这就导致了内存中的数据与磁盘上的数据不一致。同时**因为数据库宕机, 掉电等缘故会使得内存中的数据丢失, 导致已提交的事务并没有被持久化到磁盘.**
+
+那么mysql是如何保证持久性的呢？最简单的做法是在每次事务提交的时候，将该事务涉及修改的数据页全部从内存刷新到磁盘中。但是这么做会有严重的性能问题，主要体现在两个方面：
+
+- 因为Innodb是以页为单位进行磁盘交互的，数据页大小是`16KB`，刷盘比较耗时，可能就修改了数据页里的几`Byte`数据，这个时候将完整的数据页从内存刷到磁盘的话，太浪费资源了！
+
+  如果是写`redo log`，一行记录可能就占几十`Byte`，只包含表空间号、数据页号、磁盘文件偏移 量、更新值，所以刷盘速度很快。
+
+- 一个事务可能涉及修改多个数据页，并且这些数据页在物理上并不连续，使用随机IO写入性能太差！
+
+  redo log 再加上是顺序写，速度快(后面会将)
+
+因此mysql设计了redo log，具体来说就是**只记录事务对数据页做了哪些修改**，因为记录的是数据页的变化, 恢复起来非常快速, 这样就能完美地解决性能问题了
+
+同时我们很容易得知，**在innodb中，既有redo log需要刷盘，还有数据页也需要刷盘，****redo log存在的意义主要就是降低对数据页刷盘的要求**。
+
+
+
+redo log包括两部分：一个是内存中的日志缓冲(redo log buffer)，另一个是磁盘上的日志文件(redo log file)。**mysql在事务执行的过程中每执行一条DML语句，先将记录写入redo log buffer，后续某个时间点再一次性将多个操作记录写到redo log file(一个没有提交事务的`redo log`记录，也可能会刷盘。)**。这种先写日志，再写磁盘的技术就是MySQL里经常说到的WAL(Write-Ahead Logging) 技术。
+
+在计算机操作系统中，用户空间(user space)下的缓冲区数据一般情况下是无法直接写入磁盘的，中间必须经过操作系统内核空间(kernel space)缓冲区(OS Buffer)。因此，redo log buffer写入redo log file实际上是先写入OS Buffer，然后再通过系统调用fsync()将其刷到redo log file中，过程如下：
+
+
+
+![img](img/mysql高级/v2-992558d6b12a8d0f666603da548758b7_720w.jpg)
+
+
+
+mysql支持三种将redo log buffer写入redo log file的时机，可以通过**innodb_flush_log_at_trx_commit**参数配置，各参数值含义如下：
+
+| 参数值              | 含义                                                         |                                                              |                                                              |
+| ------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 0（延迟写）         | 事务提交时将不会将redo log buffer中的日志写入到os buffer。而是通过后台线程每隔`1`秒，就会把`redo log buffer`中的内容写到文件系统缓存（`page cache`），然后调用`fsync`刷盘。 | 当数据库崩溃的时候，会丢失1秒的数据                          | ![img](img/mysql高级/v2-2abf4716c88e1cb6020a21f6d441cca2_720w.jpg) |
+| 1（实时写，实时刷） | 事务每次提交都会将redo log buffer中的日志写入到os buffer并调用fsync()刷写到redo log file中. | 这种方式即使数据库崩溃也不会丢失任务数据, 但是因为每次提交都写入磁盘, IO性能较差 | ![img](img/mysql高级/v2-0181ad11442ef502210aeec8856f4fd8_720w.jpg) |
+| 2（实时写，延迟刷） | 每次提交仅写入到os buffer中, 通过后台线程每个1秒调用fsync()将os buffer中的日志写入到redo log file中. | 如果仅仅只是`MySQL`挂了不会有任何数据丢失，但是宕机可能会有`1`秒数据的丢失。 | ![img](img/mysql高级/v2-b1cfa7cae61b0917365acb7026e11a0e_720w.jpg) |
+
+除了后台线程每秒`1`次的轮询操作，还有一种情况，当`redo log buffer`占用的空间即将达到`innodb_log_buffer_size`一半的时候，后台线程会主动刷盘。
+
+
+
+![img](img/mysql高级/v2-41365bae03d3607ea95ff74246356a99_720w.jpg)
+
+
+
+
+
+前面说过，redo log实际上记录数据页的变更，而**一旦数据页从内存持久化到磁盘上, 对应的redo log也就没有必要存在了**，因此redo log实现上采用了大小固定，循环写入的方式，当写到结尾时，会回到开头循环写日志。
+
+同时redo log日志文件不止一个, 每个日志文件的大小一致, 多个redo log日志文件形成一个文件组. 如下图：
+
+
+
+![img](img/mysql高级/v2-6db2466f157a91021b28f70adbe79791_720w.jpg)
+
+
+
+
+
+在整个日志文件组中还有两个重要的属性，分别是`write pos、checkpoint`
+
+- **write pos表示redo log当前记录的LSN(逻辑序列号)位置**
+- **checkpoint数据页更改记录刷盘后对应redo log所处的LSN(逻辑序列号)位置。**
+
+
+
+在上图中，write pos到check point之间的部分是redo log空着的部分，用于记录新的记录；check point到write pos之间是redo log待落盘的数据页更改记录。当write pos追上check point时，会先推动check point向前移动，空出位置再记录新的日志。
+
+启动innodb的时候，不管上次是正常关闭还是异常关闭，总是会进行恢复操作。因为redo log记录的是数据页的物理变化，因此恢复的时候速度比逻辑日志(如binlog)要快很多。
+
+重启innodb时，首先会检查磁盘中数据页的LSN，如果数据页的LSN小于日志中的LSN，则会从checkpoint开始恢复。
+
+还有一种情况，在宕机前正处于checkpoint的刷盘过程，且数据页的刷盘进度超过了日志页的刷盘进度，此时会出现数据页中记录的LSN大于日志中的LSN，这时超出日志进度的部分将不会重做，因为这本身就表示已经做过的事情，无需再重做。
+
+
+
+redo log 与bin log的不同
+
+
+
+![img](img/mysql高级/v2-e9fbabaa48124d960b49c1b7dbbc009c_720w.jpg)
+
+
+
+
+
+### MySQL 悲观锁和乐观锁
+
+https://zhuanlan.zhihu.com/p/31537871
+
+https://zhuanlan.zhihu.com/p/100703597
+
+> 悲观锁
+
+悲观锁是对于数据的处理持悲观态度，总认为会发生并发冲突，获取和修改数据时，别人会修改数据。所以在整个数据处理过程中，需要将数据锁定。
+
+例子：商品秒杀过程中，库存数量的减少，避免出现超卖的情况。
+
+```text
+CREATE TABLE `tb_goods_stock` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `goods_id` bigint(20) unsigned DEFAULT '0' COMMENT '商品ID',
+  `nums` int(11) unsigned DEFAULT '0' COMMENT '商品库存数量',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `modify_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `goods_id` (`goods_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品库存表';
+```
+
+将商品库存数量nums字段类型设为unsigned，保证在数据库层面不会发生负数的情况。
+
+注意，使用悲观锁，需要关闭mysql的自动提交功能，将 set autocommit = 0;
+
+注意，mysql中的行级锁是基于索引的，如果sql没有走索引，那将使用表级锁把整张表锁住。
+
+1、开启事务，查询要卖的商品，并对该记录加锁。
+
+```php
+begin;
+select nums from tb_goods_stock where goods_id = {$goods_id} for update;
+```
+
+2、判断商品数量是否大于购买数量。如果不满足，就回滚事务。
+
+3、如果满足条件，则减少库存，并提交事务。
+
+```text
+update tb_goods_stock set nums = nums - {$num} where goods_id = {$goods_id} and nums >= {$num};
+commit;
+```
+
+事务提交时会释放事务过程中的锁。
+
+悲观锁在并发控制上采取的是先上锁然后再处理数据的保守策略，虽然保证了数据处理的安全性，但也降低了效率。
+
+
+
+> 乐观锁
+
+顾名思义，就是对数据的处理持乐观态度，乐观的认为数据一般情况下不会发生冲突，只有提交数据更新时，才会对数据是否冲突进行检测。
+
+如果发现冲突了，则返回错误信息给用户，让用户自已决定如何操作。
+
+**乐观锁的实现不依靠数据库提供的锁机制，需要我们自已实现，实现方式一般是记录数据版本，一种是通过版本号，一种是通过时间戳。**
+
+给表加一个版本号或时间戳的字段，读取数据时，将版本号一同读出，数据更新时，将版本号加1。
+
+当我们提交数据更新时，判断当前的版本号与第一次读取出来的版本号是否相等。如果相等，则予以更新，否则认为数据过期，拒绝更新，让用户重新操作。
+
+```text
+CREATE TABLE `tb_goods_stock` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT COMMENT 'ID',
+  `goods_id` bigint(20) unsigned DEFAULT '0' COMMENT '商品ID',
+  `nums` int(11) unsigned DEFAULT '0' COMMENT '商品库存数量',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `modify_time` datetime DEFAULT NULL COMMENT '更新时间',
+  `version` bigint(20) unsigned DEFAULT '0' COMMENT '版本号',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `goods_id` (`goods_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb4 COMMENT='商品库存表';
+```
+
+1、查询要卖的商品，并获取版本号。
+
+```php
+begin;
+select nums, version from tb_goods_stock where goods_id = {$goods_id};
+```
+
+2、判断商品数量是否大于购买数量。如果不满足，就回滚事务。
+
+3、如果满足条件，则减少库存。(更新时判断当前version与第1步中获取的version是否相同)
+
+```text
+update tb_goods_stock set nums = nums - {$num}, version = version + 1 where goods_id = {$goods_id} and version = {$version} and nums >= {$num};
+```
+
+4、判断更新操作是否成功执行，如果成功，则提交，否则就回滚。
+
+
+
+
+
+乐观锁是基于程序实现的，所以不存在死锁的情况，适用于**读多**的应用场景。如果经常发生冲突，上层应用不断的让用户进行重新操作，这反而降低了性能，这种情况下悲观锁就比较适用。
+
+悲观锁：比较适合**写入操作比较频繁**的场景，如果出现大量的读取操作，每次读取的时候都会进行加锁，这样会增加大量的锁的开销，降低了系统的吞吐量。
+
+乐观锁：比较适合**读取操作比较频繁**的场景，如果出现大量的写入操作，数据发生冲突的可能性就会增大，为了保证数据的一致性，应用层需要不断的重新获取数据，这样会增加大量的查询操作，降低了系统的吞吐量。
+
+
+
+
 
 
 
