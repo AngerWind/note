@@ -36,9 +36,7 @@ show index from table_name;
 
 
 
-
-
-#### explain
+### explain
 
 ~~~sql
 CREATE TABLE `class` (

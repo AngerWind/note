@@ -329,6 +329,7 @@ yarn-site.xml
    # 启动chrony
    systemctl start chronyd
    systemctl enable chronyd
+   systemctl status chronyd
    ~~~
 
 5. 在mysql中创建数据库

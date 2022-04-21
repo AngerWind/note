@@ -180,10 +180,10 @@ derby数据库是有java语言编写的轻量级数据库, 类文件大小大约
            <name>hive.metastore.event.db.notification.api.auth</name>
            <value>false</value>
        </property>
-       <!-- Hive 默认在 HDFS 的工作目录 -->
+       <!-- Hive default数据库在hdfs上的地址 -->
        <property>
            <name>hive.metastore.warehouse.dir</name>
-   		<value>/hive</value>
+   		<value>/hive/default</value>
    	</property>
        
        <!-- 使用hive客户端时, 查询时在第一行显示的列信息 -->
