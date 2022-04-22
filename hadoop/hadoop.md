@@ -461,7 +461,7 @@ yarn-site.xml
     # 当在 cdh01上 netstat -antp | grep 7180 有内容时，说明我们可以访问web页面了
    # 查看运行状态
    systemctl status cloudera-scm-agent
-   systemc status cloudera-scm-server
+   systemctl status cloudera-scm-server
    ~~~
 
 > 遇到的坑
@@ -554,23 +554,30 @@ yarn-site.xml
    CREATE DATABASE scm DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci;
    ~~~
 
-   
 
-​      
+6. 如果登录cm之后, 无法显示安装界面, 切换firefox浏览器， 谷歌浏览器访问不了？
 
-> 安装CDH
-
+   ![image-20220327235319546](img/image-20220327235319546.png)
 
 
-   
 
-  
+### 使用CDH安装HUE
+
+
+
+
 
 > 遇到的坑
 
-1. 如果登录cm之后, 无法显示安装界面, 可以直接访问http://cdh105:7180/cmf/license/wizard?returnUrl=%2Fcmf%2Fexpress-wizard%2Fwizard%2Fwelcome
+1. 指定hue使用的数据库为mysql8.x时， 无法校验通过， 因为
 
-   ![image-20220327235319546](img/hadoop/image-20220327235319546.png)
+2. 安装hue之后， 无法通过外网范围hue的web界面， 只能在局域网范围， 通过`netstat -tunpl`发现
+
+   ![img](img/企业微信截图_1650598147105.png)
+
+   需要在cdh界面勾选`将 Hue 服务器绑定到通配符地址`， 然后**重启**hue
+
+   ![image-20220422134939664](img/image-20220422134939664.png)
 
 
 
