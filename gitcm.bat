@@ -1,4 +1,4 @@
-cd C:\Users\Administrator\Desktop\note
+:: cd C:\Users\Administrator\Desktop\note
 :: 这是注释
 
 git add .

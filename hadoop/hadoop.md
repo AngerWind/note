@@ -286,7 +286,7 @@ yarn-site.xml
    - 安装mysql，修改root的登录权限
 
      ~~~shell
-     update user set host='%' where user='root'
+     update mysql.user set host='%' where user='root'
      flush privileges;
      ~~~
 
