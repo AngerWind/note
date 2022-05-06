@@ -90,3 +90,27 @@
 
 
 
+> 命令发送时， 怎么选择worker
+
+启动时， ZookeeperNodeManager加载所有的Master, WorkerGroup和Worker节点， 并添加监听器监听这些路径的变化。保证节点信息是最新的。
+
+在LowerWeightHostManager中，有一个定时任务每五秒钟从ZookeeperNodeManager获取WorkerGroup和Worker，然后去zk上获取他们的心跳信息。
+
+同时，当ZookeeperNodeManager监听节点新增，删除时，除了同步自身保存的节点信息， 还要立即调用方法刷新LowerWeightHostManager中保存的Worker的信息。
+
+当TaskPriorityQueueConsumer消费到需要发送的命令的时候， 挑选一个负载最低的host将命令发送过去。
+
+负载的计算方法是， cpu使用率\*10+内存使用率\*20+平均负载\*70, 选择一个最小的发送
+
+
+
+> Master的注册zk过程
+
+在MasterRegistry中。先获取Master节点的根路径，然后在下面注册一个临时节点/scheduler/production/welab-skyscanner-tenma/nodes/master/172.31.28.20:25550， 其中节点名称是ip地址和master的通信端口。然后启动提交心跳任务到线程池中， 每60秒执行一次。心跳数据包含是`cpu使用率，内存使用率， 平均负载， 可用的物理内存(G)， 最大的cpu负载率， 最大内存使用率， 启动时间               心跳时间         节点状态(无用)   当前线程PID  cpu逻辑核心数   总的物理内存(G)`
+
+
+
+> Worker的注册zk过程
+
+在WorkerRegistry中。与Master相同，只是worker的心跳路径会有多个，因为worker可以属于多个worker group。
+
