@@ -3950,11 +3950,13 @@ appleReferenceQueue中：java.lang.ref.WeakReference@61bbe9ba
 
 
 
-#### 使用redis进行限流
+### 使用redis进行限流
 
 
 
-#### java格式化，修改sql
+
+
+### java格式化，修改sql
 
 在使用jdbc执行用户传入的sql时， 需要先进行sql格式化，去除掉注释、空白。如果有多个sql，还需要将他们拆分出来。
 
@@ -3981,4 +3983,82 @@ java：
         // 解析出的独立语句的个数
         List<SQLStatement> stmtList = SQLUtils.parseStatements(sql, DbType.postgresql);
 ~~~
+
+
+
+### java对象求交并差集
+
+需要使用google的guava工具类
+
+~~~xml
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>22.0</version>
+        </dependency>
+~~~
+
+下面是求基础对象的交并差集
+
+~~~java
+        HashSet<Integer> s1 = Sets.newHashSet(1, 2, 3, 4);
+        HashSet<Integer> s2 = Sets.newHashSet(3, 4, 5, 6);
+
+
+        // 求s1 - s2的结果
+        Sets.SetView<Integer> difference1 = Sets.difference(s1, s2);
+        // 求s2 - s1的结果
+        Sets.SetView<Integer> difference2 = Sets.difference(s2, s1);
+        // 求s1，s2的交集
+        Sets.SetView<Integer> intersection = Sets.intersection(s1, s2);
+        // 求s1，s2的并集
+        Sets.SetView<Integer> union = Sets.union(s1, s2);
+
+        System.out.println(difference1); // [1, 2]
+        System.out.println(difference2); // [5, 6]
+        System.out.println(intersection); // [3, 4]
+        System.out.println(union);  // [1, 2, 3, 4, 5, 6]
+~~~
+
+下面是求包装类型的交并差集， 将对象类型的Set集合转换成Map集合， 对应的key是用来求交并差集的key
+
+~~~java
+    @Test
+    @SneakyThrows
+    public void test(){
+        Person zhangsan = new Person(1, "zhangsan");
+        Person lisi = new Person(2, "lisi");
+        Person wangwu = new Person(3, "wangwu");
+
+        HashSet<Person> s1 = Sets.newHashSet(zhangsan, lisi);
+        HashSet<Person> s2 = Sets.newHashSet(lisi, wangwu);
+
+        Map<Integer, Person> map1 = s1.stream().collect(Collectors.toMap(person -> person.getId(), person -> person));
+        Map<Integer, Person> map2 = s2.stream().collect(Collectors.toMap(person -> person.getId(), person -> person));
+
+        // 求s1 - s2的结果
+        Sets.SetView<Integer> difference1 = Sets.difference(map1.keySet(), map2.keySet());
+        // 求s2 - s1的结果
+        Sets.SetView<Integer> difference2 = Sets.difference(map2.keySet(), map1.keySet());
+        // 求s1，s2的交集
+        Sets.SetView<Integer> intersection = Sets.intersection(map1.keySet(), map2.keySet());
+        // 求s1，s2的并集
+        Sets.SetView<Integer> union = Sets.union(map1.keySet(), map2.keySet());
+
+        difference1.forEach(id -> System.out.println(map1.get(id)));
+        difference2.forEach(id -> System.out.println(map2.get(id)));
+        intersection.forEach(id -> System.out.println(map2.get(id)));
+        union.forEach(id -> System.out.println(map1.containsKey(id) ? map1.get(id) : map2.get(id)));
+
+    }
+
+    @Data
+    @AllArgsConstructor
+    public class Person{
+        int id;
+        String name;
+    }
+~~~
+
+
 
