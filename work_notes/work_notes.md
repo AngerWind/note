@@ -3988,6 +3988,8 @@ java：
 
 ### java对象求交并差集
 
+https://blog.csdn.net/weixin_34122548/article/details/90196224?utm_medium=distribute.pc_relevant.none-task-blog-2~default~baidujs_baidulandingword~default-1.pc_relevant_aa&spm=1001.2101.3001.4242.2&utm_relevant_index=4
+
 需要使用google的guava工具类
 
 ~~~xml

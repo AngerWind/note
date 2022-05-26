@@ -1122,5 +1122,388 @@ update tb_goods_stock set nums = nums - {$num}, version = version + 1 where good
 
 
 
+### MySQL 统计逗号分隔的字符串的元素个数
+
+参考： https://blog.csdn.net/qq_20749835/article/details/110000919
+
+统计45,6,546,45,6,456中元素的个数
+
+思路：将逗号删除掉， 然后删除前的字符串长度 - 删除后字符串长度 + 1就是元素个数
+
+~~~sql
+select char_length(@a) - char_length(replace(@a, ',', '')) + 1 from (select @a := '45,6,546,45,6,456') t
+~~~
+
+![image-20220526150157401](C:\Users\Tiger.Shen\Desktop\note\mysql高级\img\mysql高级\image-20220526150157401.png)
 
 
+
+### MySQL 逗号分隔字符串拆分（行转列）
+
+参考：https://blog.csdn.net/weixin_45395031/article/details/108779977
+
+
+
+> 使用到的函数
+
+字符串拆分：SUBSTRING_INDEX（str, delim, count）
+
+| 参数名 |                             解释                             |
+| :----: | :----------------------------------------------------------: |
+|  str   |                       需要拆分的字符串                       |
+| delim  |                  分隔符，通过某字符进行拆分                  |
+| count  | 当 count 为正数，取第 n 个分隔符之前的所有字符； 当 count 为负数，取倒数第 n 个分隔符之后的所有字符。 |
+
+1. 获取第2个以“,”逗号为分隔符之前的所有字符。
+
+   ~~~sql
+   SUBSTRING_INDEX('7654,7698,7782,7788',',',2) -- 7654,7698
+   ~~~
+
+2. 获取第2个以“，”逗号为分隔符之前的所有字符
+
+   ~~~sql
+   SUBSTRING_INDEX('7654,7698,7782,7788',',',-2) -- 7782,7788
+   ~~~
+
+
+
+> 解决思路
+
+先从头获取第1,2,3....逗号分隔符之前的所有字符，然后从这些字符中固定去最后一个
+
+1. 去第1,2,3...逗号分隔符之前的所有字符
+
+   使用mysql.help_topic是为了获得一张数字辅助表，即一张1,2,3,4的表
+
+   这张表的长度只有800行不到， 所以逗号分隔的元素最好不要超过800
+
+   ~~~sql
+   select SUBSTRING_INDEX(@a,',',help_topic_id+1) as str 
+   from mysql.help_topic ht , (select @a := '7654,7698,7782,7788') t 
+   where help_topic_id < length(@a) - length(replace(@a, ',', '')) + 1 
+   order by str;
+   ~~~
+
+   ![image-20220526153012140](C:\Users\Tiger.Shen\Desktop\note\mysql高级\img\mysql高级\image-20220526153012140.png)
+
+2. 对于每一行， 取固定的最后一个字符串
+
+   ~~~sql
+   select SUBSTRING_INDEX(SUBSTRING_INDEX('7654,7698,7782,7788',',',help_topic_id+1), ',', -1) as str 
+   from mysql.help_topic ht , (select @a := '7654,7698,7782,7788') t 
+   where help_topic_id < length(@a) - length(replace(@a, ',', '')) + 1 
+   order by str;
+   ~~~
+
+   ![image-20220526153708056](C:\Users\Tiger.Shen\Desktop\note\mysql高级\img\mysql高级\image-20220526153708056.png)
+
+
+
+### MySQL 递归查询
+
+
+
+#### 使用的函数
+
+> group_concat
+
+格式： group_concat([distinct] column [order by asc/desc] [separator '分隔符'])
+
+group_concat用于将指定的column的多个列值按照分隔符聚合在一起， 类似java中的String.join()方法
+
+分隔符默认为逗号，可不填， 排列顺序默认为asc，可以不填
+
+group_concat的问题：**group_concat返回的字符串最大程度是group_concat_max_len，默认为1024，当超过这个长度的时候会截断， 导致少数据**
+
+下面举例说明：
+
+```sql
+select id,price from goods; 
+```
+
+![这里写图片描述](C:\Users\Tiger.Shen\Desktop\note\mysql高级\img\mysql高级\20180822152002815)
+
+
+以id分组，把price字段的值在同一行打印出来，逗号分隔(默认)
+
+~~~sql
+select id, group_concat(price) from goods group by id; 
+~~~
+
+![这里写图片描述](C:\Users\Tiger.Shen\Desktop\note\mysql高级\img\mysql高级\2018082215224992)
+
+
+
+以id分组，把price字段的值在一行打印出来，分号分隔
+
+~~~sql
+select id,group_concat(price separator ';') from goods group by id; 
+~~~
+
+![这里写图片描述](C:\Users\Tiger.Shen\Desktop\note\mysql高级\img\mysql高级\20180822152605352)
+
+以id分组，把去除重复冗余的price字段的值打印在一行，逗号分隔
+
+```
+select id,group_concat(distinct price) from goods group by id;  1
+```
+
+![这里写图片描述](C:\Users\Tiger.Shen\Desktop\note\mysql高级\img\mysql高级\20180822152734915)
+
+以id分组，把price字段的值去重打印在一行，逗号分隔，按照price倒序排列
+
+~~~sql
+select id,group_concat(DISTINCT price order by price desc) from goods group by id;  
+~~~
+
+![这里写图片描述](C:\Users\Tiger.Shen\Desktop\note\mysql高级\img\mysql高级\20180822152931575)
+
+
+
+> find_in_set
+
+格式： find_in_set(str, set)
+
+作用：**用于在逗号分隔的字符串set中查找指定的元素str**
+
+如果str或set为`NULL`，则函数返回`NULL`值。
+
+如果str不在set中，或者`haystack`是空字符串，则返回零。
+
+如果str在set中，则返回一个正整数。
+
+如果set是逗号开始，该函数将无法正常工作。 
+
+此外，如果str是一个常量字符串，而且set是一个类型为`SET`类型的列，MySQL将使用位算术进行优化。
+
+~~~sql
+SELECT FIND_IN_SET('y','x,y,z'); -- 返回 2
+SELECT FIND_IN_SET('a','x,y,z'); -- 返回 0
+SELECT FIND_IN_SET('a',NULL); -- 返回null
+SELECT FIND_IN_SET(NULL,'x,y,z'); -- 返回null
+~~~
+
+#### 数据准备
+
+参考：https://blog.csdn.net/xubenxismile/article/details/107662209
+
+建表：
+
+~~~sql
+DROP TABLE IF EXISTS `sys_region`;
+CREATE TABLE `sys_region`  (
+  `id` int(50) NOT NULL AUTO_INCREMENT COMMENT '地区主键编号',
+  `name` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '地区名称',
+  `short_name` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '简称',
+  `code` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '行政地区编号',
+  `parent_code` varchar(50) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL COMMENT '父id',
+  `level` int(2) NULL DEFAULT NULL COMMENT '1级：省、直辖市、自治区\r\n2级：地级市\r\n3级：市辖区、县（旗）、县级市、自治县（自治旗）、特区、林区\r\n4级：镇、乡、民族乡、县辖区、街道\r\n5级：村、居委会',
+  `flag` int(1) NULL DEFAULT NULL COMMENT '0:正常 1废弃',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE = InnoDB AUTO_INCREMENT = 182 CHARACTER SET = utf8 COLLATE = utf8_general_ci COMMENT = '地区表' ROW_FORMAT = Dynamic;
+~~~
+
+插入数据：
+
+~~~sql
+INSERT INTO `sys_region` VALUES (1, '山东省', '鲁', '370000000000', NULL, 1, 0);
+INSERT INTO `sys_region` VALUES (2, '济南市', '济南', '370100000000', '370000000000', 2, 0);
+INSERT INTO `sys_region` VALUES (3, '市辖区', '市辖区', '370101000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (4, '历下区', '历下区', '370102000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (5, '市中区', '市中区', '370103000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (6, '槐荫区', '槐荫区', '370104000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (7, '天桥区', '天桥区', '370105000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (8, '历城区', '历城区', '370112000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (9, '长清区', '长清区', '370113000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (10, '章丘区', '章丘区', '370114000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (11, '济阳区', '济阳区', '370115000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (12, '莱芜区', '莱芜区', '370116000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (13, '钢城区', '钢城区', '370117000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (14, '平阴县', '平阴县', '370124000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (15, '商河县', '商河县', '370126000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (16, '济南高新技术产业开发区', '高新区', '370171000000', '370100000000', 3, 0);
+INSERT INTO `sys_region` VALUES (17, '解放路街道', '解放路街道', '370102001000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (18, '千佛山街道', '千佛山街道', '370102002000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (19, '趵突泉街道', '趵突泉街道', '370102003000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (20, '泉城路街道', '泉城路街道', '370102004000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (21, '大明湖街道', '大明湖街道', '370102005000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (22, '东关街道', '东关街道', '370102006000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (23, '文东街道', '文东街道', '370102007000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (24, '建新街道', '建新街道', '370102008000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (25, '甸柳街道', '甸柳街道', '370102009000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (26, '燕山街道', '燕山街道', '370102010000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (27, '姚家街道', '姚家街道', '370102011000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (28, '龙洞街道', '龙洞街道', '370102012000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (29, '智远街道', '智远街道', '370102013000', '370102000000', 4, 0);
+INSERT INTO `sys_region` VALUES (30, '大观园街道', '大观园街道', '370103002000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (31, '杆石桥街道', '杆石桥街道', '370103003000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (32, '四里村街道', '四里村街道', '370103004000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (33, '魏家庄街道', '魏家庄街道', '370103006000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (34, '二七街道', '二七街道', '370103008000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (35, '七里山街道', '七里山街道', '370103009000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (36, '六里山街道', '六里山街道', '370103010000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (37, '舜玉路街道', '舜玉路街道', '370103012000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (38, '泺源街道', '泺源街道', '370103014000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (39, '王官庄街道', '王官庄街道', '370103015000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (40, '舜耕街道', '舜耕街道', '370103016000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (41, '白马山街道', '白马山街道', '370103017000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (42, '七贤街道', '七贤街道', '370103018000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (43, '十六里河街道', '十六里河街道', '370103019000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (44, '兴隆街道', '兴隆街道', '370103020000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (45, '党家街道', '党家街道', '370103021000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (46, '陡沟街道', '陡沟街道', '370103022000', '370103000000', 4, 0);
+INSERT INTO `sys_region` VALUES (47, '振兴街街道', '振兴街街道', '370104001000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (48, '中大槐树街道', '中大槐树街道', '370104002000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (49, '道德街街道', '道德街街道', '370104003000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (50, '西市场街道', '西市场街道', '370104004000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (51, '五里沟街道', '五里沟街道', '370104005000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (52, '营市街街道', '营市街街道', '370104006000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (53, '青年公园街道', '青年公园街道', '370104007000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (54, '南辛庄街道', '南辛庄街道', '370104008000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (55, '段店北路街道', '段店北路街道', '370104009000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (56, '张庄路街道', '张庄路街道', '370104010000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (57, '匡山街道', '匡山街道', '370104011000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (58, '美里湖街道', '美里湖街道', '370104012000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (59, '腊山街道', '腊山街道', '370104013000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (60, '兴福街道', '兴福街道', '370104014000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (61, '玉清湖街道', '玉清湖街道', '370104015000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (62, '吴家堡街道', '吴家堡街道', '370104016000', '370104000000', 4, 0);
+INSERT INTO `sys_region` VALUES (63, '无影山街道', '无影山街道', '370105001000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (64, '天桥东街街道', '天桥东街街道', '370105003000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (65, '北村街道', '北村街道', '370105004000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (66, '南村街道', '南村街道', '370105005000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (67, '堤口路街道', '堤口路街道', '370105006000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (68, '北坦街道', '北坦街道', '370105007000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (69, '制锦市街道', '制锦市街道', '370105009000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (70, '宝华街道', '宝华街道', '370105010000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (71, '官扎营街道', '官扎营街道', '370105011000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (72, '纬北路街道', '纬北路街道', '370105012000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (73, '药山街道', '药山街道', '370105013000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (74, '北园街道', '北园街道', '370105014000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (75, '泺口街道', '泺口街道', '370105015000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (76, '桑梓店街道', '桑梓店街道', '370105016000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (77, '大桥街道', '大桥街道', '370105017000', '370105000000', 4, 0);
+INSERT INTO `sys_region` VALUES (78, '山大路街道', '山大路街道', '370112001000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (79, '洪家楼街道', '洪家楼街道', '370112002000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (80, '东风街道', '东风街道', '370112003000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (81, '全福街道', '全福街道', '370112004000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (82, '华山街道', '华山街道', '370112007000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (83, '荷花路街道', '荷花路街道', '370112008000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (84, '王舍人街道', '王舍人街道', '370112009000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (85, '鲍山街道', '鲍山街道', '370112010000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (86, '郭店街道', '郭店街道', '370112011000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (87, '唐冶街道', '唐冶街道', '370112012000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (88, '港沟街道', '港沟街道', '370112013000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (89, '董家街道', '董家街道', '370112016000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (90, '彩石街道', '彩石街道', '370112017000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (91, '仲宫街道', '仲宫街道', '370112018000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (92, '柳埠街道', '柳埠街道', '370112019000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (93, '唐王街道', '唐王街道', '370112020000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (94, '西营街道', '西营街道', '370112021000', '370112000000', 4, 0);
+INSERT INTO `sys_region` VALUES (95, '文昌街道', '文昌街道', '370113001000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (96, '崮云湖街道', '崮云湖街道', '370113002000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (97, '平安街道', '平安街道', '370113003000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (98, '五峰山街道', '五峰山街道', '370113004000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (99, '归德街道', '归德街道', '370113005000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (100, '张夏街道', '张夏街道', '370113006000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (101, '万德街道', '万德街道', '370113007000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (102, '孝里镇', '孝里镇', '370113102000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (103, '马山镇', '马山镇', '370113107000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (104, '双泉镇', '双泉镇', '370113108000', '370113000000', 4, 0);
+INSERT INTO `sys_region` VALUES (105, '明水街道', '明水街道', '370114001000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (106, '双山街道', '双山街道', '370114002000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (107, '枣园街道', '枣园街道', '370114003000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (108, '龙山街道', '龙山街道', '370114004000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (109, '埠村街道', '埠村街道', '370114005000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (110, '圣井街道', '圣井街道', '370114006000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (111, '普集街道', '普集街道', '370114007000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (112, '绣惠街道', '绣惠街道', '370114008000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (113, '相公庄街道', '相公庄街道', '370114009000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (114, '文祖街道', '文祖街道', '370114010000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (115, '官庄街道', '官庄街道', '370114011000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (116, '高官寨街道', '高官寨街道', '370114012000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (117, '白云湖街道', '白云湖街道', '370114013000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (118, '宁家埠街道', '宁家埠街道', '370114014000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (119, '曹范街道', '曹范街道', '370114015000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (120, '刁镇', '刁镇', '370114100000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (121, '垛庄镇', '垛庄镇', '370114101000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (122, '黄河镇', '黄河镇', '370114102000', '370114000000', 4, 0);
+INSERT INTO `sys_region` VALUES (123, '济阳街道', '济阳街道', '370115001000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (124, '济北街道', '济北街道', '370115002000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (125, '崔寨街道', '崔寨街道', '370115003000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (126, '孙耿街道', '孙耿街道', '370115004000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (127, '回河街道', '回河街道', '370115005000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (128, '太平街道', '太平街道', '370115006000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (129, '垛石镇', '垛石镇', '370115101000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (130, '曲堤镇', '曲堤镇', '370115103000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (131, '仁风镇', '仁风镇', '370115104000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (132, '新市镇', '新市镇', '370115110000', '370115000000', 4, 0);
+INSERT INTO `sys_region` VALUES (133, '凤城街道', '凤城街道', '370116001000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (134, '张家洼街道', '张家洼街道', '370116002000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (135, '高庄街道', '高庄街道', '370116003000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (136, '鹏泉街道', '鹏泉街道', '370116004000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (137, '口镇', '口镇', '370116100000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (138, '羊里镇', '羊里镇', '370116101000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (139, '方下镇', '方下镇', '370116102000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (140, '牛泉镇', '牛泉镇', '370116103000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (141, '苗山镇', '苗山镇', '370116104000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (142, '雪野镇', '雪野镇', '370116105000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (143, '大王庄镇', '大王庄镇', '370116106000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (144, '寨里镇', '寨里镇', '370116107000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (145, '杨庄镇', '杨庄镇', '370116108000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (146, '茶业口镇', '茶业口镇', '370116109000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (147, '和庄镇', '和庄镇', '370116110000', '370116000000', 4, 0);
+INSERT INTO `sys_region` VALUES (148, '艾山街道', '艾山街道', '370117001000', '370117000000', 4, 0);
+INSERT INTO `sys_region` VALUES (149, '里辛街道', '里辛街道', '370117002000', '370117000000', 4, 0);
+INSERT INTO `sys_region` VALUES (150, '汶源街道', '汶源街道', '370117003000', '370117000000', 4, 0);
+INSERT INTO `sys_region` VALUES (151, '颜庄镇', '颜庄镇', '370117100000', '370117000000', 4, 0);
+INSERT INTO `sys_region` VALUES (152, '辛庄镇', '辛庄镇', '370117103000', '370117000000', 4, 0);
+INSERT INTO `sys_region` VALUES (153, '棋山国家森林公园', '棋山国家森林公园', '370117400000', '370117000000', 4, 0);
+INSERT INTO `sys_region` VALUES (154, '高新技术开发区', '高新技术开发区', '370117401000', '370117000000', 4, 0);
+INSERT INTO `sys_region` VALUES (155, '榆山街道', '榆山街道', '370124001000', '370124000000', 4, 0);
+INSERT INTO `sys_region` VALUES (156, '锦水街道', '锦水街道', '370124002000', '370124000000', 4, 0);
+INSERT INTO `sys_region` VALUES (157, '东阿镇', '东阿镇', '370124102000', '370124000000', 4, 0);
+INSERT INTO `sys_region` VALUES (158, '孝直镇', '孝直镇', '370124103000', '370124000000', 4, 0);
+INSERT INTO `sys_region` VALUES (159, '孔村镇', '孔村镇', '370124104000', '370124000000', 4, 0);
+INSERT INTO `sys_region` VALUES (160, '洪范池镇', '洪范池镇', '370124105000', '370124000000', 4, 0);
+INSERT INTO `sys_region` VALUES (161, '玫瑰镇', '玫瑰镇', '370124106000', '370124000000', 4, 0);
+INSERT INTO `sys_region` VALUES (162, '安城镇', '安城镇', '370124107000', '370124000000', 4, 0);
+INSERT INTO `sys_region` VALUES (163, '许商街道', '许商街道', '370126001000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (164, '殷巷镇', '殷巷镇', '370126101000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (165, '怀仁镇', '怀仁镇', '370126102000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (166, '龙桑寺镇', '龙桑寺镇', '370126104000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (167, '郑路镇', '郑路镇', '370126105000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (168, '贾庄镇', '贾庄镇', '370126106000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (169, '玉皇庙镇', '玉皇庙镇', '370126107000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (170, '白桥镇', '白桥镇', '370126108000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (171, '孙集镇', '孙集镇', '370126109000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (172, '韩庙镇', '韩庙镇', '370126110000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (173, '沙河镇', '沙河镇', '370126111000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (174, '张坊镇', '张坊镇', '370126112000', '370126000000', 4, 0);
+INSERT INTO `sys_region` VALUES (175, '舜华路街道', '舜华路街道', '370171001000', '370171000000', 4, 0);
+INSERT INTO `sys_region` VALUES (176, '孙村街道', '孙村街道', '370171002000', '370171000000', 4, 0);
+INSERT INTO `sys_region` VALUES (177, '巨野河街道', '巨野河街道', '370171003000', '370171000000', 4, 0);
+INSERT INTO `sys_region` VALUES (178, '遥墙街道', '遥墙街道', '370171004000', '370171000000', 4, 0);
+INSERT INTO `sys_region` VALUES (179, '临港街道', '临港街道', '370171005000', '370171000000', 4, 0);
+INSERT INTO `sys_region` VALUES (180, '创新谷街道办事处', '创新谷街道办事处', '370171400000', '370171000000', 4, 0);
+INSERT INTO `sys_region` VALUES (181, '章锦街道', '章锦街道', '370171401000', '370171000000', 4, 0);
+~~~
+
+
+
+#### 递归查询子节点，包含自身，父节点可以有多个子节点
+
+
+
+#### 递归查询子节点， 不包含自身，父节点可以有多个子节点
+
+
+
+
+
+#### 递归查询子节点，包含自身，子节点只有一个
+
+
+
+#### 
