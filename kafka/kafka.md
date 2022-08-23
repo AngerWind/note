@@ -110,7 +110,7 @@ chmod +x ke.sh
 
 ```shell
 # 启动kafka并堵塞终端
-bin/kafka-server-start.sh -daemon config/server.properties
+bin/kafka-server-start.sh config/server.properties
 
 # 后台启动kafka
 bin/kafka-server-start.sh -daemon config/server.properties
@@ -305,8 +305,7 @@ Kafka的ack机制，指的是producer的消息发送确认机制，这直接影�
 
 #### Controller
 
-Kafka 集群中有一个 broker 会被选举为 Controller，负责管理集群 broker 的上下线，所
-有 topic 的分区副本分配和 leader 选举等工作。
+Kafka 集群中有一个 broker 会被选举为 Controller，负责管理集群 broker 的上下线，所有 topic 的分区副本分配和 leader 选举等工作。
 Controller 的管理工作都是依赖于 Zookeeper 的。  
 
 

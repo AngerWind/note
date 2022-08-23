@@ -104,7 +104,7 @@ echo $PS1; shopt login_shell
 非登录交互式：
 
 - 桌面环境下打开终端
-- 直接执行`bash`进入子进程
+- 直接在终端执行`bash`进入子进程
 - `ssh user@ip "echo $PS1; shopt login_shell"`命令是通过非登录交互式执行的
 - `su user`切换用户
 
@@ -167,15 +167,16 @@ if [ -f ~/.bashrc ]; then
 fi
 ```
 
-
+![image-20220617170329402](img/shell/image-20220617170329402.png)
 
 当登录式bash退出时，会执行~/.bash_logout
 
 > 非登录式shell
 
-如果交互非登录式shell（类似`echo $PS1; shopt login_shell`）启动时，如果/etc/bash.bashrc和~/.bashrc存在的话，将会读取并执行。
+如果交互非登录式shell（类似`echo $PS1; shopt login_shell`）启动时，
 
-如果以非登录的方式启动 Shell，那么就不会读取以上所说的配置文件，而是直接读取 ~/.bashrc。
+- Ubuntu下, 读取并执行/etc/bash.bashrc和~/.bashrc
+- Centos下, 读取并执行~/.bashrc
 
 ~/.bashrc 文件还会嵌套加载 /etc/bashrc，请看下面的代码：
 
@@ -185,7 +186,7 @@ if [ -f /etc/bashrc ]; then
 fi
 ```
 
-
+![image-20220617185422765](img/shell/image-20220617185422765.png)
 
 如果是非登录非交互式的话，会获取变量BASH_ENV的值，并将该值当做文件名进行执行。
 
@@ -193,9 +194,9 @@ fi
 
 > ssh网络调用bash
 
-特别需要注意的是，bash会尝试判断他的标准输入是否来自一个网络(`ssh localhost echo $-`)，如果 bash 确定它正在以这种方式运行，它会从 ~/.bashrc读取并执行命令，前提文件存在并且可读。如果作为 sh 调用，它将不会执行此操作。 --norc 选项可用于禁止此行为，--rcfile 选项可用于强制读取另一个文件
+特别需要注意的是，bash会尝试判断他的标准输入是否来自一个网络(`ssh localhost echo $-`)，如果 bash 确定它正在以这种方式运行，它会从 ~/.bashrc读取并执行命令，前提文件存在并且可读。如果作为 sh 调用，它将不会执行此操作。 
 
-特别坑的是，~/.bashrc的开头有这样一段代码：
+特别坑的是，Ubuntu中的~/.bashrc文件的开头有这样一段代码, centos则没有：
 
 ~~~shell
 # If not running interactively, don't do anything
@@ -205,7 +206,7 @@ case $- in
 esac
 ~~~
 
-也就是说，使用ssh执行脚本，在脚本里面是非登录非交互模式，所以即使当前bash加载了~/.bashrc文件，但是执行到了上述代码判断是非交互式就退出去了，导致和没有执行一样。所以如果希望在ssh网络调用某些脚本时，能够在脚本里面读取到某些环境变量，需要将export语句加在上述代码以前。（说的就是你，hadoop的start-dfs.sh）
+也就是说，使用ssh执行脚本，在脚本里面是非登录非交互模式，所以即使当前bash加载了~/.bashrc文件，但是执行到了上述代码判断是非交互式就退出去了，导致和没有执行一样。所以如果希望在ssh网络调用某些脚本时，能够在脚本里面读取到某些环境变量，需要将export语句加在上述代码以前。（说的就是你，hadoop的start-dfs.sh, 老是读取不到java_home）
 
 
 

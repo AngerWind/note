@@ -123,7 +123,7 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
 <property>
     <!-- namenode地址和rpc端口, 端口默认8082-->
 	<name>fs.defaultFS</name>
-	<value>hdfs://localhost:8082/</value>
+	<value>hdfs://hadoop102:8082/</value>
 </property>
 <property>
     <!-- webhdfs使用的用户 -->
@@ -153,7 +153,7 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
 <property>
     <!-- 指定webhdfs的位置和端口，默认0.0.0.0:9870-->
     <name>dfs.namenode.http-address</name>
-    <value>hadoop:9870</value>
+    <value>hadoop102:9870</value>
 </property>
 <property>
     <!-- 指定namenode image存储位置, 默认file://${hadoop.tmp.dir}/dfs/name-->
@@ -166,9 +166,9 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
     <value>${dfs.namenode.name.dir}</value>
 </property>
 <property>
-    <!-- 指定datanode block的存储位置，默认file://${hadoop.tmp.dir}/dfs/data -->
+    <!-- 指定datanode block的存储位置，默认file://${hadoop.tmp.dir}/dfs/data, 可以通过逗号分割配置多个路径来使hdfs能够使用多个磁盘, 还应该通过([SSD]/[DISK]/[ARCHIVE]/[RAM_DISK])来指定存储介质的类型, 默认为ssd -->
     <name>dfs.datanode.data.dir</name>
-    <value>file://${hadoop.tmp.dir}/dfs/data</value>
+    <value>[DISK]file://${hadoop.tmp.dir}/dfs/data</value>
 </property>
 <property>
     <!-- 开启webhdfs, 默认true -->
@@ -190,10 +190,33 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
     <!-- 指定ResourceManager的地址-->
     <property>
         <name>yarn.resourcemanager.hostname</name>
-        <value>localhost</value>
+        <value>hadoop104</value>
     </property>
 </configuration>
 ~~~
+
+可选:
+
+~~~xml
+	<!--以下配置可选 -->
+    <property>
+        <!-- yarn application manager端口-->
+        <name>yarn.resourcemanager.address</name>
+        <value>${yarn.resourcemanager.hostname}:8032</value>
+    </property>
+    <property>
+        <!-- yarn web解码http端口-->
+        <name>yarn.resourcemanager.webapp.https.address</name>
+        <value>${yarn.resourcemanager.hostname}:8088</value>
+    </property>
+    <property>
+        <!-- yarn web解码https端口-->
+        <name>yarn.resourcemanager.webapp.address</name>
+        <value>${yarn.resourcemanager.hostname}:8090</value>
+    </property>
+~~~
+
+
 
 > mapred-site.xml
 
@@ -223,7 +246,7 @@ hadoop日志文件位置：$HADOOP_HOME/logs，可以在hadoop-env中设置该�
 
 
 
-### 开启MapReduce JobHistory
+### 开启JobHistory
 
 开启该功能可以查看MR程序的一些详细的配置信息和运行情况
 
@@ -243,7 +266,7 @@ mapred-site.xml
 </property>
 ~~~
 
-使用mapred --daemon start historyserver启动historyserver
+使用`mapred --daemon start historyserver`启动historyserver
 
 ### 开启yarn日志聚集
 
@@ -668,7 +691,7 @@ esac
 
 ### hdfs写流程
 
-正常情况和异常情况
+如何确定实际存储的datanode, 如何避免机器之间的数据倾斜
 
 
 
