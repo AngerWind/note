@@ -11,11 +11,7 @@ union
 select * from a right join b on a.id = b.id;
 ~~~
 
-
-
-
-
-#### 索引
+### 索引
 
 本质上是一种排序的的数据结构（btree），可以加快查询和排序，但是降低更新删除操作。
 
@@ -131,6 +127,10 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
      ~~~
 
      ![image-20210808214817241](img/mysql高级/image-20210808214817241.png)
+     
+   - materialized: 物化表
+     
+     
      
      
 
@@ -367,7 +367,7 @@ INSERT INTO student (id, name, class_id) VALUES(2, 'lisi', 2);
 
 - Read Uncommitted（读未提交）：数据之间没有隔离性，脏读，不可重复读，幻读均有可能发生
 - Read Committed （读已提交）：一个事务对别的事务新增，修改，删除并且已提交的数据可见。这可以解决脏读，但是会导致不可重复读和幻读。
-- Repeatable Read （可重复读）：一个事务对别的事务新增并且已提交的数据可见，但是对修改删除并且已提交的数据不可见。这可以解决脏读和不可重复读的问题，但是没有解决幻读的问题。
+- Repeatable Read （可重复读）：一个事务对别的事务新增并且已提交的数据可见，但是对修改删除并且已提交的数据不可见。这可以解决脏读和不可重复读的问题，但是没有解决幻读的问题。(**mysql的innodb中通过快照读解决了幻读的问题**)
 - Serializable （串行化）：串行化执行事务，可以严格保证不会出现上面三种问题，但是效率很低
 
 下面是sql92标准下定义的四种隔离级别下，可能出现的问题
@@ -505,7 +505,7 @@ select * from performance_schema.data_locks dl join information_schema.INNODB_TR
 
    记录锁的作用是对某个存在数据加锁, 防止其他事务对这个数据操作
 
-   共享记录锁防止其他事务修改, 删除该数据. 排他记录锁防止其他事务读取, 删除, 修改该数据.
+   **共享记录锁防止其他事务修改, 删除该数据. 排他记录锁防止其他事务读取, 删除, 修改该数据.**
 
    
 
@@ -1042,7 +1042,7 @@ CREATE TABLE `tb_goods_stock` (
 
 注意，使用悲观锁，需要关闭mysql的自动提交功能，将 set autocommit = 0;
 
-注意，mysql中的行级锁是基于索引的，如果sql没有走索引，那将使用表级锁把整张表锁住。
+注意，**mysql中的行级锁是基于索引的，如果sql没有走索引，那将使用表级锁把整张表锁住**。
 
 1、开启事务，查询要卖的商品，并对该记录加锁。
 

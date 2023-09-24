@@ -1,0 +1,17 @@
+卸载yum安装的impala全家桶：
+
+yum remove -y impala hadoop bigtop avro hbase hive parquet sentry solr zookeeper
+
+删除本地磁盘上跟impala相关的文件夹
+rm -rf $(find / -name "*impala*")
+
+查询未卸载完毕的rpm包
+rpm -qa |grep impala
+卸载
+rpm -e impala-shell-2.11.0+cdh5.14.0+0-1.cdh5.14.0.p0.50.el6.x86_64 --nodeps
+
+----------------------------
+卸载完毕修补本地安装的yum源 否则后续再次安装就失败了
+cd /cloudera_data/
+rm -rf cdh/
+tar zxvf cdh5.14.0-centos6.tar.gz
