@@ -1,0 +1,1097 @@
+//////////////////////////////////////////
+
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+
+//////////////////////////////////////////
+
+= Object orientation
+:jls: https://docs.oracle.com/javase/specs/jls/se14/html/
+:javabeans: https://download.oracle.com/otndocs/jcp/7224-javabeans-1.01-fr-spec-oth-JSpec/
+
+This chapter covers the object-oriented aspects of the Groovy programming language.
+
+== 类型
+
+=== 基本类型
+
+Groovy 支持 {jls}[Java Language Specification] 相同的基本类型：
+
+* 整数类型： `byte` （8 位）、 `short` （16 位）、 `int` （32 位）和 `long` （64 位）
+* 浮点类型： `float` （32 位）和 `double` （64 位）
+* `boolean` 类型（ `true` 或 `false` 之一）
+* `char` 类型（16 位，可用作数字类型，表示 UTF-16 代码）
+与 Java 一样，当需要与任何基本类型相对应的对象时，Groovy 使用相应的包装类：
+
+[cols="1,1" options="header"]
+.基础类型包装类
+|====
+| 基础类型
+| 包装类
+
+| boolean
+| Boolean
+
+| char
+| Character
+
+| short
+| Short
+
+| int
+| Integer
+
+| long
+| Long
+
+| float
+| Float
+
+| double
+| Double
+|====
+
+例如，当调用需要包装类的方法并将原始变量作为参数传递给它时，就会发生自动装箱和拆箱，反之亦然。这与 Java 类似，但 Groovy 更进一步地发展了这个想法。
+在大多数情况下，您可以像对待包装器一样对待基础类。例如，您可以在基础类上调用 `.toString()` 或 `.equals(other)` 。 Groovy 根据需要在包装类和基础类之间自动包装和展开。
+
+下面是一个使用 int 的示例，它被声明为类中的静态字段（稍后讨论）：
+
+[source,groovy]
+----
+include::../../test/PrimitiveTest.groovy[tags=primitive_references,indent=0]
+----
+<1> 基础类型保留在字节码中
+<2> 在运行时查看该字段表明它已被自动包装
+
+现在您可能会担心，这意味着每次您对基础类型的引用使用数学运算符时，都会产生拆箱和重新装箱基础类型的成本。但事实并非如此，因为 Groovy 会将您的运算符编译为其link:core-operators.html#Operator-Overloading[等效方法]并使用它们。此外，当调用接收基础类型参数的 Java 方法时，Groovy 将自动拆箱为基础类，并自动对方法返回的基础类型进行装箱。但是，请注意，与 Java 的方法解析存在一些link:../core-differences-java.html#_primitives_and_wrappers[差异]。
+
+=== 引用类型
+
+除了基础类型之外，其他一切都是对象，并且有定义其类型的关联类。我们将很快讨论类以及与类相关或类似类的事物，例如接口、特征和记录。
+
+我们可以声明两个类型为 String 和 List 的变量，如下所示：
+[source,groovy]
+----
+String movie = 'The Matrix'
+List actors = ['Keanu Reeves', 'Hugo Weaving']
+----
+
+[[generics]]
+=== 泛型
+
+Groovy 在泛型方面与 Java 具有相同的概念。定义类和方法时，可以使用类型参数并创建泛型类、接口、方法或构造函数。
+
+泛型类和方法的使用，无论它们是在 Java 还是 Groovy 中定义的，都可能涉及提供类型参数。
+
+我们可以声明一个 “字符串列表” 类型的变量，如下所示：
+[source,groovy]
+----
+List<String> roles = ['Trinity', 'Morpheus']
+----
+
+Java 采用类型擦除来向后兼容早期版本的 Java。 Dynamic Groovy 可以被认为是更积极地应用类型擦除。一般来说，编译时会检查的泛型类型信息较少。 Groovy 的静态特性在泛型信息方面采用了与 Java 类似的检查。
+
+== 类
+
+Groovy 类与 Java 类非常相似，并且在 JVM 级别与 Java 类兼容。它们可能有方法、字段和属性（类似 JavaBeans 属性，但样板代码较少）。类和类成员可以具有与 Java 中相同的修饰符（public、protected、private、static 等），但在源代码级别有一些细微的差异，稍后将对此进行解释。
+
+
+Groovy 类与其 Java 类之间的主要区别是：
+
+* *没有可见性修饰符的类或方法自动是公共的* （可以使用特殊的注解来实现包私有可见性）。
+* *没有可见性修饰符的字段会自动转换为属性，从而减少冗长的代码，因为不需要显式的 getter 和 setter 方法*。有关这方面的更多信息将在<<fields,字段和属性部分>>中介绍。
+
+* *类不需要与其源文件定义具有相同的基本名称*，但在大多数情况下强烈建议这样做（另请参阅有关脚本的下一点）。
+* 一个源文件可能包含一个或多个类（但如果文件包含任何不在类中的代码，则将其视为脚本）。脚本只是具有一些特殊约定的类，并且与其源文件具有相同的名称（因此不要在与脚本源文件同名的脚本中包含类定义）。
+
+以下代码提供了一个示例类。
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=class_definition,indent=0]
+----
+<1> 类以名称 `Person` 开头
+<2> 名为 `name` 的字符串字段和属性
+<3> 方法定义
+
+
+=== 普通类
+
+普通类是指顶层的、具体的类。这意味着它们可以被实例化，而不受任何其他类或脚本的限制。这样，它们只能是公开的（即使 `public` 关键字可能被抑制）。类是通过使用 `new` 关键字调用其构造函数来实例化的，如以下代码片段所示。
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=class_instantiation,indent=0]
+----
+
+
+=== 内部类
+
+内部类是在另一个类中定义的。封闭类可以像往常一样使用内部类。另一方面，内部类可以访问其封闭类的成员，即使它们是私有的。封闭类以外的类不允许访问内部类。这是一个例子：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=inner_class,indent=0]
+----
+<1> 内部类被实例化并调用其方法
+<2> 内部类定义，位于其封闭类内部
+<3> 即使是私有的，封闭类的字段也可以由内部类访问
+
+使用内部类有一些原因：
+
+ * 通过对其他类隐藏内部类来增加封装性，其他类不需要知道它。这也导致了更清洁的软件包和工作空间。
+ * 它们通过将仅由一个类使用的类分组来提供良好的组织。
+ * 们会导致更易于维护的代码，因为内部类靠近使用它们的类。
+
+内部类通常会实现一些外部类的方法所需要的接口。下面的代码说明了这种典型的使用模式，此处与线程一起使用。
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=inner_class2,indent=0]
+----
+
+请注意，类 `Inner2` 的定义只是为了向类 `Outer2` 提供方法 `run` 的实现。在这种情况下，匿名内部类有助于消除冗长的内容。我们很快就会讨论这个主题。
+
+Groovy 3+ 还支持非静态内部类实例化的 Java 语法，例如：
+
+[source,groovy]
+--------------------------------------
+include::../../test/ClassTest.groovy[tags=inner_instantiation,indent=0]
+--------------------------------------
+
+==== 匿名内部类
+
+前面的内部类示例 ( `Inner2` ) 可以使用匿名内部类进行简化。使用以下代码可以实现相同的功能：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=anonymous_inner_class,indent=0]
+----
+<1> 与上一节的最后一个示例相比， `new Inner2()` 及其所有实现都被替换为 `new Runnable()`
+<2> 方法 start 被正常调用
+
+因此，不需要定义一个只使用一次的新类。
+
+==== 抽象类
+
+抽象类代表通用概念，因此它们不能被实例化，也不能被创建为子类。它们的成员包括字段/属性和抽象或具体方法。抽象方法没有具体的实现，必须由具体的子类实现。
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=abstract_class,indent=0]
+----
+<1> 抽象类必须使用 `abstract` 关键字声明
+<2> 抽象方法也必须用 `abstract` 关键字声明
+
+抽象类通常与接口进行比较。选择其中之一至少有两个重要的区别。首先，抽象类可以包含字段/属性和具体方法，但接口仅包含抽象方法（方法签名）。此外，一个类可以实现多个接口，而它只能扩展一个类，无论是否是抽象类。
+
+
+=== 继承
+
+Groovy 中的继承类似于 Java 中的继承。它为子类（或子类）提供了一种重用父类（或超类）的代码或属性的机制。
+通过继承相关的类形成继承层次结构。常见的行为和成员被推到层次结构中以减少重复。
+
+
+[[superclass]]
+=== 父类
+
+父类与子类共享可见的字段、属性或方法。一个子类最多可以有一个父类。 `extends` 关键字紧接在超类类型之前。
+
+
+[[interfaces]]
+=== Interfaces
+
+接口定义了类需要遵守的合约。接口只定义了需要实现的方法列表，但没有定义方法的实现。
+
+下面是一个 `Greeter` 接口, 只定义了一个 `greet` 方法
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=interface_def_1,indent=0]
+----
+<1> 需要使用 `interface` 关键字声明接口
+<2> 接口仅定义方法签名
+
+接口的方法始终是 `public` 的。在接口中使用 `protected` 或 `private` 方法是错误的：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=protected_forbidden,indent=0]
+----
+<1> 使用 `protected` 是一个编译时错误
+
+
+如果一个类在其 `implements` 列表中定义了接口，或者它的任何超类定义了该接口，则该类实现了该接口：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=class_implements,indent=0]
+----
+<1> `SystemGreeter` 使用 `implements` 关键字声明 `Greeter` 接口
+<2> 然后实现所需的 `greet` 方法
+<3> `SystemGreeter` 的任何实例也是 `Greeter` 接口的实例
+
+一个接口可以扩展另一个接口：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=extended_interface,indent=0]
+----
+<1> `ExtendedGreeter` 接口使用 `extends` 关键字扩展 `Greeter` 接口
+
+值得注意的是，要使类成为接口的实例，它必须显式使用 `implements` 。例如，以下类定义了在 `Greeter` 接口中声明的 `greet` 方法，但没有在其接口中声明 `Greeter` ：`
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=no_structural_interface,indent=0]
+----
+
+换句话说，Groovy 没有定义结构类型(structural typing)。然而，可以使用 `as` 强制运算符使对象实例在运行时实现接口：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=interface_coercion,indent=0]
+----
+<1> 创建一个不实现该接口的 DefaultGreeter 实例
+<2> 在运行时将实例强制转换为 Greeter
+<3> 强制实例实现 Greeter 接口
+
+您可以看到有两个不同的对象：一个是源对象，DefaultGreeter 实例，它没有实现该接口。另一个是委托给强制对象的 Greeter 实例。
+
+TIP: Groovy <<_traits,traits>> 与接口类似, 但是比接口更强大:
+
+* 接口中只能包含default method和抽象方法(Java中的接口还可以包含static method, 但是groovy中的接口不行)
+* 特质出了不能直接创建对象, 和普通类一样
+
+== 类成员
+
+=== 构造函数
+
+构造函数是用于初始化具有特定状态的对象的特殊方法。与普通方法一样，一个类可以声明多个构造函数，只要每个构造函数都有唯一的类型签名。如果一个对象在构造过程中不需要任何参数，它可以使用无参数构造函数。如果未提供构造函数，Groovy 编译器将提供一个空的无参数构造函数。
+
+Groovy 支持两种调用方式：
+
+* 位置参数的使用方式与使用 Java 构造函数的方式类似
+* 命名参数允许您在调用构造函数时指定参数名称。
+
+==== 位置参数
+
+要使用位置参数创建对象，相应的类需要声明一个或多个构造函数。在有多个构造函数的情况下，每个构造函数都必须具有唯一的类型签名。还可以使用 `groovy.transform.TupleConstructor` 注解将构造函数添加到类中。
+
+通常，*一旦声明了至少一个构造函数，则只能通过调用其构造函数来实例化该类。值得注意的是，在这种情况下，您通常无法创建带有命名参数的类*。
+
+*Groovy 确实支持命名参数，只要该类包含无参数构造函数或提供将 `Map` 参数作为第一个（也可能是唯一的）参数的构造函数* - 请参阅下一节了解详细信息。
+
+使用声明的构造函数有三种形式。第一种是普通的 Java 方式，使用 new 关键字。其他依赖于将列表强制转换为所需类型。在这种情况下，可以使用 as 关键字并通过静态键入变量来进行强制。
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=constructor_positional_parameters,indent=0]
+----
+<1> 构造函数声明
+<2> 构造函数调用，经典Java方式
+<3> 构造函数的使用，使用带有 `as` 关键字的强制转换
+<4> 构造函数的使用，在赋值中使用强制
+
+==== 命名参数
+
+*如果没有声明构造函数, 或者声明了无参构造函数，则可以通过以 `Map`（属性/值对）的形式传递参数来创建对象*。当人们想要允许多种参数组合的情况下，这会很方便。否则，通过使用传统的位置参数，有必要声明所有可能的构造函数。
+
+*命名参数也支持第一个（也许是唯一）参数为 Map 参数的构造函数* - 也可以使用 `groovy.transform.MapConstructor` 注解添加这样的构造函数。
+
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=constructor_named_parameters,indent=0]
+----
+<1> 没有声明构造函数
+<2> 实例化时没有给出参数
+<3> 实例化中给出 name 的参数
+<4> 实例化中给出 age 的参数
+<5> 实例化中给出 age 和 name 的参数
+
+然而，需要强调的是，这种方法为构造函数调用者提供了更多的权力，同时对调用者施加了更多的责任来确保名称和值类型正确。因此，如果需要更好的控制，那么使用位置参数声明构造函数可能是首选。
+
+Notes:
+
+* 虽然上面的示例未提供构造函数，但您还可以提供无参数构造函数或第一个参数为 `Map` 的构造函数，最常见的是它是唯一的参数。
+* 当未声明构造函数时, 或者声明了无参构造函数，Groovy 将调用无参数构造函数，然后调用每个传入的命名参数的 setter。
+* 当第一个参数是 `Map` 时，Groovy 将所有命名参数组合到一个 `Map` 中（无论顺序如何），并将该映射提供为第一个参数。如果您的属性被声明为 `final` （因为它们将在构造函数中设置，而不是在事后使用setter设置），那么这可能是一个好方法。
+* 您可以通过提供位置构造函数以及无参数或 Map 构造函数来支持命名构造函数和位置构造函数。
+* 您可以通过使用第一个参数是 Map 但还有其他位置参数的构造函数来支持混合构造。谨慎使用这种风格。
+
+=== 方法
+
+Groovy 方法与其他语言非常相似。一些特性将在下一小节中显示。
+
+==== 方法定义
+
+使用*返回类型*定义方法或使用 `def` 关键字定义方法以使返回类型成为非类型化。
+
+方法还可以接收任意数量的参数，这些参数可能没有显式声明其类型。
+
+Java修饰符可以正常使用，如果没有提供可见性修饰符，则该方法是 `public` 的。
+
+
+Groovy 中的方法总是返回一些值。如果未提供 `return` 语句，则将返回在执行的最后一行中计算的值。例如，请注意以下方法均不使用 `return` 关键字。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=method_definition ,indent=0]
+----
+<1> 未声明返回类型且无参数的方法
+<2> 具有显式返回类型且无参数的方法
+<3> 带有未定义类型的参数的方法
+<4> 带有字符串参数的静态方法
+
+==== 命名参数
+
+与构造函数一样，普通方法也可以使用命名参数来调用。为了支持这种表示法，使用了一种约定，其中方法的第一个参数是 Map 。在方法主体中，可以像普通map ( map.key ) 中一样访问参数值。如果该方法只有一个 `Map` 参数，则必须命名所有提供的参数。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=named_arguments ,indent=0]
+----
+
+===== 混合命名参数和位置参数
+
+命名参数可以与位置参数混合。在这种情况下，除了作为第一个参数的 Map 参数之外，方法将根据需要具有其他位置参数。调用方法时提供的位置参数必须按顺序排列。命名参数可以位于任何位置。它们被合并到map中并自动作为第一个参数传递。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=named_arguments_with_additional_arguments ,indent=0]
+----
+<1> 使用 Integer 类型的附加 number 参数调用方法
+<2> 改变参数顺序的方法调用
+
+
+如果不是 `Map` 作为第一个参数，则必须为该参数提供 Map 而不是命名参数。如果不这样做将导致 `groovy.lang.MissingMethodException` ：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=failed_named_arguments_with_additional_arguments ,indent=0]
+----
+<1> 方法调用抛出 `groovy.lang.MissingMethodException: No signature of method: foo() is applicable for argument types: (LinkedHashMap, Integer) values: [[name:Marie, age:1], 23]` ，因为命名参数 Map 不是第一个参数
+
+如果我们用显式的 `Map` 参数替换命名参数，则可以避免上述异常：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=explicit_named_arguments_with_additional_arguments ,indent=0]
+----
+<1> 显式 Map 参数代替命名参数使调用有效
+
+TIP: 尽管 Groovy 允许您混合命名参数和位置参数，但它可能会导致不必要的混乱。谨慎混合命名参数和位置参数。
+
+==== 默认参数
+
+默认参数使参数可选。如果未提供参数，则该方法采用默认值。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=default_arguments,indent=0]
+----
+
+参数从右侧删除，但强制参数永远不会删除。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=default_arguments2,indent=0]
+----
+
+同样的规则适用于构造函数和方法。如果使用 `@TupleConstructor` ，则应用其他配置选项。
+
+==== 可变参数
+
+Groovy 支持具有可变数量参数的方法。它们的定义如下： `def foo(p1, ..., pn, T... args)` 。这里 foo 默认支持 `n` 参数，但也支持超过 `n` 的未指定数量的其他参数。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=varargs_example,indent=0]
+----
+
+T此示例定义了一个方法 `foo` ，该方法可以采用任意数量的参数，包括根本不带参数。 `args.length` 将返回给定参数的数量。 Groovy 允许 `T[]` 作为 `T...` 的替代表示法。这意味着任何以数组作为最后一个参数的方法都被 Groovy 视为可以采用可变数量参数的方法。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=varargs_array_notation,indent=0]
+----
+
+*如果使用 `null` 作为 可变参数 来调用带有 可变参数 的方法，则参数将为 null 而不是长度为 1 且以 null 作为唯一参数的数组元素*。
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=varargs_null_parameter,indent=0]
+----
+
+如果使用数组作为参数调用 可变参数方法，则参数将是该数组，而不是包含给定数组作为唯一元素的长度为 1 的数组。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=varargs_array_parameter,indent=0]
+----
+
+另一个重要的点是可变参数与方法重载的结合。如果方法重载，Groovy 将选择最具体的方法。例如，如果方法 `foo` 采用 `T` 类型的 可变 参数，而另一个方法 `foo` 也采用 `T` 类型的参数，则第二种方法是首选。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=varargs_method_overloading,indent=0]
+----
+
+==== 方法选择算法
+
+Dynamic Groovy 支持 https://en.wikipedia.org/wiki/Multiple_dispatch[multiple dispatch]（也称为多重方法）。调用方法时，实际调用的方法是根据方法参数的运行时类型动态确定的。首先将考虑方法名称和参数数量（包括允许可变参数），然后考虑每个参数的类型。考虑以下方法定义：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=multi_methods,indent=0]
+----
+
+也许正如预期的那样，使用 `String` 和 `Integer` 参数调用 `method` 会调用我们的第三个方法定义。
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=call_single_method,indent=0]
+----
+
+这里更有趣的是编译时类型未知的情况。也许参数被声明为 `Object` 类型（在我们的例子中是此类对象的列表）。 Java 将确定在所有情况下都将选择 `method(Object, Object)` 变体（除非使用强制转换），但如以下示例所示，Groovy 使用运行时类型并将调用每个方法一次（并且不进行类型转换）：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=call_multi_methods,indent=0]
+----
+
+对于三个方法调用中的前两个，都找到了参数类型的精确匹配。对于第三次调用，未找到 `method(Integer, Integer)` 的精确匹配，但 `method(Object, Object)` 仍然有效并将被选择。
+
+方法选择就是从具有兼容参数类型的有效候选方法中找到最接近的拟合。因此， `method(Object, Object)` 对于前两次调用也有效，但不如类型完全匹配的变体那么接近匹配。为了确定最接近的拟合，运行时有一个实际参数类型与声明的参数类型之间的距离的概念，并尝试最小化所有参数的总距离。
+
+下表说明了影响距离计算的一些因素。
+
+[cols="1,1" options="header"]
+|====
+| Aspect
+| Example
+
+| 直接实现的接口比继承层次结构中更高层的接口匹配得更紧密。
+a| 给定这些接口和方法定义：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=multi_method_distance_interfaces,indent=0]
+----
+
+直接实现的接口将匹配：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=multi_method_distance_interfaces_usage,indent=0]
+----
+
+| 对象数组优于对象。
+a|
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=object_array_over_object,indent=0]
+----
+
+| 非可变参数变体比可变参数变体更优。
+a|
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=non_varargs_over_vararg,indent=0]
+----
+
+| 如果两个 vararg 变体适用，则首选使用最少数量的 vararg 参数的变体。
+a|
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=minimal_varargs,indent=0]
+----
+
+| 接口优先于超类。
+a|
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=multi_method_distance_interface_over_super,indent=0]
+----
+
+| 对于原始参数类型，首选相同或稍大的声明参数类型。
+a|
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=primitive_larger_over_smaller,indent=0]
+----
+|====
+
+在两个变体具有完全相同的距离的情况下，这被认为是不明确的并且将导致运行时异常：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=multi_method_ambiguous,indent=0]
+----
+
+可以使用类型转换来选择所需的方法：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=multi_method_ambiguous_cast,indent=0]
+----
+
+==== 声明异常
+
+Groovy 自动允许您像对待unchecked exceptions一样对待unchecked exceptions。这意味着您不需要声明方法可能抛出的任何已检查异常，如以下示例所示，如果未找到文件，该方法可能会抛出 `FileNotFoundException` ：
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=idiomatic_method_declaration,indent=0]
+----
+
+您也不需要将对上例中的 badRead 方法的调用包含在 `try/catch` 块中 - 尽管您可以根据需要自由地这样做。
+
+如果您希望声明代码可能抛出的任何异常（checked or otherwise），您可以随意这样做。添加异常不会改变代码在其他 Groovy 代码中的使用方式，但可以被视为代码文档。异常将成为字节码中方法声明的一部分，因此如果您的代码可能从 Java 调用，则包含它们可能会很有用。以下示例说明了如何使用显式检查异常声明：
+
+
+[source,groovy]
+----
+include::../../test/objectorientation/MethodsTest.groovy[tags=checked_method_declaration,indent=0]
+----
+
+=== 字段和属性
+
+[[fields]]
+==== 字段
+
+字段用于存储数据, 是类、接口或特征的成员。 Groovy 中的字段具有：
+
+* 一个必须得访问修饰符 (`public`, `protected`, or `private`)
+* 一个或多个可选修饰符 (`static`, `final`, `synchronized`)
+*  一个可选的类型
+* 一个必选的名称
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=field_declaration,indent=0]
+----
+<1> 名为 `id` 的 `private` 字段，类型为 `int`
+<2> 名为 `description` 的 `protected` 字段，类型为 `String`
+<3> 名为 `DEBU`、类型为 `boolean` 的 `public static final` 字段
+
+字段可以直接在声明时初始化：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=field_initialization,indent=0]
+----
+<1> 私有字段 id 用 `IDGenerator.next()` 初始化
+
+
+可以省略字段的类型声明。然而，这被认为是一种不好的做法，一般来说，对字段使用强类型是一个好主意：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=typing_fields,indent=0]
+----
+<1> 字段 `mapping` 未声明类型
+<2> 字段 `mapping` 具有强类型
+
+
+如果您想使用可选的类型检查，则两者之间的区别很重要。作为类的设计文档，它也很重要。但是，在某些情况下（例如脚本编写或您想依赖鸭子类型），省略类型可能会很有用。
+
+
+[[properties]]
+==== 属性
+
+属性是类的外部可见特征。 与使用公共字段来表示此功能（这提供了更有限的抽象并会限制重构的可能性）不同，Java中的经典实现是遵循 JavaBeans 规范中概述的约定，即使用以下组合来表示属性：private字段和 getter/setter。
+
+Groovy 遵循这些相同的约定，但提供了一种更简单的方法来定义属性。您可以使用以下方式定义属性：
+
+* 无需访问修饰符 (no `public`, `protected` or `private`)
+* 一个或多个可选修饰符 (`static`, `final`, `synchronized`)
+* 一个可选类型
+* 一个必选的名称
+
+然后 Groovy 将适当地生成 getter/setter。例如：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=properties_definition,indent=0]
+----
+<1> 创建一个支持 `private String name` 字段、一个 `getName` 和一个 `setName` 方法
+<2> 创建一个支持 `private int age` 字段、一个 `getAge` 和一个 `setAge` 方法
+
+
+如果属性声明为 `final` ，则不会生成 setter：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=readonly_property,indent=0]
+----
+<1> 定义类型 `String` 的只读属性
+<2> 定义类型 `int` 的只读属性
+<3> 将 `name` 参数分配给 `name` 字段
+<4> 将 `age` 参数分配给 `age` 字段
+
+属性通过名称访问，并且会透明地调用 `getter` 或 `setter` ，除非代码位于定义该属性的类中：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=property_access,indent=0]
+----
+<1> `this.name` 将直接访问该字段，因为该属性是从定义它的类中访问的
+<2> 类似地，读取访问是直接在 `name` 字段上完成的
+<3> 对属性的写访问是在 `Person` 类外部完成的，因此它将隐式调用 `setName`
+<4> 对属性的读取访问是在 `Person` 类之外完成的，因此它将隐式调用 `getName`
+<5> 这将调用 `Person` 上的 `name` 方法，该方法执行对该字段的直接访问
+<6> 这将调用 `Person` 上的 `title` 方法，该方法对字段执行直接读取访问
+
+值得注意的是，这种直接访问支持字段的行为是为了防止在定义属性的类中使用属性访问语法时出现堆栈溢出(调用属性自动转换到setter上, setter中调用属性有转到setter上)。
+
+可以通过实例的 `properties` 属性来列出所有属性
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=properties_meta,indent=0]
+----
+
+按照惯例，即使没有支持字段，只要存在遵循 Java Beans 规范的 getter 或 setter，Groovy 也会识别属性。例如：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=pseudo_properties,indent=0]
+----
+<1> 允许写入 p.name ，因为存在伪属性 name
+<2> 允许读取 p.age ，因为存在伪只读属性 age
+<3> 允许写入 p.groovy ，因为存在伪只写属性 groovy
+
+这种语法糖是许多用 Groovy 编写的 DSL 的核心。
+
+===== 属性命名规范
+
+通常建议属性名称的前两个字母小写，对于多单词属性，使用驼峰式大小写。在这些情况下，生成的 `getter` 和 `setter` 的名称将通过将属性名称大写并添加 `get` 或 `set` 前缀（布尔 `getter` 的 `is` ）来形成。因此， `getLength` 将是 `length` 属性的 `getter` ，而 `setFirstName` 将是 `firstName` 属性的 `setter`。 `isEmpty` 可能是名为 `empty` 的属性的 `getter` 方法名称。
+
+[NOTE]
+====
+以大写字母开头的属性名称将具有仅添加前缀的 getter/setter。因此，即使属性 `Foo` 不遵循建议的命名约定，也是允许的。对于此属性，访问器方法将为 `setFoo` 和 `getFoo` 。这样做的结果是不允许您同时拥有 `foo` 和 `Foo` 属性，因为它们将具有相同的命名访问器方法。
+====
+
+JavaBeans 规范对通常可能是首字母缩略词的属性做了特殊处理。如果属性名称的前两个字母为大写，则不执行大写（或更重要的是，如果从访问器方法名称生成属性名称，则不执行小写）。因此， `getURL` 将是 `URL` 属性的 `getter` 。
+
+[NOTE]
+====
+由于 JavaBeans 规范中特殊的“首字母缩略词处理”属性命名逻辑，属性名称的转换是不对称的。这会导致一些奇怪的边缘情况。 Groovy 采用了一种命名约定，避免了一种歧义，这种歧义可能看起来有点奇怪，但在 Groovy 设计时很流行，并且由于历史原因一直保留（到目前为止）。 Groovy 查看属性名称的第二个字母。如果这是大写字母，则该属性被视为首字母缩略词样式属性之一，并且不进行大写，否则进行正常大写。尽管我们从不推荐它，但它确实允许您拥有看似“重复命名”的属性，例如您可以有 `aProp` 和 `AProp` ，或 `pNAME` 和 `PNAME` 。 `getter` 分别是 `getaProp` 和 `getAProp` 以及 `getpNAME` 和 `getPNAME` 。
+====
+
+===== 属性的修饰符
+
+我们已经看到属性是通过省略可见性修饰符来定义的。一般来说，任何其他修饰符，例如 `transient` 将被复制到该字段。有两个特殊情况值得注意：
+
+* `final` ，我们之前看到的是只读属性，被复制到支持字段上，但也导致没有定义 setter
+* `static` 被复制到支持字段，但也会导致访问器方法成为静态
+
+如果您希望将像 `final` 这样的修饰符也保留到访问器方法中，则可以手动编写属性或考虑使用<<split-properties,拆分属性定义>>。
+
+===== 属性上的注解
+
+注解（包括与 AST 转换相关的注解）将被复制到属性的支持字段。这允许适用于字段的 AST 转换应用于属性，例如：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=annotated_properties,indent=0]
+----
+<1> 确认没有急切初始化
+<2> 正常的财产访问
+<3> 确认属性访问时才初始化
+
+[[split-properties]]
+===== 使用显式支持字段拆分属性定义
+
+当您的类设计遵循某些与常见 JavaBean 实践一致的约定时，Groovy 的属性语法是一种方便的速记方式。如果您的类不完全符合这些约定，您当然可以像在 Java 中一样编写 getter、setter 和支持字段。
+
+However, Groovy does provide a split definition capability which still provides a shortened syntax while allowing slight adjustments to the conventions. For a split definition, you write a field and a property with the same name and type. Only one of the field or property may have an initial value.
+
+For split properties, annotations on the field remain on the backing field for the property. Annotations on the property part of the definition are copied onto the getter and setter methods.
+
+This mechanism allows a number of common variations that property users may wish to use if the standard property definition doesn’t exactly fit their needs. For example, if the backing field should be `protected` rather than `private`:
+[source,groovy]
+----
+class HasPropertyWithProtectedField {
+    protected String name  // <1>
+    String name            // <2>
+}
+----
+<1> Protected backing field for name property instead of normal private one
+<2> Declare name property
+
+或者，相同的示例，但具有包私有支持字段：
+
+[source,groovy]
+----
+class HasPropertyWithPackagePrivateField {
+    String name                // <1>
+    @PackageScope String name  // <2>
+}
+----
+<1> Declare name property
+<2> Package-private backing field for name property instead of normal private one
+
+As a final example, we may wish to apply method-related AST transforms, or in general, any annotation to the setters/getters, e.g. to have the accessors be synchronized:
+
+[source,groovy]
+----
+class HasPropertyWithSynchronizedAccessorMethods {
+    private String name        // <1>
+    @Synchronized String name  // <2>
+}
+----
+<1> Backing field for name property
+<2> Declare name property with annotation for setter/getter
+
+===== 显式的setter/getter方法
+
+如果类中明确定义了 getter 或 setter，则不会自动生成访问器方法。这允许您根据需要修改此类 getter 或 setter 的正常行为。通常不考虑继承的访问器方法，但如果继承的访问器方法被标记为最终的，这也将导致不生成额外的访问器方法来满足此类方法没有子类化的 final 要求。
+
+== 注解
+
+[[ann-definition]]
+=== 定义注解
+
+注解是一种专用于注解代码元素的特殊接口。注解是一种类型，其超级接口是 `java.lang.annotation.Annotation` 接口。注解的声明方式与接口非常相似，使用 `@interface` 关键字：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=define_annotation,indent=0]
+----
+
+注解可以以不带主体和可选默认值的方法的形式定义成员。可能的成员类型仅限于：
+
+* 基础类型
+* java.lang.String
+* java.lang.Class
+* java.lang.Enum
+* 另外一个注解类型
+* 或者以上类型的数组
+
+例如:
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=ann_member_string,indent=0]
+include::../../test/ClassTest.groovy[tags=ann_member_string_default,indent=0]
+include::../../test/ClassTest.groovy[tags=ann_member_int,indent=0]
+include::../../test/ClassTest.groovy[tags=ann_member_class,indent=0]
+include::../../test/ClassTest.groovy[tags=ann_member_annotation,indent=0]
+include::../../test/ClassTest.groovy[tags=ann_member_enum,indent=0]
+----
+
+<1> 定义 `String` 类型的 `value` 成员的注解
+<2> 定义 `String` 类型的 `value` 成员的注解，默认值为 something
+<3> 定义原始类型 `int` 类型的 `step` 成员的注解
+<4> 定义 `Class` 类型的 `appliesTo` 成员的注解
+<5> 定义 `value` 成员的注解，其类型是另一个注解类型的数组
+<6> 定义 `dayOfWeek` 成员的注解，其类型为枚举类型 `DayOfWeek`
+
+与 Java 语言不同，在 Groovy 中，注解可用于更改语言的语义。对于将基于注解生成代码的 AST 转换尤其如此。
+
+[[ann-placement]]
+==== 使用注解的位置
+
+注解可以应用于代码的各个元素：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=apply_annotation_1,indent=0]
+----
+<1> `@SomeAnnotation `适用于 `someMethod` 方法
+<2> `@SomeAnnotation` 适用于 `SomeClass` 类
+<3> `@SomeAnnotation` 适用于 `var` 变量
+
+为了限制注解的应用范围，需要在注解定义上使用 `java.lang.annotation.Target` 注解进行声明。例如，以下是如何声明注解可以应用于类或方法：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=ann_target,indent=0]
+----
+<1> `@Target` 注解限定注解的使用位置
+<2> 因此， `@SomeAnnotation` 只能在 `TYPE` 或 `METHOD` 上使用
+
+`java.lang.annotation.ElementType` 中提供了可能的 `Target` 的列表。
+
+WARNING: Groovy 不支持 Java 8 中引入的 `java.lang.annotation.ElementType#TYPE_PARAMETER` 和 `java.lang.annotation.ElementType#TYPE_PARAMETER` 元素类型。
+
+==== 注解中成员的值
+
+当使用注解时，至少需要设置所有没有默认值的成员。例如：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=annotation_value_set,indent=0]
+----
+
+但是，如果 `value` 是唯一需要被设置的成员，则可以在注解值的声明中省略 `value=` ：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=annotation_value_set_option,indent=0]
+----
+<1> 我们可以省略 `statusCode` ，因为它有默认值，但需要设置 value
+<2> 由于 `value` 是唯一没有默认值的强制成员，因此我们可以省略 `value=`
+<3> 如果 `value` 和 `statusCode` 都需要设置，则需要使用 `value=` 作为默认的 `value` 成员
+
+==== 保留策略
+
+注解的可见性取决于其保留策略。注解的保留策略是使用 `java.lang.annotation.Retention` 注解设置的：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=ann_retention,indent=0]
+----
+<1> `@Retention` 注解 `@SomeAnnotation`
+<2> 因此 `@SomeAnnotation` 将具有 `SOURCE` 保留策略
+
+`java.lang.annotation.RetentionPolicy` 枚举中提供了可能的保留目标和描述的列表。选择通常取决于您希望注解在编译时还是运行时可见。
+
+==== Closure annotation parameters
+
+Groovy 中注解的一个有趣功能是您可以使用闭包作为注解值。因此，注解可以与多种表达式一起使用，并且仍然具有 IDE 支持。例如，想象一个框架，您希望在其中根据环境约束（例如 JDK 版本或操作系统）执行一些方法。可以编写以下代码：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=closure_ann_example,indent=0]
+----
+
+要使  `@OnlyIf` 注解接受 `Closure` 作为参数，您只需将 `value` 声明为 `Class` ：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=closure_ann_def,indent=0]
+----
+
+为了完成该示例，让我们编写一个使用该信息的示例运行程序：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=closure_ann_runner,indent=0]
+----
+<1> 创建一个实例
+<2> 模拟 JDK 6 并且不是 Windows 的环境
+<3> 迭代任务类的所有声明的方法
+<4> 如果该方法是公共的并且不带参数
+<5> 尝试找到 @OnlyIf 注解
+<6> 如果找到，则获取 value 并从中创建一个新的 Closure
+<7> 将闭包的 delegate 设置为我们的环境变量
+<8> 调用闭包，即注解闭包。它将返回一个 boolean
+<9> 如果是 true ，则调用该方法
+<10> 如果该方法没有用 @OnlyIf 注解，则无论如何执行该方法
+<11> 之后，返回任务对象
+
+可以这样使用：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=closure_ann_runner_exec,indent=0]
+----
+
+=== Meta-annotations
+
+==== 声明元注解
+
+元注解，也称为注解别名，是 *在编译时被其他注解替换的注解*（一个元注解是一个或多个注解的别名）。元注解可用于减少涉及多个注解的代码的大小。
+
+让我们从一个简单的例子开始。假设您有 `@Service` 和 `@Transactional` 注解，并且您想用这两者注解一个类：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=transactionalservice_class,indent=0]
+----
+
+考虑到您可以添加到同一个类中的注解数量增多，元注解可以通过将两个注解减少为具有完全相同语义的单个注解来提供帮助。例如，我们可能想这样写：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=transactionalservice_class2,indent=0]
+----
+<1> `@TransactionalService` 是元注解
+
+元注解被声明为常规注解，但被 `@AnnotationCollector` 和一系列其正在收集的注解列表进行注解。在我们的例子中， `@TransactionalService` 注解可以这样写：
+
+
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=metaann_ts,indent=0]
+----
+<1> 使用 @Service 注释元注解
+<2> 使用 @Transactional 注释元注解
+<3> 使用 @AnnotationCollector 注释元注解
+
+[[meta-ann-behavior]]
+==== 元注解的行为
+
+Groovy supports both _precompiled_ and _source form_
+meta-annotations. This means that your meta-annotation _may_ be
+precompiled, or you can have it in the same source tree as the one you
+are currently compiling.
+
+INFO: Meta-annotations are a Groovy-only feature. There is
+no chance for you to annotate a Java class with a meta-annotation and
+hope it will do the same as in Groovy. Likewise, you cannot write a
+meta-annotation in Java: both the meta-annotation definition *and* usage
+have to be Groovy code. But you can happily collect Java annotations
+and Groovy annotations within your meta-annotation.
+
+When the Groovy compiler encounters a class annotated with a
+meta-annotation, it *replaces* it with the collected annotations. So,
+in our previous example, it will
+replace `@TransactionalService` with `@Transactional` and `@Service`:
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=annotations_expanded,indent=0]
+----
+
+The conversion from a meta-annotation to the collected annotations is performed during the
+_semantic analysis_ compilation phase. 
+
+In addition to replacing the alias with the collected annotations, a meta-annotation is capable of
+processing them, including arguments.
+
+[[meta-ann-members]]
+==== 元注解的参数
+
+元注解可以收集带有参数的注解。为了说明这一点，我们将想象两个注解，每个注解都接受一个参数：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=collected_ann_explosive,indent=0]
+----
+
+假设您要创建一个名为 `@Explosive` 的元注解：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=collected_ann_explosive,indent=0]
+include::../../test/ClassTest.groovy[tags=collector_ann_explosive,indent=0]
+----
+
+默认情况下，当 `@Explosive` 被替换时，`@Timeout`
+`@Dangerous`将获取 `@Explosive` 中定义的对应的参数值。更有趣的是，元注解支持覆盖特定值：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=example_bomb,indent=0]
+----
+<1> 作为参数提供给 @Explosive 的 after 值会覆盖 @Timeout 注解中定义的值
+
+如果两个注解定义了相同的参数名称，则默认处理器会将注解值复制到所有接受该参数的注解：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=collector_ann_same_values,indent=0]
+----
+<1> @Foo 注解定义 String 类型的 value 成员
+<2> @Bar 注解还定义了 String 类型的 value 成员
+<3> @FooBar 元注解聚合 @Foo 和 @Bar
+<4> 类 Bob 用 @Foo 和 @Bar 注解
+<5> Bob 上的 @Foo 注解的值为 a
+<6> 而 Bob 上的 @Bar 注解的值为 b
+<7> 类 Joe 用 @FooBar 注解
+<8> 那么 Joe 上的 @Foo 注解的值为 a
+<9> Joe 上的 @Bar 注解的值也是 a
+
+在第二种情况下，元注解值被复制到 @Foo 和 @Bar 注解中。
+
+WARNING: 如果收集的注解定义了具有不兼容类型的相同成员，则会出现编译时错误。例如，如果在前面的示例中 @Foo 定义了 String 类型的值，但 @Bar 定义了 int 类型的值。
+
+然而，可以自定义元注解的行为并描述如何扩展收集的注解。我们很快就会了解如何做到这一点，但首先要介绍一个高级处理选项。
+
+[[handling_duplicate_annotations]]
+==== 处理元注解中的重复注解
+
+@AnnotationCollector 注解支持 mode 参数，该参数可用于更改默认处理器在存在重复注解的情况下处理注解替换的方式。
+
+INFO: Custom processors （接下来讨论）可能支持也可能不支持此参数。
+
+例如，假设您创建一个包含 @ToString 注解的元注解，然后将元注解放在已经具有显式 @ToString 注解的类上。这应该是一个错误吗？是否应该应用这两个注解？其中一个优先于另一个吗？没有正确答案。在某些情况下，这些答案中的任何一个都可能是正确的。因此，Groovy 不是试图抢占一种正确的方法来处理重复注解问题，而是让您编写自己的自定义元注解处理器（接下来介绍），并让您在 AST 转换中编写您喜欢的任何检查逻辑 - 这是一个常见的目标用于聚合。话虽如此，通过简单地设置 mode ，在任何额外的编码中都会自动为您处理许多常见的预期场景。 mode 参数的行为由所选的 AnnotationCollectorMode 枚举值确定，并总结在下表中。
+
+|================================
+| Mode | Description
+| DUPLICATE | Annotations from the annotation collection will always be inserted. After all transforms have been run, it will be an error if multiple annotations (excluding those with SOURCE retention) exist.
+| PREFER_COLLECTOR | Annotations from the collector will be added and any existing annotations with the same name will be removed.
+| PREFER_COLLECTOR_MERGED | Annotations from the collector will be added and any existing annotations with the same name will be removed but any new parameters found within existing annotations will be merged into the added annotation.
+| PREFER_EXPLICIT | Annotations from the collector will be ignored if any existing annotations with the same name are found.
+| PREFER_EXPLICIT_MERGED | Annotations from the collector will be ignored if any existing annotations with the same name are found but any new parameters on the collector annotation will be added to existing annotations.
+|================================
+
+[[meta-ann-processor]]
+==== 自定义元注解处理器
+
+自定义注解处理器将允许您选择如何将元注解扩展为收集的注解。在这种情况下，元注解的行为完全取决于您。为此，您必须：
+
+* 创建一个元注解处理器，扩展 org.codehaus.groovy.transform.AnnotationCollectorTransform
+
+* 声明要在元注解声明中使用的处理器
+
+为了说明这一点，我们将探讨元注解 @CompileDynamic 是如何实现的。
+
+@CompileDynamic 是一个元注解，可扩展为 @CompileStatic(TypeCheckingMode.SKIP) 。问题是默认的元注解处理器不支持枚举，并且注解值 TypeCheckingMode.SKIP 是 1。
+
+这里的简单实现是行不通的：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=compiledynamic_naive,indent=0]
+----
+
+相反，我们将这样定义它：
+
+[source,groovy]
+----
+include::../../test/ClassTest.groovy[tags=compiledynamic_def_fixed,indent=0]
+----
+
+The first thing you may notice is that our interface is no longer
+annotated with `@CompileStatic`. The reason for this is that we rely on
+the `processor` parameter instead, that references a class which
+will *generate* the annotation.
+
+Here is how the custom processor is implemented:
+
+[source,groovy]
+.CompileDynamicProcessor.groovy
+----
+include::../../test/ClassTest.groovy[tags=compiledynamic_processor,indent=0]
+----
+<1> our custom processor is written in Groovy, and for better compilation performance, we use static compilation
+<2> the custom processor has to extend gapi:org.codehaus.groovy.transform.AnnotationCollectorTransform[AnnotationCollectorTransform]
+<3> create a class node representing the `@CompileStatic` annotation type
+<4> create a class node representing the `TypeCheckingMode` enum type
+<5> `collector` is the `@AnnotationCollector` node found in the meta-annotation. Usually unused.
+<6> `aliasAnnotationUsage` is the meta-annotation being expanded, here it is `@CompileDynamic`
+<7> `aliasAnnotated` is the node being annotated with the meta-annotation
+<8> `sourceUnit` is the `SourceUnit` being compiled
+<9> we create a new annotation node for `@CompileStatic`
+<10> we create an expression equivalent to `TypeCheckingMode.SKIP`
+<11> we add that expression to the annotation node, which is now `@CompileStatic(TypeCheckingMode.SKIP)`
+<12> return the generated annotation
+
+In the example, the `visit` method is the only method which has to be overridden. It is meant to return a list of
+annotation nodes that will be added to the node annotated with the meta-annotation. In this example, we return a
+single one corresponding to `@CompileStatic(TypeCheckingMode.SKIP)`.
+
+include::_traits.adoc[leveloffset=+1]
+
+include::_records.adoc[leveloffset=+1]
+
+include::_sealed.adoc[leveloffset=+1]

@@ -1,0 +1,26 @@
+plugins {
+    id 'java'
+    id 'war' // web项目需要
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenLocal() // 依赖本地maven仓库
+    mavenCentral()
+}
+
+dependencies {
+    dependencies {
+        // servlet
+        compileOnly 'javax.servlet:servlet-api:2.5'
+
+        testImplementation group: 'junit' ,name: 'junit', version: '4.12'
+    }
+}
+
+test {
+    enabled(false)
+    useJUnitPlatform()
+}

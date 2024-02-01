@@ -1,0 +1,950 @@
+//////////////////////////////////////////
+
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+
+//////////////////////////////////////////
+ifndef::core-semantics[]
+:core-semantics: core-semantics.adoc
+endif::[]
+ifndef::core-syntax[]
+:core-syntax: core-syntax.adoc
+endif::[]
+
+[[groovy-operators]]
+= 操作符
+
+本章介绍 Groovy 编程语言的运算符。
+
+== 算术运算符
+
+Groovy 支持数学和其他编程语言（如 Java）中常见的算术运算符。支持所有 Java 算术运算符。让我们在下面的示例中详细了解它们。
+
+=== 普通算术运算符
+
+Groovy 中提供以下二元算术运算符：
+
+[cols="1,1,1" options="header"]
+|====
+| Operator
+| Purpose
+| Remarks
+
+| `+`
+| addition
+|
+
+| `-`
+| subtraction
+|
+
+| `*`
+| multiplication
+|
+
+| `/`
+| division
+| Use `intdiv()` for integer division, and see the section about <<{core-syntax}#integer_division,integer division>> for more information on the return type of the division.
+
+| `%`
+| remainder
+|
+
+| `**`
+| power
+| See the section about <<{core-syntax}#power_operator,the power operation>> for more information on the return type of the operation.
+|====
+
+以下是这些运算符的一些用法示例：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=binary_arith_ops,indent=0]
+----
+
+=== 一元运算符
+
++ 和 - 运算符也可用作一元运算符：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=unary_plus_minus,indent=0]
+----
+<1> 请注意使用括号将表达式括起来，以将一元减号应用于该括起来的表达式。
+
+就一元算术运算符而言，可以使用 ++ （递增）和 -- （递减）运算符，无论是前缀还是后缀表示法：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=plusplus_minusminus,indent=0]
+----
+<1> 在表达式被计算并分配给 b 后，后缀增量将增加 a
+<2> 在表达式被计算并分配给 d 后，后缀递减将递减 c
+<3> 在计算表达式并将其分配给 f 之前，前缀增量将递增 e
+<4> 在计算表达式并将其分配给 h 之前，前缀递减将递减 g
+
+有关布尔值上的一元非运算符，请参阅<<#_条件运算符>>.。
+
+
+=== 赋值算术运算符
+
+我们上面看到的二元算术运算符也可以采用赋值形式：
+
+* `+=`
+* `-=`
+* `*=`
+* `/=`
+* `%=`
+* `**=`
+
+让我们看看他们：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=binary_assign_operators,indent=0]
+----
+
+== 关系运算符
+
+关系运算符允许在对象之间进行比较，以了解两个对象是否相同或不同，或者一个对象是否大于、小于或等于另一个。
+
+可以使用以下运算符：
+
+[cols="1,1" options="header"]
+|====
+| Operator
+| Purpose
+
+| `==`
+| equal
+
+| `!=`
+| different
+
+| `<`
+| less than
+
+| `\<=`
+| less than or equal
+
+| `>`
+| greater than
+
+| `>=`
+| greater than or equal
+
+| `===`
+| identical (Since Groovy 3.0.0)
+
+| `!==`
+| not identical (Since Groovy 3.0.0)
+|====
+
+以下是使用这些运算符进行简单数字比较的一些示例：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=simple_relational_op,indent=0]
+----
+
+`===` 和 `!==` 均受支持，分别与调用 `is()` 方法和对 `is()` 方法的非 调用相同。
+
+[source,groovy]
+--------------------------------------
+import groovy.transform.EqualsAndHashCode
+
+@EqualsAndHashCode
+class Creature { String type }
+
+def cat = new Creature(type: 'cat')
+def copyCat = cat
+def lion = new Creature(type: 'cat')
+
+assert cat.equals(lion) // Java logical equality
+assert cat == lion      // Groovy shorthand operator
+
+assert cat.is(copyCat)  // Groovy identity
+assert cat === copyCat  // operator shorthand
+assert cat !== lion     // negated operator shorthand
+--------------------------------------
+[[logical_operators]]
+== 逻辑运算符
+
+Groovy 为布尔表达式提供了三种逻辑运算符：
+
+* `&&`: 逻辑“与”
+* `||`: 逻辑“或”
+* `!`: 逻辑“非”
+
+让我们用以下示例来说明它们：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=logical_op,indent=0]
+----
+<1> "not" false is true
+<2> true "and" true is true
+<3> true "or" false is true
+
+=== 优先级
+
+逻辑“非”的优先级高于逻辑“与”。
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=logical_precendence_1,indent=0]
+----
+<1> 这里，断言为真（因为括号内的表达式为假），因为“not”的优先级高于“and”，所以它只适用于第一个“假”项；
+
+The logical "and" has a higher priority than the logical "or".
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=logical_precendence_2,indent=0]
+----
+<1> 这里，断言为真，因为“and”的优先级高于“or”，因此“or”最后执行并返回true
+
+=== 短路
+
+逻辑 || 运算符支持短路：如果左操作数为 true，则它知道结果在任何情况下都为 true，因此不会计算右操作数。仅当左操作数为 false 时，才会计算右操作数。
+
+对于逻辑 && 运算符也是如此：如果左操作数为 false，则它知道在任何情况下结果都将为 false，因此它不会计算右操作数。仅当左操作数为 true 时，才会计算右操作数。
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=logical_shortcircuit,indent=0]
+----
+<1> 我们创建一个函数，每当调用时将 called 标志设置为 true
+<2> 在第一种情况下，在重置被调用标志后，我们确认如果 || 的左操作数为 true，则不会调用该函数，因为 || 会短路对右操作数
+<3> 在第二种情况下，左操作数为 false，因此调用该函数，正如我们的标志现在为 true 的事实所示
+<4> 同样，对于 && ，我们确认该函数不是使用错误的左操作数调用的
+<5> 但该函数是用真正的左操作数调用的
+
+== 按位和移位运算符
+
+=== 按位运算符
+
+Groovy 提供四种按位运算符：
+
+* `&`: 按位“与”
+* `|`: 按位“或”
+* `^`: 按位“异或”
+* `~`: 按位取反
+
+位运算符可以应用于 byte 、 short 、 int 、 long 或 BigInteger .如果参数之一是 BigInteger ，则结果将为 BigInteger 类型；否则，如果参数之一是 long ，结果将为 long 类型；否则，结果将为 int 类型：
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=bitwise_op,indent=0]
+----
+<1> 按位和
+<2> bitwise and returns common bits
+<3> bitwise or
+<4> bitwise or returns all '1' bits
+<5> setting a mask to check only the last 8 bits
+<6> bitwise exclusive or on self returns 0
+<7> bitwise exclusive or
+<8> bitwise negation
+
+值得注意的是，基本类型的内部表示遵循 http://docs.oracle.com/javase/specs/jls/se8/html/jls-4.html[Java Language Specification]。特别是，原始类型是有符号的，这意味着对于按位求反，最好使用掩码来仅检索必要的位。
+在 Groovy 中，按位运算符是<<Operator-Overloading,可重载>>的，这意味着您可以为任何类型的对象定义这些运算符的行为。
+
+
+=== 移位运算符
+
+Groovy 提供了三种位移运算符：
+
+* `<<`: left shift
+* `>>`: right shift
+* `>>>`: 无符号右移
+
+所有三个运算符都适用于左侧参数类型为 byte 、 short 、 int 或 long 的情况。前两个运算符也可以应用于左侧参数类型为 BigInteger 的情况。如果左侧参数是 BigInteger ，则结果将为 BigInteger 类型；否则，如果左侧参数是 long ，则结果将为 long 类型；否则，结果将为 int 类型：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=bit_shift_op,indent=0]
+----
+<1> 使用 equals 方法代替 == 来确认结果类型
+
+在 Groovy 中，位移运算符是<<Operator-Overloading,可重载>>可重载的，这意味着您可以为任何类型的对象定义这些运算符的行为。
+
+
+== 条件运算符
+
+=== 非 运算符
+
+“not”运算符用感叹号 ( ! ) 表示，并反转布尔表达式的结果。特别是，可以将 not 运算符与 Groovy <<{core-semantics}#the-groovy-truth,Groovy 真假>>结合起来：
+
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=conditional_op_not,indent=0]
+----
+<1> true 的否定是 false
+<2> 'foo' 是一个非空字符串，计算结果为 true ，因此求反返回 false
+<3> '' 是一个空字符串，计算结果为 false ，因此求反返回 true
+
+=== 三元运算符
+
+三元运算符是一个快捷表达式，相当于为变量分配某些值的 if/else 分支。
+
+代替：
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=conditional_op_ternary_if,indent=0]
+----
+
+你可以写：
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=conditional_op_ternary_ternary,indent=0]
+----
+
+三元运算符也与 Groovy <<{core-semantics}#the-groovy-truth,Groovy 真假>>兼容，因此您可以使其变得更加简单：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=conditional_op_ternary_groovytruth,indent=0]
+----
+
+=== Elvis 操作符
+
+“Elvis 运算符”是三元运算符的缩写。一个方便的例子是，如果表达式解析为 false （如 <<{core-semantics}#the-groovy-truth,Groovy 真假>> 中所示），则返回“合理的默认”值。一个简单的例子可能如下所示：
+
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=conditional_op_elvis,indent=0]
+----
+<1> 使用三元运算符，您必须重复要分配的值
+<2> 使用 Elvis 运算符，如果不是 false，则使用经过测试的值
+
+使用 Elvis 运算符可以减少代码的冗长性，并降低重构时出错的风险，因为无需复制在条件和正返回值中测试的表达式。
+
+=== Elvis 赋值运算符
+
+Groovy 3.0.0引入了Elvis运算符，例如：
+
+[source,groovy]
+--------------------------------------
+import groovy.transform.ToString
+
+@ToString(includePackage = false)
+class Element {
+    String name
+    int atomicNumber
+}
+
+def he = new Element(name: 'Helium')
+he.with {
+    name = name ?: 'Hydrogen'   // existing Elvis operator
+    atomicNumber ?= 2           // new Elvis assignment shorthand
+}
+assert he.toString() == 'Element(Helium, 2)'
+--------------------------------------
+
+== 对象运算符
+
+=== 安全导航运算符
+
+安全导航运算符用于避免 NullPointerException 。通常，当您拥有对对象的引用时，您可能需要在访问该对象的方法或属性之前验证它不是 null 。为了避免这种情况，安全导航运算符将简单地返回 null 而不是抛出异常，如下所示：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=nullsafe,indent=0]
+----
+<1> find 将返回一个 null 实例
+<2> 使用空安全运算符可防止 NullPointerException
+<3> 结果是 null
+
+=== 字段直接访问操作符
+
+通常在 Groovy 中，当您编写如下代码时：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=direct_field_class,indent=0]
+----
+<1> 公共字段 name
+<2> name 的 getter，返回自定义字符串
+<3> 调用 getter
+
+user.name 调用会触发对同名属性的调用，也就是说，这里是对 name 的 getter 的调用。如果您想直接使用字段而不是调用 getter，可以使用直接字段访问运算符：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=direct_field_op,indent=0]
+----
+<1> 使用 `.@` 强制使用字段而不是 getter
+
+[[method-pointer-operator]]
+=== 方法指针运算符
+
+方法指针运算符 ( `.&` ) 可用于在变量中存储对方法的引用，以便稍后调用它：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=method_pointer,indent=0]
+----
+<1> str 变量包含 String
+<2> 我们将对 str 实例上的 toUpperCase 方法的引用存储在名为 fun 的变量中
+<3> fun 可以像常规方法一样调用
+<4> 我们可以检查结果是否与我们直接在 str 上调用它的结果相同
+
+使用方法指针有很多优点。首先，这种方法指针的类型是 groovy.lang.Closure ，因此它可以在任何需要使用闭包的地方使用。特别是，适合将现有方法转换为策略模式的需要：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=method_pointer_strategy,indent=0]
+----
+<1> transform 方法获取列表中的每个元素并调用它们的 action 闭包，返回一个新列表
+<2> 我们定义一个函数，它接受 Person 并返回 String
+<3> 我们在该函数上创建一个方法指针
+<4> 我们创建要收集描述符的元素列表
+<5> 方法指针可以用在需要 Closure 的地方
+
+方法指针由接收者和方法名称绑定。参数在运行时解析，这意味着 *如果有多个同名的方法，语法没有不同，只会在运行时解析要调用的适当方法*：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=method_pointer_dispatch,indent=0]
+----
+<1> 定义一个重载的 doSomething 方法，接受 String 作为参数
+<2> 定义一个重载的 doSomething 方法，接受 Integer 作为参数
+<3> 在 doSomething 上创建单个方法指针，而不指定参数类型
+<4> 使用带有 String 的方法指针调用 doSomething 的 String 版本
+<5> 使用带有 Integer 的方法指针调用 doSomething 的 Integer 版本
+
+为了符合 Java 8 方法引用期望，在 Groovy 3 及更高版本中，您可以使用 new 作为方法名称来获取指向构造函数的方法指针：
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=method_pointer_new,indent=0]
+----
+
+同样在 Groovy 3 及更高版本中，您可以获得指向类的实例方法的方法指针。该方法指针采用一个附加参数作为接收者实例来调用该方法：
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=method_pointer_class_instance,indent=0]
+----
+为了向后兼容，在这种情况下，任何恰好具有正确调用参数的静态方法都将优先于实例方法。
+
+[[method-reference-operator]]
+=== 方法引用运算符
+
+Groovy 3+ 中的 Parrot 解析器支持 Java 8+ 方法引用运算符。方法引用运算符 ( :: ) 可用于在需要功能接口的上下文中引用方法或构造函数。这与 Groovy 的方法指针运算符提供的功能有些重叠。事实上，对于动态 Groovy，方法引用运算符只是方法指针运算符的别名。对于静态 Groovy，该运算符生成的字节码与 Java 为相同上下文生成的字节码类似。
+
+以下脚本中显示了一些突出显示各种支持的方法参考案例的示例：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=method_refs,indent=0]
+----
+<1> 类实例方法引用：add(BigInteger val)是BigInteger中的实例方法
+<2> 对象实例方法引用：add(BigInteger val)是对象3G的实例方法
+<3> 类静态方法引用： valueOf(long val) 是类 BigInteger 的静态方法
+<4> 对象静态方法引用： valueOf(long val) 是对象 3G 的静态方法（在正常情况下有些人认为这种风格不好）
+
+以下脚本中显示了一些突出显示各种受支持的构造函数参考案例的示例：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=constructor_refs,indent=0]
+----
+<1> 类构造函数引用
+<2> 数组构造函数引用
+
+== 正则表达式运算符
+
+=== 模式运算符
+
+模式运算符 ( ~ ) 提供了一种创建 java.util.regex.Pattern 实例的简单方法：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=pattern_op,indent=0]
+----
+
+虽然一般情况下，模式运算符会与斜线字符串一起使用，但它可以与 Groovy 中的任何类型的 String 一起使用：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=pattern_op_variants,indent=0]
+----
+<1> 使用单引号字符串
+<2> 使用双引号字符串
+<3> 美元斜杠字符串允许您使用斜杠和美元符号而无需转义它们
+<4> 您还可以使用 GString！
+
+[NOTE]
+虽然您可以将大多数字符串形式与模式、查找和匹配运算符一起使用，但我们建议大多数时间使用斜线字符串，以避免转义。
+
+=== Find 运算符
+
+您还可以使用查找运算符 =~ 直接创建 java.util.regex.Matcher 实例：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=pattern_matcher_op,indent=0]
+----
+<1> =~ 使用右侧的模式针对 text 变量创建匹配器
+<2> =~ 的返回类型是 Matcher
+<3> 相当于调用 if (!m.find(0))
+
+由于 Matcher 通过调用 find 方法强制转换为 boolean ，因此 =~ 运算符与 Perl 的 =~ 运算符，当它作为谓词出现时（在 if 、 ?: 等中）。当意图是迭代指定模式的匹配（在 while 等中）时，直接在匹配器上调用 find() 或使用 iterator DGM。
+
+=== Match 运算符
+
+匹配运算符 ( ==~ ) 是查找运算符的轻微变体，它不返回 Matcher 而是返回布尔值，并且需要输入字符串的严格匹配：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=pattern_matcher_strict_op,indent=0]
+----
+<1> ==~ 与正则表达式匹配主题，但匹配必须严格
+<2>  ==~ 的返回类型是 boolean
+<3> 相当于调用 if (text ==~ /match/)
+
+===  Find 和 Match 运算符的比较
+
+通常，当模式涉及单个精确匹配时，使用匹配运算符，否则查找运算符可能更有用。
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=pattern_find_vs_matcher,indent=0]
+----
+<1> equivalent, but explicit ^ and $ are discouraged since they aren't needed
+<2> no match because of leading space
+<3> one match
+<4> ^ and $ indicate exact match required
+<5> zero matches
+<6> one match, greedily starting at first word
+<7> one match, ignores leading space
+<8> two matches
+
+== 其他操作符
+
+=== 线程操作符
+
+Spread-dot 运算符 ( *. ) 通常缩写为 Spread 运算符，用于对聚合对象的所有元素进行操作。它相当于对每个元素进行操作并将结果收集到列表中：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreaddot,indent=0]
+----
+<1> 构建 Car 项的列表。该列表是对象的聚合。
+<2> 调用列表上的展开运算符，访问每个项目的 make 属性
+<3> 返回与 make 项集合相对应的字符串列表
+
+表达式 cars*.make 相当于 cars.collect{ it.make }
+
+
+Groovy's GPath notation allows a short-cut when the referenced property
+isn't a property of the containing list, in that case it is automatically
+spread.
+
+在前面提到的情况下，可以使用表达式 cars.make ，但通常建议保留显式扩展点运算符。
+
+扩展运算符是 null 安全的，这意味着如果集合的元素为 null，它将返回 null 而不是抛出 NullPointerException ：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreaddot_nullsafe,indent=0]
+----
+<1> 构建一个列表，其中一个元素是 null
+<2> 使用扩展运算符不会抛出 NullPointerException
+<3> 接收者也可能为 null，在这种情况下返回值为 null
+
+扩展运算符可用于任何实现 Iterable 接口的类：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreaddot_iterable,indent=0]
+----
+
+在处理本身包含聚合的数据结构的聚合时，使用扩散运算符（此处为 cars*.models*.name ）的多次调用：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreaddot_multilevel,indent=0]
+----
+
+对于集合的集合，请考虑使用 collectNested 方法而不是散点运算符：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreaddot_alternative,indent=0]
+----
+
+==== 展开方法参数
+
+在某些情况下，可以在List中找到方法调用的参数。在这种情况下，您可以使用扩展运算符来调用该方法。例如，假设您有以下方法签名：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreadmethodargs_method,indent=0]
+----
+
+那么如果您有以下列表：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreadmethodargs_args,indent=0]
+----
+
+您可以调用该方法而无需定义中间变量：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreadmethodargs_assert,indent=0]
+----
+
+甚至可以将普通参数与扩展参数混合在一起：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spreadmethodargs_mixed,indent=0]
+----
+
+==== 展开列表元素
+
+当在列表中使用时，展开运算符的作用就好像展开元素内容并内联到列表中一样：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spread_list,indent=0]
+----
+<1> items 是一个列表
+<2> 我们希望将 items 列表的内容直接插入到 list 中，而不必调用 addAll
+<3> items 的内容已内联到 list 中
+
+==== 扩展map中的元素
+
+展开map运算符的工作方式与展开list运算符类似，但适用于map。它允许您将map的内容内联到另一个map中，如下例所示：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spread_map,indent=0]
+----
+<1> `m1` 是我们要内联的map
+<2> 我们使用 `*:m1` 表示法将 m1 的内容扩展到 map
+<3> map 包含 m1 的所有元素
+
+展开map运算符的位置是相关的，如下例所示：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spread_map_position,indent=0]
+----
+<1> m1 是我们要内联的地图
+<2> 我们使用 `*:m1` 表示法将 `m1` 的内容扩展到 `map` 中，但在扩招后重新设置key d
+<3> map 包含所有预期的键，但 d 被重新设置
+
+=== 范围运算符
+
+Groovy 支持范围的概念并提供符号 ( .. ) 来创建对象范围：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=intrange,indent=0]
+----
+<1> 一个简单的整数范围，存储到局部变量中
+<2> 一个 IntRange ，包含边界
+<3> 一个 IntRange ，具有独占上限
+<4> 一个 IntRange ，具有独占下限
+<5> 一个 IntRange ，具有独占的下限和上限
+<6> groovy.lang.Range 实现 List 接口
+<7> 意味着你可以调用它的 size 方法
+
+范围实现是轻量级的，这意味着仅存储下限和上限。You can create a range
+from any `Comparable` object that has `next()` and `previous()` methods to determine the next / previous item in the range.
+例如，您可以通过以下方式创建一系列字符：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=charrange,indent=0]
+----
+
+=== Spaceship 操作符
+
+spaceship 操作符 (`\<\=>`) 委托给 compareTo 方法：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=spaceship,indent=0]
+----
+
+[[subscript-operator]]
+=== 下标运算符
+
+下标运算符是 getAt 或 putAt 的简写符号，具体取决于您是在赋值的左侧还是右侧找到它：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=subscript_op,indent=0]
+----
+<1> 可以使用 [2] 代替 getAt(2)
+<2> 如果在作业的左侧，将调用 putAt
+<3> getAt 还支持范围
+<4> putAt 也是如此
+<5> 列表已发生变化
+
+[[custom-subscript-operator]]
+下标运算符与 getAt / putAt 的自定义实现相结合是解构对象的便捷方法：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=subscript_destructuring,indent=0]
+----
+<1> User 类定义自定义 getAt 实现
+<2> User 类定义自定义 putAt 实现
+<3> 创建示例
+<4> 使用索引为 0 的下标运算符可以检索用户 ID
+<5> 使用索引为 1 的下标运算符可以检索用户名
+<6> 由于对 putAt 的委托，我们可以使用下标运算符写入属性
+<7> 并检查它是否确实是已更改的属性 name
+
+=== 安全索引运算符
+
+Groovy 3.0.0 引入了安全索引运算符，即 ?[] ，它类似于 ?. 。例如：
+
+[source,groovy]
+--------------------------------------
+String[] array = ['a', 'b']
+assert 'b' == array?[1]      // get using normal array index
+array?[1] = 'c'              // set using normal array index
+assert 'c' == array?[1]
+
+array = null
+assert null == array?[1]     // return null for all index values
+array?[1] = 'c'              // quietly ignore attempt to set value
+assert null == array?[1]
+
+def personInfo = [name: 'Daniel.Sun', location: 'Shanghai']
+assert 'Daniel.Sun' == personInfo?['name']      // get using normal map index
+personInfo?['name'] = 'sunlan'                  // set using normal map index
+assert 'sunlan' == personInfo?['name']
+
+personInfo = null
+assert null == personInfo?['name']              // return null for all map values
+personInfo?['name'] = 'sunlan'                  // quietly ignore attempt to set value
+assert null == personInfo?['name']
+--------------------------------------
+
+
+=== 成员 运算符
+
+成员运算符 ( in ) 相当于调用 isCase 方法。在 List 的上下文中，它相当于调用 contains ，如以下示例所示：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=membership_op,indent=0]
+----
+<1> 相当于调用 list.contains('Emmy') 或 list.isCase('Emmy')
+<2> 相当于调用 !list.contains('Emmy') 或 !list.isCase('Emmy')
+
+=== `==` 和 `===` 运算符
+
+在 Groovy 中，使用 == 测试相等性与在 Java 中使用相同的运算符不同。在 Groovy 中，它调用 equals 。如果要比较引用相等性，应使用 is ，如下例所示：
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=identity_op,indent=0]
+----
+<1> 创建字符串列表
+<2> 创建另一个包含相同元素的字符串列表
+<3> 使用 == ，我们测试对象相等性，相当于 Java 中的 list1.equals(list2)
+<4> 使用 is ，我们可以检查引用是否不同，相当于 Java 中的 list1 == list2
+<5> 使用 === 或 !== （从 Groovy 3.0.0 开始支持和推荐）检查引用是否不同，相当于 list1 == list2 和 list1 != list2 在 Java 中
+
+=== 类型强制转换运算符
+
+强制转换运算符 ( as ) 是强制转换的一种变体。强制转换将对象从一种类型转换为另一种类型，但它们不兼容赋值。举个例子：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=coerce_op_cast,indent=0]
+----
+<1> Integer 不可分配给 String ，因此它将在运行时生成 ClassCastException
+
+这可以通过使用强制来解决：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=coerce_op,indent=0]
+----
+<1> Integer 不可分配给 String ，但使用 as 会将其强制分配给 String
+
+当一个对象被强制转换为另一个对象时，除非目标类型与源类型相同，否则强制将返回一个新对象。根据源类型和目标类型的不同，强制转换的规则也不同，如果没有找到转换规则，则强制转换可能会失败。自定义转换规则可以通过 `asType` 方法来实现：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=coerce_op_custom,indent=0]
+----
+<1> User 类定义了从 User 到 Identifiable 的自定义转换规则
+<2> 我们创建 User 的实例
+<3> 我们将 User 实例强制转换为 Identifiable
+<4> 目标是 Identifiable 的实例
+<5> 目标不再是 User 的实例
+
+=== <> 操作符
+
+菱形运算符 ( <> ) 是一个仅添加语法糖的运算符，用于支持与 Java 7 中同名运算符的兼容性。它用于指示应从声明中推断泛型类型：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=diamond_op,indent=0]
+----
+
+在动态 Groovy 中，这是完全未使用的。在静态类型检查的 Groovy 中，它也是可选的，因为无论该运算符是否存在，Groovy 类型检查器都会执行类型推断。
+
+=== Call 运算符
+
+调用运算符 () 用于隐式调用名为 call 的方法。对于定义 call 方法的任何对象，您可以省略 .call 部分并使用调用运算符：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=call_op,indent=0]
+----
+<1> MyCallable 定义了一个名为 call 的方法。请注意，它不需要实现 java.util.concurrent.Callable
+<2> 我们可以使用经典的方法调用语法来调用该方法
+<3> 或者我们可以省略 .call
+
+== 运算符优先级
+下表按优先级顺序列出了所有 groovy 运算符。
+
+[options="header"]
+|======================
+|Level | Operator(s) | Name(s)
+| 1 | `new` {nbsp} `()` | object creation, explicit parentheses
+|   | `()` {nbsp} `{}` {nbsp} `[]` | method call, closure, literal list/map
+|   | `.` {nbsp} `.&` {nbsp} `.@` | member access, method closure, field/attribute access
+|   | `?.` {nbsp} `\*` {nbsp} `*.` {nbsp} `*:` | safe dereferencing, spread, spread-dot, spread-map
+|   | `~` {nbsp} `!` {nbsp} `(type)` | bitwise negate/pattern, not, typecast
+|   | `[]` {nbsp} `?[]` {nbsp} `++` {nbsp} `--` | list/map/array (safe) index, post inc/decrement
+| 2 | `**` | power
+| 3 | `++` {nbsp} `--` {nbsp} `+` {nbsp} `-` | pre inc/decrement, unary plus, unary minus
+| 4 | `*` {nbsp} `/` {nbsp} `%` | multiply, div, remainder
+| 5 | `+` {nbsp} `-` | addition, subtraction
+| 6 | `<<` {nbsp} `>>` {nbsp} `>>>` {nbsp} `..` {nbsp} `..<` {nbsp} `<..<` {nbsp} `<..` | left/right (unsigned) shift, inclusive/exclusive ranges
+| 7 | `<` {nbsp} `\<=` {nbsp} `>` {nbsp} `>=` {nbsp} `in` {nbsp} `!in` {nbsp} `instanceof` {nbsp} `!instanceof` {nbsp} `as` | less/greater than/or equal, in, not in, instanceof, not instanceof, type coercion
+| 8 | `==` {nbsp} `!=` {nbsp} `\<\=>` {nbsp} `===` {nbsp} `!==` | equals, not equals, compare to, identical to, not identical to
+|   | `=~` {nbsp} `==~` | regex find, regex match
+| 9 | `&` | binary/bitwise and
+| 10 | `^` | binary/bitwise xor
+| 11 | `\|` | binary/bitwise or
+| 12 | `&&` | logical and
+| 13 | `\|\|` | logical or
+| 14 | `? :` | ternary conditional
+|    | `?:` | elvis operator
+| 15 | `=` {nbsp} `\**=` {nbsp} `*=` {nbsp} `/=` {nbsp} `%=` {nbsp} `+=` {nbsp} `-=` {nbsp} +
+`<\<=` {nbsp} `>>=` {nbsp} `>>>=` {nbsp} `&=` {nbsp} `^=` {nbsp} `\|=` {nbsp} {nbsp} `?=` | various assignments
+|======================
+
+[[Operator-Overloading]]
+== 运算符重载
+
+Groovy 允许您重载各种运算符，以便它们可以与您自己的类一起使用。考虑这个简单的类：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=operator_overload_class,indent=0]
+----
+<1> Bucket 实现了一个名为 plus() 的特殊方法
+
+只需实现 plus() 方法， Bucket 类现在就可以与 + 运算符一起使用，如下所示：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=operator_overload_op,indent=0]
+----
+<1> 两个 Bucket 对象可以使用 + 运算符添加在一起
+
+所有的非比较运算符都有一个相应的方法，您可以在自己的类中实现该方法。唯一的要求是您的方法是公共的，具有正确的名称，并且具有正确的参数数量。参数类型取决于您想要在运算符右侧支持的类型。例如，您可以支持以下陈述
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=operator_overload_mixed_op,indent=0]
+----
+
+通过使用以下签名实现 plus() 方法：
+
+[source,groovy]
+----
+include::../../test/OperatorsTest.groovy[tags=operator_overload_mixed_class,indent=0]
+----
+
+以下是运算符及其相应方法的完整列表：
+
+[cols="1,1,1,1" options="header"]
+|====
+| Operator
+| Method
+| Operator
+| Method
+
+| `+`
+| a.plus(b)
+| `a[b]`
+| a.getAt(b)
+
+| `-`
+| a.minus(b)
+| `a[b] = c`
+| a.putAt(b, c)
+
+| `*`
+| a.multiply(b)
+| `a in b`
+| b.isCase(a)
+
+| `/`
+| a.div(b)
+| `<<`
+| a.leftShift(b)
+
+| `%`
+| a.mod(b)
+| `>>`
+| a.rightShift(b)
+
+| `**`
+| a.power(b)
+| `>>>`
+| a.rightShiftUnsigned(b)
+
+| `\|`
+| a.or(b)
+| `++`
+| a.next()
+
+| `&`
+| a.and(b)
+| `--`
+| a.previous()
+
+| `^`
+| a.xor(b)
+| `+a`
+| a.positive()
+
+| `as`
+| a.asType(b)
+| `-a`
+| a.negative()
+
+| `a()`
+| a.call()
+| `~a`
+| a.bitwiseNegate()
+|====

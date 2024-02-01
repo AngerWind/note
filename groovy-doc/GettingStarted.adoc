@@ -1,0 +1,26 @@
+// 给每个标题生成一个序号
+:sectnums:
+// 设置编号的最大级别为4，这意味着只有级别1到4的章节（包括4）会被编号。
+:sectnumlevels: 4
+
+// 允许通过点击目录中的链接快速导航到文档的不同部分。
+:sectlinks:
+
+// 将生成的目录放置在文档的左侧。
+:toc: left
+// 设置生成的目录的标题为"目录"。
+:toc-title: 目录
+// 设置目录包括的级别为4，这意味着只有级别1到3的章节会显示在目录中。
+:toclevels: 4
+
+
+include::doc/core-getting-started.adoc[leveloffset=+1]
+include::doc/core-differences-java.adoc[leveloffset=+1]
+include::doc/core-gdk.adoc[leveloffset=+1]
+include::doc/core-metaprogramming.adoc[leveloffset=+1]
+include::doc/grape.adoc[leveloffset=+1]
+include::doc/core-testing-guide.adoc[leveloffset=+1]
+include::doc/core-domain-specific-languages.adoc[leveloffset=+1]
+include::doc/guide-integrating.adoc[leveloffset=+1]
+include::doc/design-patterns-in-groovy.adoc[leveloffset=+1]
+include::doc/style-guide.adoc[leveloffset=+1]

@@ -1,0 +1,329 @@
+//////////////////////////////////////////
+
+  Licensed to the Apache Software Foundation (ASF) under one
+  or more contributor license agreements.  See the NOTICE file
+  distributed with this work for additional information
+  regarding copyright ownership.  The ASF licenses this file
+  to you under the Apache License, Version 2.0 (the
+  "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing,
+  software distributed under the License is distributed on an
+  "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+  KIND, either express or implied.  See the License for the
+  specific language governing permissions and limitations
+  under the License.
+
+//////////////////////////////////////////
+
+= 数字
+:gdk: http://www.groovy-lang.org/gdk.html[Groovy development kit]
+
+Groovy 支持不同类型的整数文字和十进制文字，由 Java Number 类型来实现。
+
+== 整型字面量
+
+整型类型与 Java 中的相同：
+
+* `byte`
+* `char`
+* `short`
+* `int`
+* `long`
+* `java.math.BigInteger`
+
+您可以使用以下声明创建这些类型的整数：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=int_decl,indent=0]
+----
+
+如果您通过使用 def 关键字来使用可选类型，则整数的类型将会有所不同：类型将根据数字的范围而变化
+
+对于正数：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=wide_int_positive,indent=0]
+----
+
+对于负数也是如此：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=wide_int_negative,indent=0]
+----
+
+=== 非十进制表示法
+
+数字还可以用二进制、八进制、十六进制和小数表示。
+
+==== 二进制
+
+二进制数以 0b 前缀开头：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=binary_literal_example,indent=0]
+----
+
+==== 八进制
+
+八进制数以 0 后跟八进制数字的格式指定。
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=octal_literal_example,indent=0]
+----
+
+==== 十六进制
+
+十六进制数字以 0x 后跟十六进制数字的格式指定。
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=hexadecimal_literal_example,indent=0]
+----
+
+== 小数
+
+小数类型与 Java 中的相同：
+
+* `float`
+* `double`
+* `java.math.BigDecimal`
+
+您可以使用以下声明创建这些类型的小数：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=float_decl,indent=0]
+----
+
+小数可以使用指数，其中 e 或 E 指数字母，后跟可选符号，以及代表指数的整数：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=float_exp,indent=0]
+----
+
+为了方便精确的十进制数计算，Groovy 选择 `java.math.BigDecimal` 作为其十进制数类型。此外， `float` 和 `double` 均受支持，但需要显式类型声明、类型强制或后缀。即使 BigDecimal 是十进制数字的默认值，在采用 float 或 double 作为参数类型的方法或闭包中也会接受此类文字。
+
+NOTE: 小数不能使用二进制、八进制或十六进制表示法来表示。
+
+== 数字中的下划线
+
+当编写长文字数字时，眼睛很难弄清楚某些数字是如何组合在一起的，例如数千个数字、单词等。通过允许您在数字文字中放置下划线，可以更容易地发现这些组：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=underscore_in_number_example,indent=0]
+----
+
+== 数字类型后缀
+
+我们可以通过给出后缀（见下表）（大写或小写）来强制数字（包括二进制、八进制和十六进制）具有特定类型。
+
+[cols="1,2" options="header"]
+|====
+|Type
+|Suffix
+
+|BigInteger
+|`G` or `g`
+
+|Long
+|`L` or `l`
+
+|Integer
+|`I` or `i`
+
+|BigDecimal
+|`G` or `g`
+
+|Double
+|`D` or `d`
+
+|Float
+|`F` or `f`
+|====
+
+例子：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=number_type_suffixes_example,indent=0]
+----
+
+== 数学运算
+
+尽管<<{core-operators}#groovy-operators,操作符>>在其他地方有更详细的介绍，但讨论数学运算的行为及其结果类型很重要。
+
+
+除了除法和幂运算（如下所述），
+
+* byte 、 char 、 short 和 int 之间的二元运算结果为 int
+* 涉及 long 与 byte 、 char 、 short 和 int 的二元运算结果为 long
+* 涉及 BigInteger 和任何其他整数类型的二元运算结果为 BigInteger
+* 涉及 BigDecimal 与 byte 、 char 、 short 、 int 和 BigInteger 的二元运算结果为 BigDecimal
+* float 、 double 和 BigDecimal 之间的二元运算结果为 double
+* 两个 BigDecimal 之间的二元运算结果为 BigDecimal
+
+下表总结了这些规则：
+
+[cols="10" options="header"]
+|====
+|
+| byte
+| char
+| short
+| int
+| long
+| BigInteger
+| float
+| double
+| BigDecimal
+
+| *byte*
+| int
+| int
+| int
+| int
+| long
+| BigInteger
+| double
+| double
+| BigDecimal
+
+| *char*
+|
+| int
+| int
+| int
+| long
+| BigInteger
+| double
+| double
+| BigDecimal
+
+| *short*
+|
+|
+| int
+| int
+| long
+| BigInteger
+| double
+| double
+| BigDecimal
+
+| *int*
+|
+|
+|
+| int
+| long
+| BigInteger
+| double
+| double
+| BigDecimal
+
+| *long*
+|
+|
+|
+|
+| long
+| BigInteger
+| double
+| double
+| BigDecimal
+
+| *BigInteger*
+|
+|
+|
+|
+|
+| BigInteger
+| double
+| double
+| BigDecimal
+
+| *float*
+|
+|
+|
+|
+|
+|
+| double
+| double
+| double
+
+| *double*
+|
+|
+|
+|
+|
+|
+|
+| double
+| double
+
+| *BigDecimal*
+|
+|
+|
+|
+|
+|
+|
+|
+| BigDecimal
+|====
+
+[NOTE]
+由于 Groovy 的运算符重载，通常的算术运算符可以与 BigInteger 和 BigDecimal 一起使用，这与在 Java 中您必须使用显式方法来操作这些数字不同。
+
+[[integer_division]]
+=== 除法运算符
+
+如果任一操作数是 float 或 double （以及用于除法和赋值的 /= ）会生成 double 结果 ，否则返回 BigDecimal 结果（当两个操作数都是整数类型 short 、 char 、 byte 的任意组合时、 int 、 long 、 BigInteger 或 BigDecimal ）。
+
+如果除法是精确的（即产生可以在相同精度和小数位数的范围内表示的结果），则使用 divide() 方法执行 BigDecimal 除法，或者使用 MathContext http://docs.oracle.com/javase/7/docs/api/java/math/BigDecimal.html#precision()[精度]为两个操作数精度的最大值加上额外精度 10，http://docs.oracle.com/javase/7/docs/api/java/math/BigDecimal.html#scale()[小数位数]为最大值 10 和操作数小数位数的最大值。
+
+
+[NOTE]
+对于 Java 中的整数除法，您应该使用 intdiv() 方法，因为 Groovy 没有提供专用的整数除法运算符符号。
+
+[[power_operator]]
+=== 幂运算
+
+幂运算由 ** 运算符表示，有两个参数：底数和指数。幂运算的结果取决于其操作数和运算结果（特别是如果结果可以表示为整数值）。
+
+Groovy 的幂运算使用以下规则来确定结果类型：
+
+* 如果指数是小数
+** 如果结果可以表示为 Integer ，则返回 Integer
+** 否则，如果结果可以表示为 Long ，则返回 Long
+** 否则返回 Double
+* 如果指数是整数值
+** 如果指数严格为负数，则返回 Integer 、 Long 或 Double （如果结果值符合该类型）
+** 如果指数为正或零
+*** 如果基数是 BigDecimal ，则返回 BigDecimal 结果值
+*** 如果基数是 BigInteger ，则返回 BigInteger 结果值
+*** 如果基数是 Integer ，则如果结果值适合则返回 Integer ，否则返回 BigInteger
+*** 如果基数是 Long ，如果结果值适合则返回 Long ，否则返回 BigInteger
+
+我们可以用几个例子来说明这些规则：
+
+[source,groovy]
+----
+include::../../test/SyntaxTest.groovy[tags=number_power,indent=0]
+----

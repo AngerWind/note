@@ -1,0 +1,52 @@
+plugins {
+    id 'java'
+    id 'war' // web项目需要
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenLocal() // 依赖本地maven仓库
+    mavenCentral()
+}
+
+dependencies {
+    dependencies {
+        // servlet
+        compileOnly 'javax.servlet:servlet-api:2.5'
+
+        // spring
+        implementation 'org.springframework:spring-beans:4.1.7.RELEASE'
+        implementation 'org.springframework:spring-web:4.1.7.RELEASE'
+        implementation 'org.springframework:spring-webmvc:4.1.7.RELEASE'
+        implementation 'org.springframework:spring-tx:4.1.7.RELEASE'
+        implementation 'org.springframework:spring-test:4.0.5.RELEASE'
+        implementation 'org.springframework:spring-jdbc:4.1.7.RELEASE'
+
+        // mybatis
+        implementation 'org.mybatis:mybatis-spring:1.2.3'
+        implementation 'org.mybatis:mybatis:3.3.0'
+
+        // mysql
+        implementation 'mysql:mysql-connector-java:8.0.18'
+        implementation 'com.alibaba:druid:1.0.15'
+
+        // jackson
+        implementation "com.fasterxml.jackson.core:jackson-databind:2.2.3"
+        implementation "com.fasterxml.jackson.core:jackson-annotations:2.2.3"
+        implementation "com.fasterxml.jackson.core:jackson-core:2.2.3"
+
+        implementation 'org.aspectj:aspectjweaver:1.8.6'
+        implementation 'log4j:log4j:1.2.17'
+        implementation 'org.slf4j:slf4j-api:1.7.25'
+        implementation 'jstl:jstl:1.2'
+
+        testImplementation group: 'junit' ,name: 'junit', version: '4.12'
+    }
+}
+
+test {
+    enabled(false)
+    useJUnitPlatform()
+}

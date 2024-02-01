@@ -1,0 +1,41 @@
+// 必须放在最前面
+buildscript {
+    repositories {
+        // 阿里云仓库
+        maven { url 'https://maven.aliyun.com/repository/public' }
+    }
+    dependencies {
+        // 通过该插件来管理org.springframework.boot和io.spring.dependency-management的版本
+        classpath 'org.springframework.boot:spring-boot-gradle-plugin:2.5.5'
+    }
+}
+
+plugins {
+    id 'java'
+}
+
+// springboot 版本管理, 下面两个插件的版本通过spring-boot-gradle-plugin来管理
+apply plugin : 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    sourceCompatibility = '11'
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    enable false
+}

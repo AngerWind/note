@@ -1,23 +1,270 @@
-web程序结构
+https://www.gulixueyuan.com/goods/show/97?targetId=193&preview=0
 
-![1553653384807](C:\Users\700-15\AppData\Roaming\Typora\typora-user-images\1553653384807.png)
+#### 基于maven的javaweb项目的创建和部署
 
- #### 基于Maven的javaweb项目目录
+1. 创建项目
 
-- src
+<img src="img/JavaWeb观后笔记_谷粒学院/image-20240116164540713.png" alt="image-20240116164540713" style="zoom:33%;" />
 
-  - main
+<img src="img/JavaWeb观后笔记_谷粒学院/image-20240116165637936.png" alt="image-20240116165637936" style="zoom:33%;" />
 
-    - java
+2. 添加依赖
 
-      - com.javaweb
-        - HelloServlet
-    - resources
-    - webapp
-      - WEB-INF
-        - web.xml
-      - index.jsp
-  - test
+   ~~~xml
+   <properties>
+       <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+       <maven.compiler.source>1.8</maven.compiler.source>
+       <maven.compiler.target>1.8</maven.compiler.target>
+       <!--tomcat版本-->
+       <vtomcat>7.0.47</vtomcat>
+   
+     </properties>
+     <dependencies>
+       <dependency>
+         <groupId>junit</groupId>
+         <artifactId>junit</artifactId>
+         <version>3.8.1</version>
+         <scope>test</scope>
+       </dependency>
+   
+       <dependency>
+         <groupId>org.apache.tomcat</groupId>
+         <artifactId>tomcat-jsp-api</artifactId>
+         <version>${vtomcat}</version>
+         <scope>provided</scope>
+       </dependency>
+       <!--HttpServlet支持-->
+       <dependency>
+         <groupId>org.apache.tomcat</groupId>
+         <artifactId>tomcat-servlet-api</artifactId>
+         <version>${vtomcat}</version>
+         <scope>provided</scope>
+       </dependency>
+       <!--用于支持-HttpServlet注解-->
+       <dependency>
+         <groupId>javax.servlet</groupId>
+         <artifactId>javax.servlet-api</artifactId>
+         <version>3.1.0</version>
+         <scope>provided</scope>
+       </dependency>
+     </dependencies>
+   ~~~
+
+   
+
+3. 编写Servlet
+
+   ~~~java
+   //@WebServlet("/hello")
+   //请求映射必须是以"/"开头，下面与上等价
+   //@WebServlet(name="HelloServlet",value="/hello")
+   @WebServlet(urlPatterns = "/hello",name="xxx")
+   public class HelloServlet extends HttpServlet {
+       protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+   
+           request.setCharacterEncoding("utf-8");
+           String msg = request.getParameter("msg");
+           System.out.println("获取参数方式1："+msg);
+           msg = URLDecoder.decode(request.getParameter("msg"),"utf-8");
+           System.out.println("解码之后:"+msg);
+   //        jsp页面虽然设置了utf-8编码，但传输的过程中使用的编码是：ISO-8859-1
+           String msg2 = new String(request.getParameter("msg").getBytes("ISO-8859-1"),"utf-8");
+           System.out.println("获取参数方式2："+msg2);
+   //        获取参数方式2：chinese中文字符串乱码测试
+   
+           response.setCharacterEncoding("utf-8");
+   
+           response.setContentType("text/html");
+           response.setCharacterEncoding("utf-8");
+           response.getWriter().println("<h2 style=\"color:orange\">请求成功，显示参数："+msg2+"</h2>");
+       }
+   
+       protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+           doPost(request,response);
+       }
+   }
+   ~~~
+
+4. 添加tomcat
+
+   <img src="img/JavaWeb观后笔记_谷粒学院/image-20240116170240809.png" alt="image-20240116170240809" style="zoom: 33%;" />
+
+   <img src="img/JavaWeb观后笔记_谷粒学院/image-20240116170326347.png" alt="image-20240116170326347" style="zoom:33%;" />
+
+   <img src="img/JavaWeb观后笔记_谷粒学院/image-20240116171920154.png" alt="image-20240116171920154" style="zoom:33%;" />
+
+   <img src="img/JavaWeb观后笔记_谷粒学院/image-20240116171956363.png" alt="image-20240116171956363" style="zoom:33%;" />
+
+5. 启动tomcat, 并访问页面
+
+<img src="img/JavaWeb观后笔记_谷粒学院/image-20240116172428113.png" alt="image-20240116172428113" style="zoom:33%;" />
+
+<img src="img/JavaWeb观后笔记_谷粒学院/image-20240116172434532.png" alt="image-20240116172434532" style="zoom:33%;" />
+
+<img src="img/JavaWeb观后笔记_谷粒学院/image-20240116172440532.png" alt="image-20240116172440532" style="zoom:33%;" />
+
+
+
+
+
+
+
+
+
+#### Javaweb项目的创建, 部署
+
+>  创建项目
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331130414.png)
+
+在web-inf目录下新建两个文件夹
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331130623.png)
+
+设置classs为编译后得产出路径
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331130812.png)
+
+设置lib为jar包路径
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331130948.png)
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331131047.png)
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331131121.png)
+
+在src中编写创建com.tiger.HelloServlet
+
+```java
+@WebServlet(urlPatterns = {"/hello"}, name = "helloServlet")
+public class HelloServlet extends HttpServlet {
+
+    public HelloServlet() {
+        super();
+    }
+    @Override
+    public void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        response.setContentType("text/html;charset=UTF-8");
+        PrintWriter out = response.getWriter();
+        out.println("this is HelloServlet");
+        out.flush();
+        out.close();
+    }
+    @Override
+    public void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+        // TODO Auto-generated method stub
+    }
+
+}
+```
+
+修改index.jsp
+
+```jsp
+<%@ page contentType="text/html;charset=UTF-8" language="java" %>
+<html>
+  <head>
+    <title>$Title$</title>
+  </head>
+  <body>
+  hello world
+  </body>
+</html>
+```
+
+>  在IDEA中运行
+
+设置tomcat的路径
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331131814.png)
+
+设置项目路径
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331131914.png)
+
+运行项目
+
+在浏览器中访问localhost:8080/template即可访问到index.jsp页面(我这里项目名写错了, 并不妨碍访问, 跟随自己的项目路径就好了)
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331132345.png)
+
+访问localhost:8080/template/hello即可访问到HelloServlet
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331132453.png)
+
+>  将项目打包成war包, 并部署在外部tomcat中
+
+创建一个archive artifacts, **exploded和archive的区别是, archive打包的是一个整体的war包, tomcat运行的时候需要将该war包展开(解压缩), 而exploded是展开的, 将相当于打包成一个文件夹**
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331132634.png)
+
+项目没有meta-inf目录, 选择新建一个, ![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331133035.png)
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331133137.png)
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331133227.png)
+
+将项目打包
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331133259.png)
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331133345.png)
+
+我这里将两个artifacts都打包了, **在项目的out文件夹下, 可以看出archive类型的是一个完整的war包, 而exploded类型的是展开的, 尽管两个都可以使用**
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331133457.png)
+
+将template_war.war复制到tomcat路径下的webapp里面, 或者将tmeplate_war_exploded文件夹复制到webapp里面, 看你是使用archive还是exploded类型的, 我这里选择archive类型的
+
+在tomcat路径下的bin目录中执行startup.bat(windows)/startup.sh(linux)
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331134358.png)
+
+分别访问localhost:8080/tmeplate_war和localhost:8080/tmeplate_war/hello
+
+
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331135030.png)
+
+![](img/JavaWeb观后笔记_谷粒学院/TIM截图20200331135121.png)
+
+项目默认的项目名时localhost:8080/war包名
+
+你也可以修改tomcat的端口,和项目的访问路径
+
+- 修改tomcat端口, 在tomcat/conf/server.xml中找到Connector, 修改port
+
+  ```xml
+  <Connector port="8080" protocol="HTTP/1.1"
+                 connectionTimeout="20000"
+                 redirectPort="8443" />
+  ```
+
+- 修改项目路径, 在tomcat/conf/server.xml中找到Host, 添加一个Context, docBase表示的是项目的路径, 可以使用相对路径(相对于tomcat路径下的webapps)和绝对路径, path表示项目的url路径, 修改之后可以使用localhost:8080/javaweb去访问项目了
+
+  ```xml
+  <Host name="localhost"  appBase="webapps"
+              unpackWARs="true" autoDeploy="true">
+  
+          <!-- SingleSignOn valve, share authentication between web applications
+               Documentation at: /docs/config/valve.html -->
+          <!--
+          <Valve className="org.apache.catalina.authenticator.SingleSignOn" />
+          -->
+  		
+  		<Context path="javaweb" docBase="tmeplate_war" reloadable="true" />
+  		
+          <!-- Access log processes all example.
+               Documentation at: /docs/config/valve.html
+               Note: The pattern used is equivalent to using pattern="common" -->
+          <Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"
+                 prefix="localhost_access_log" suffix=".txt"
+                 pattern="%h %l %u %t &quot;%r&quot; %s %b" />
+  ```
+
+  
+
+
 
 #### Servlet的HelloWorld
 
