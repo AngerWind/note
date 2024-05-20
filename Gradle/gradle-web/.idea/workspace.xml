@@ -4,21 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="4760869a-ac97-404a-bf6e-2a0f61ecadb5" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/../Gradle.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../RabbitMQ/RabbitMQ.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../RabbitMQ/img/TIM截图20200528150053.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../RabbitMQ/img/TIM截图20200528154743.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../RabbitMQ/img/TIM截图20200528155905.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../kafka/img/20191103134411.png" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../kafka/kafka.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../logback-chinese-manual/02第二章：架构.md" beforeDir="false" afterPath="$PROJECT_DIR$/../../logback-chinese-manual/02第二章：架构.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../servlet/JavaWeb观后笔记_谷粒学院.md" beforeDir="false" afterPath="$PROJECT_DIR$/../../servlet/JavaWeb观后笔记_谷粒学院.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../shell/shell.md" beforeDir="false" afterPath="$PROJECT_DIR$/../../shell/shell.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../work_notes/work_notes.md" beforeDir="false" afterPath="$PROJECT_DIR$/../../work_notes/work_notes.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../杂乱篇/杂乱篇.md" beforeDir="false" afterPath="$PROJECT_DIR$/../../杂乱篇/杂乱篇.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/../../面试题/面试题.md" beforeDir="false" afterPath="$PROJECT_DIR$/../../面试题/面试题.md" afterDir="false" />
-    </list>
+    <list default="true" id="4760869a-ac97-404a-bf6e-2a0f61ecadb5" name="Changes" comment="" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -77,26 +63,26 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/Administrator/Desktop/gradle-web/src/main/resources/com.tiger.dao&quot;,
-    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;EclipseFormatter&quot;,
-    &quot;spring.configuration.checksum&quot;: &quot;67a96248689164bf15db13130a850f44&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "git-widget-placeholder": "master",
+    "last_opened_file_path": "H:/source/spring",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "settings.editor.selected.configurable": "EclipseFormatter",
+    "spring.configuration.checksum": "67a96248689164bf15db13130a850f44",
+    "vue.rearranger.settings.migration": "true"
   },
-  &quot;keyToStringList&quot;: {
-    &quot;DatabaseDriversLRU&quot;: [
-      &quot;mysql&quot;
+  "keyToStringList": {
+    "DatabaseDriversLRU": [
+      "mysql"
     ]
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\Administrator\Desktop\gradle-web\src\main\resources\com.tiger.dao" />
@@ -295,6 +281,7 @@
       <workItem from="1706710424288" duration="100000" />
       <workItem from="1706714180590" duration="608000" />
       <workItem from="1706763639592" duration="22000" />
+      <workItem from="1708265740479" duration="1055000" />
     </task>
     <servers />
   </component>

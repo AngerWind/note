@@ -1,3 +1,544 @@
+
+
+##  Ubuntu 安装 Docker CE
+
+> 警告：切勿在没有配置 Docker APT 源的情况下直接使用 apt 命令安装 Docker.
+
+### 准备工作
+
+#### 系统要求
+
+Docker CE 支持以下版本的 [Ubuntu](https://www.ubuntu.com/server) 操作系统：
+
+- Disco 19.04
+- Cosmic 18.10
+- Bionic 18.04 (LTS)
+- Xenial 16.04 (LTS)
+
+Docker CE 可以安装在 64 位的 x86 平台或 ARM 平台上。Ubuntu 发行版中，LTS（Long-Term-Support）长期支持版本，会获得 5 年的升级维护支持，这样的版本会更稳定，因此在生产环境中推荐使用 LTS 版本。
+
+#### 卸载旧版本
+
+旧版本的 Docker 称为 `docker` 或者 `docker-engine`，使用以下命令卸载旧版本：
+
+```
+$ sudo apt-get remove docker \
+               docker-engine \
+               docker.io
+```
+
+### 使用 APT 安装
+
+由于 `apt` 源使用 HTTPS 以确保软件下载过程中不被篡改。因此，我们首先需要添加使用 HTTPS 传输的软件包以及 CA 证书。
+
+```
+$ sudo apt-get update
+
+$ sudo apt-get install \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    software-properties-common
+```
+
+鉴于国内网络问题，强烈建议使用国内源，官方源请在注释中查看。
+
+为了确认所下载软件包的合法性，需要添加软件源的 `GPG` 密钥。
+
+```
+$ curl -fsSL https://mirrors.ustc.edu.cn/docker-ce/linux/ubuntu/gpg | sudo apt-key add -
+
+
+# 官方源
+# $ curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+```
+
+然后，我们需要向 `source.list` 中添加 Docker 软件源
+
+```
+$ sudo add-apt-repository \
+    "deb [arch=amd64] https://mirrors.ustc.edu.cn/docker-ce/linux/ubuntu \
+    $(lsb_release -cs) \
+    stable"
+
+
+# 官方源
+# $ sudo add-apt-repository \
+#    "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+#    $(lsb_release -cs) \
+#    stable"
+```
+
+> 以上命令会添加稳定版本的 Docker CE APT 镜像源，如果需要测试或每日构建版本的 Docker CE 请将 stable 改为 test 或者 nightly。
+
+#### 安装 Docker CE
+
+更新 apt 软件包缓存，并安装 `docker-ce`：
+
+```
+$ sudo apt-get update
+
+$ sudo apt-get install docker-ce
+```
+
+### 使用脚本自动安装
+
+在测试或开发环境中 Docker 官方为了简化安装流程，提供了一套便捷的安装脚本，Ubuntu 系统上可以使用这套脚本安装，另外可以通过 `--mirror` 选项使用国内源进行安装：
+
+```
+$ curl -fsSL get.docker.com -o get-docker.sh
+$ sudo sh get-docker.sh --mirror Aliyun
+# $ sudo sh get-docker.sh --mirror AzureChinaCloud
+```
+
+执行这个命令后，脚本就会自动的将一切准备工作做好，并且把 Docker CE 的稳定(stable)版本安装在系统中。
+
+### 启动 Docker CE
+
+```
+$ sudo systemctl enable docker
+$ sudo systemctl start docker
+```
+
+### 建立 docker 用户组
+
+默认情况下，`docker` 命令会使用 [Unix socket](https://en.wikipedia.org/wiki/Unix_domain_socket) 与 Docker 引擎通讯。而只有 `root` 用户和 `docker` 组的用户才可以访问 Docker 引擎的 Unix socket。出于安全考虑，一般 Linux 系统上不会直接使用 `root` 用户。因此，更好地做法是将需要使用 `docker` 的用户加入 `docker` 用户组。
+
+建立 `docker` 组：
+
+```
+$ sudo groupadd docker
+```
+
+将当前用户加入 `docker` 组：
+
+```
+$ sudo gpasswd -a angerwind docker
+或者
+$ sudo usermod -G docker angerwind
+```
+
+将用户切换到`docker`组:
+
+```text
+newgrp docker     #更新用户组
+docker ps    #测试docker命令是否可以使用sudo正常使用
+```
+
+退出当前终端并重新登录，进行如下测试。
+
+### 测试 Docker 是否安装正确
+
+```
+$ docker run hello-world
+
+Unable to find image 'hello-world:latest' locally
+latest: Pulling from library/hello-world
+d1725b59e92d: Pull complete
+Digest: sha256:0add3ace90ecb4adbf7777e9aacf18357296e799f81cabc9fde470971e499788
+Status: Downloaded newer image for hello-world:latest
+
+Hello from Docker!
+This message shows that your installation appears to be working correctly.
+
+To generate this message, Docker took the following steps:
+ 1. The Docker client contacted the Docker daemon.
+ 2. The Docker daemon pulled the "hello-world" image from the Docker Hub.
+    (amd64)
+ 3. The Docker daemon created a new container from that image which runs the
+    executable that produces the output you are currently reading.
+ 4. The Docker daemon streamed that output to the Docker client, which sent it
+    to your terminal.
+
+To try something more ambitious, you can run an Ubuntu container with:
+ $ docker run -it ubuntu bash
+
+Share images, automate workflows, and more with a free Docker ID:
+ https://hub.docker.com/
+
+For more examples and ideas, visit:
+ https://docs.docker.com/get-started/
+```
+
+若能正常输出以上信息，则说明安装成功。
+
+### 镜像加速
+
+如果在使用过程中发现拉取 Docker 镜像十分缓慢，可以配置 Docker [国内镜像加速](https://docker_practice.gitee.io/install/mirror.html)。
+
+### 参考文档
+
+- 修改/etc/docker/daemon.json
+
+  ```json
+  {
+    "registry-mirrors:[
+      "https://4q9ahtha.mirror.aliyuncs.com",
+      "http://hub-mirror.c.163.com",
+      " https://registry.docker-cn.com"
+      ]
+  }
+  
+  上述网站分别为阿里云, 163, docker官方中国区
+  ```
+
+- 阿里云加速地址查询:https://cr.console.aliyun.com/cn-hangzhou/instances/mirrors, 每个人的加速地址都不一样
+
+- [Docker 官方 Ubuntu 安装文档](https://docs.docker.com/install/linux/docker-ce/ubuntu/)
+
+
+
+
+
+## Docker命令
+
+### 镜像命令
+
+#### docker images
+
+列出本地主机的镜像文件
+
+详细参数可以通过`docker images -h`来查看
+
+参数说明: 
+
+- -a: 列出本地所有的镜像(含中间镜像)
+
+- -q: 只显示镜像id
+
+- --digests: 显示镜像的摘要信息, 默认不加该参数不显示
+
+- --no-trunc: 显示完整的镜像id, 默认不加该参数只显示前12为image id
+
+例:  docker images -aq (显示所有的镜像id)
+
+#### docker tag
+
+为本地镜像添加新的标签，相当于起别名
+
+docker tag SOURCE_IMAGE[:TAG] TARGET_IMAGE[:TAG]
+
+```shell
+docker tag hello-world:lastest my-hello-world:1.2.0
+```
+
+![](img/docker/TIM截图20200516105450.png)
+
+两者image id一致，说明他们实际上指向一个镜像文件，只是别名不同
+
+
+
+#### docker inspect
+
+检测某个镜像的详细信息，返回的是json格式
+
+```shell
+docker inspect hello-world:lastest
+[
+    {
+        "Id": "sha256:fce289e99eb9bca977dae136fbe2a82b6b7d4c372474c9235adc1741675f587e",
+        "RepoTags": [
+            "hello-world:latest"
+        ]
+        .....
+    }
+]
+
+```
+
+#### docker history
+
+查看某个image的各层信息
+
+![](img/docker/TIM截图20200516110609.png)
+
+
+
+
+
+#### docker search
+
+从docker hub上面搜索镜像
+
+通过`docker search -h`来查看详细参数
+
+用法: docker search [options] term
+
+参数说明: 
+
+- --no-trunc: 显示完整的镜像description
+- -f filter: 根据条件显示查询结果
+- --automated: 只列出automated build类型的镜像
+- --limit int: 只显示指定数的结果
+
+例: **docker search -f stars=30 --limit 5 nginx( 查询stars大于30的nginx的结果, 并且只显示3个), 默认显示25个**
+
+**docker search -f is-official=true nginx（查询官方提供的带nginx关键字的镜像）**
+
+
+
+#### docker pull
+
+从仓库拉取某个镜像到本地
+
+用法: docker pull 镜像名[:tag]
+
+例: docker pull tomcat:lastest
+
+
+
+#### docker rmi
+
+删除本地的镜像
+
+用法:
+
+-  删除单个: docker rmi 镜像名[:tag] 
+-  删除多个:  docker rmi 镜像名1:tag 镜像名2:tag
+-  删除全部:  docker rmi $(docker images -qa)
+
+**当同一个镜像拥有多个标签时（通过docker tag指定），docker rmi只是删除多个标签中指定的标签，并不影响镜像文件，但镜像 只剩下一个标签时docker rmi会彻底删除镜像文件**
+
+- 通过镜像id来删除：docker rmi 镜像id
+
+  **这种方式会删除所有指向该镜像的标签，然后删除该镜像本身**
+
+参数: 
+
+- -f, --force: 强制删除, 当该镜像有正在运行的容器时无法删除, 可以使用该参数强制删除
+
+例: docker rmi -f hello-world(强制删除hello-world镜像)
+
+
+
+### 容器命令
+
+### docker run
+
+新建并启动容器, 详细参数使用docker run --help查询
+
+用法: docker run [OPTIONS] IMAGE [COMMAND] [ARG...]
+
+参数: 
+
+- **--name: 为容器指定一个名称**
+
+- **-d: 后台运行容器, 并返回容器id, 即启动守护式容器**
+
+- **-i: 以交互模式运行容器, 通常与-t同时使用**
+
+- **-t: 为容器重新分配一个伪输入终端, 通常与-i同时使用**
+
+- -P: 随机端口映射
+
+- -p: 指定端口映射, 有以下四种格式
+
+  - ip:hostPost:containerPort
+  - ip:containerPort
+  - **hostPort:container**
+  - **Post**
+  - containerPost
+
+  ````shell
+  例: docker run --name tomcat1 -it -p 8888:8080 tomcat
+  #生成一个tomcat容器, 并且将宿主机的8888端口映射到容器的8080端口上面
+  ````
+
+  
+
+ - **-v: 共享数据卷, 即分别在宿主机和容器上面新建一个文件夹（例/01:/02),并且将宿主机上面的文件夹/01<font color=red>映射</font>(挂载)到容器的这个文件上面,修改宿主机上/01文件夹的内容将影响到容器/02中的内容。同时若容器对于/02有读写权限, 容器对/02的读写也将影响到/01**
+
+   ```shell
+   docker run --name tomcat1 -it -v /01:/02 tomcat
+   #映射目录使用绝对路径
+   #生成一个tomcat,并且在宿主机和容器中生成01和02目录
+   #并且将01目录映射到02目录下面
+   #生成以后可以使用docker inspect tomcat1查看详细情况
+   #图2中Mounts.rw为true , 说明该容器可以对02读写
+   #使用docker run --name tomcat1 -it -v /01:/02:ro tomcat
+   #表示容器对02文件夹是readonly的
+   ```
+
+   ![](img/docker/TIM截图20191207173331.png)![](img/docker/TIM截图20191207173511.png)
+
+
+
+### docker ps
+
+列出当前所有**正在运行**的容器
+
+用法:	docker ps [OPTIONS]
+
+参数:
+
+- -a, --all: 列出当前所有正在运行+历史上运行过的(默认只列举正在运行的)
+- -f, --filter filter   Filter output based on conditions provided
+- --format string   Pretty-print containers using a Go template
+- -n, --last int        显示n个最近的容器(所有状态)
+- -l, --latest          显示最近的容器(所有状态)
+- --no-trunc        显示完整信息
+- -q, --quiet           仅显示container id
+- -s, --size            显示每个容器大小(默认不显示)
+
+### 退出容器
+
+退出容器有两种方式
+
+- exit: 退出并停止容器
+- ctrl+P+Q: 容器不停止退出
+
+### docker start
+
+启动容器
+
+用法: docker start 容器id或者容器名
+
+
+
+### docker restart
+
+重启容器
+
+用法: docker restart 容器名或者容器id
+
+
+
+### docker stop
+
+停止容器
+
+用法: docker stop 容器名或者容器id
+
+
+
+### docker kill
+
+强制停止容器(杀死容器)
+
+用法: docker kill 容器id或者容器名
+
+
+
+### docker rm
+
+删除容器
+
+用法: docker rm 容器id或者容器名
+
+参数: 
+
+- -f: 强制删除, 默认无法删除一个真正运行的容器
+
+删除多个容器: docker rm 容器1 容器2...
+
+删除全部容器: 
+
+- docker rm -f $(docker ps -aq)
+- docker ps -aq | xargs docker rm
+
+xargs将上一个命令输出传递到下一个命令的输入, 之所以能用到这个命令，关键是由于很多命令不支持|管道来传递参数，而日常工作中有有这个必要，所以就有了 xargs 命令
+
+**xages 与管道的区别**
+
+管道可以实现：将前面的标准输出作为后面的“标准输入”
+
+管道无法实现：将前面的标准输出作为后面的“命令参数”
+
+这个时候，就要有请xargs这位护花使者了。xargs+所擅长的正是“将标准输入作为其指定命令的参数”
+
+
+
+### docker logs
+
+显示某个容器的日志
+
+用法: docker logs [options] container
+
+参数:
+
+- -t:  显示时间戳
+- -f:  不停的追加新的日志, 需要使用ctrl+c退出日志显示
+- --tail string  显示最后几条
+
+
+
+### docker attach
+
+绑定标准输入输出错误流到一个容器上, 即重新进入一个容器
+
+用法: docker attach [options] 容器名或容器id
+
+例: docker attach centos1(切换进centos1容器中, 此时执行exit将导致centos1停止)
+
+### docker exec
+
+在容器内壁执行一个命令
+
+用法: docker exec [OPTIONS] CONTAINER COMMAND [ARG...]
+
+例:  
+
+- 在centos1中执行ls(docker exec  centos1 ls)
+- **在centos1中开启一个终端(docker exec -it centos1 /bin/bash)**
+
+
+
+### docker cp
+
+拷贝容器内的文件到主机上
+
+用法: docker cp 容器id:容器内文件路径  目的主机路径
+
+例: 将centos1容器中的/temp/yum.log拷贝到/root下面
+
+   docker cp centos1:/temp/yum.log /root
+
+
+
+### docker commit
+
+提交容器副本使之成为一个新的镜像
+
+用法: docker commit [option] container 用户名/软件名[:TAG]
+
+例: docker commit -a="sqt" -m="commit message" tomcat1 sqt/tomcat:1.2
+
+
+
+### docker build
+
+
+
+
+
+### 重要
+
+#### 启动守护式容器
+
+使用镜像centos:lastest以后台模式启动一个容器
+
+docker run -d centos
+
+问题：使用docker ps -a镜像查看， 发现**<font color=blue>容器已经退出</font>**
+
+
+
+很重要的要说明一点： **<font color=red>docker容器后台运行， 就不行有一个前台进程</font>**
+
+容器运行的命令如果不是那些<font color=red>一直挂起的命令</font>(比如运行top, tail), 就是会自动退出
+
+这是docker的机制问题, 如nginx, 正常情况下, 我们配置启动服务只需要启动相应的service
+
+service nginx start
+
+但是这样做, nginx为后台进行模式运行, 就导致docker前台没有运行的应用
+
+这样容器启动后就会立即自杀, 因为他觉得他没什么可做了
+
+所以, 最佳的解决方案是, 将你要运行的程序以前台进程的形式运行
+
+
+
 ## Dockerfile
 
 #### 基本结构

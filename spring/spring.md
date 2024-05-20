@@ -229,7 +229,15 @@ public class MvcApplication {
 }
 ~~~
 
-**Spring会在每次getBean(), 或者是需要依赖注入的时候, 通过Scope.get()来获取到bean**
+**Spring会在每次getBean(), 或者是需要依赖注入的时候, 都会判断bean的scope是什么类型**
+
+<font color=red>如果是singleton, 那么会直接从singletonObjects, 即一级缓存中中获取</font>
+
+<font color=red>如果是prototype, 那么直接创建bean并返回</font>
+
+<font color=red>如果是自定义scope, 那么就获取对应的scope实例, 然后调用他的get方法</font>
+
+
 
 这样我们在不同线程中, 调用context.getBean()获取到的UserBean就是不同的了
 
@@ -421,7 +429,8 @@ https://mp.weixin.qq.com/s?__biz=MzA5MTkxMDQ4MQ==&mid=2648934401&idx=1&sn=98e726
       ~~~java
       @Target({ElementType.TYPE, ElementType.METHOD})
       @Retention(RetentionPolicy.RUNTIME)
-      @Scope(BeanRefreshScope.SCOPE_REFRESH) // 指定scope
+      //// 指定scope, 必须指定proxyMode
+      @Scope(BeanRefreshScope.SCOPE_REFRESH, proxyMode = ScopedProxyMode.TARGET_CLASS) 
       @Documented
       public @interface RefreshScope {
           @AliasFor(annotation = Scope.class, attribute = "scopeName")
@@ -454,8 +463,14 @@ https://mp.weixin.qq.com/s?__biz=MzA5MTkxMDQ4MQ==&mid=2648934401&idx=1&sn=98e726
       }
       ~~~
 
-      当我们进行配置变更的时候, BeanRefreshScope.getInstance().clean()用来清除BeanRefreshScope中所有已经缓存的bean，那么调用bean的任意方法的时候，会重新出发spring容器来创建bean，spring容器重新创建bean的时候，会重新解析@Value的信息，此时容器中的邮件配置信息是新的，所以@Value注入的信息也是新的。
+      当我们进行配置变更的时候, BeanRefreshScope.getInstance().clean()用来清除BeanRefreshScope中所有已经缓存的bean
 
+      那么当我们从controller中调用service的时候, 应为我们设置了`@Scope(proxyMode = ScopedProxyMode.TARGET_CLASS)`, 所以这个service是代理类, 他会从scope中去获得实际上要执行的被代理类service
+      
+      这个时候应为我们已经删除掉了老的被代理类, 所以这个时候会新建一个bean来作为被代理类
+      
+      spring容器重新创建bean的时候，会重新解析@Value的信息，此时容器中的邮件配置信息是新的，所以@Value注入的信息也是新的。
+      
       这也是springcloud中@RefreshScope的原理
 
 
@@ -1475,294 +1490,7 @@ public class UserService {
 
 todo
 
-## 数据校验: Validation
 
-### 相关注解
-
-**空检查**
-
-- @Null       验证对象是否为null
-
-- @NotNull    验证对象是否不为null, 无法查检长度为0的字符串
-
-- @NotBlank 检查约束字符串是不是Null还有被Trim的长度是否大于0,只对字符串,且会去掉前后空格
-
-- @NotEmpty 检查约束元素是否为NULL或者是EMPTY.
-
-==@NotNull是通过 ==null来判断==
-
-==@NotEmpty是通过 .size()= =0和.length()= =0判断==
-
-==@NotBlank是通过 .trim().length()= =0判断 按照实际的需求来使用==
-
-**Booelan检查**
-
-- @AssertTrue     验证 Boolean 对象是否为 true  
-- @AssertFalse    验证 Boolean 对象是否为 false  
-
-**长度检查**
-
-- @Size(min=, max=) 验证对象（Array,Collection,Map,String）长度是否在给定的范围之内  
-- @Length(min=, max=) Validates that the annotated string is between min and max included.
-
-**日期检查**
-
-- @Past           验证 Date 和 Calendar 对象是否在当前时间之前  
-- @Future     验证 Date 和 Calendar 对象是否在当前时间之后  
-- @Pattern    验证 String 对象是否符合正则表达式的规则
-
-**数值检查**
-
-**建议使用在Stirng,Integer类型，不建议使用在int类型上，因为表单值为“”时无法转换为int，但可以转换为Stirng为"",Integer为null**
-
-- @Min            验证 Number 和 String 对象是否大等于指定的值  
-- @Max            验证 Number 和 String 对象是否小等于指定的值  
-- @DecimalMax 被标注的值必须不大于约束中指定的最大值. 这个约束的参数是一个通过BigDecimal定义的最大值的字符串表示.小数存在精度
-- @DecimalMin 被标注的值必须不小于约束中指定的最小值. 这个约束的参数是一个通过BigDecimal定义的最小值的字符串表示.小数存在精度
-- @Digits     验证 Number 和 String 的构成是否合法  
-- @Digits(integer=,fraction=) 验证字符串是否是符合指定格式的数字，interger指定整数精度，fraction指定小数精度。
-- @Range(min=, max=) 检查数字是否介于min和max之间.
-- @Range(min=10000,max=50000,message="range.bean.wage")
-  private BigDecimal wage;
-
-**其他检测**
-
-- @CreditCardNumber信用卡验证
-- @Email  验证是否是邮件地址，如果为null,不进行验证，算通过验证。
-- @ScriptAssert(lang= ,script=, alias=)
-- @URL(protocol=,host=, port=,regexp=, flags=)
-
-
-
-### 使用原生方式进行验证
-
-1. 导入maven
-
-   ~~~xml
-   <!-- 根据 JSR 380 规范，validation-api依赖项包含标准验证 API -->
-   <dependency>
-       <groupId>javax.validation</groupId>
-       <artifactId>validation-api</artifactId>
-       <version>2.0.1.Final</version>
-   </dependency>
-   
-   <!-- Hibernate Validator 是验证 API 的参考实现 -->
-   <dependency>
-       <groupId>org.hibernate.validator</groupId>
-       <artifactId>hibernate-validator</artifactId>
-       <version>6.0.13.Final</version>
-   </dependency>
-   ~~~
-
-2. Bean添加验证注解
-
-   ~~~java
-   @Data
-   public class User {
-       @NotNull(message = "名字不能为空")
-       private String name;
-   
-       @AssertTrue
-       private boolean working;
-   
-       @Size(min = 10, max = 200, message = "字符数应介于10和200之间（含10和200）")
-       private String aboutMe;
-   
-       @Min(value = 18, message = "年龄不应少于18岁")
-       @Max(value = 150, message = "年龄不应超过150岁")
-       private int age;
-   
-       @Email(message = "电子邮件应该是有效的")
-       private String email;
-   
-       private List<@NotBlank(message = "备注说明不能为空") String> preferences;
-   
-       @Past(message = "出生年月必须是一个过去的时间")
-       private LocalDate dateOfBirth;
-   
-       @DecimalMin(value = "0.0", inclusive = false, message = "付款金额不能小于0")
-       @Digits(integer = 4, fraction = 2, message = "付款金额必须小于{integer}位数且不能超过{fraction}位小数")
-       private BigDecimal price;
-       
-   }
-   ~~~
-
-3. 验证程序
-
-   ~~~java
-   public class ValidationTest {
-   
-       private Validator validator;
-   
-       @Before
-       public void setup() {
-           ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
-           validator = factory.getValidator();
-       }
-   
-       @Test
-       public void ifNameIsNull() {
-           User user = new User();
-           user.setWorking(true);
-           user.setAboutMe("me");
-           user.setAge(50);
-           
-           // validate方法来验证我们的 UserBean User对象中定义的约束都将作为Set返回
-           Set<ConstraintViolation<User>> violations = validator.validate(user);
-           for (ConstraintViolation<User> violation : violations) {
-               // getMessage方法获取所有违规消息
-               System.out.println(violation.getMessage());
-           }
-       }
-   }
-   ~~~
-
-   
-
-### springboot中使用参数校验
-
-引入依赖
-
-~~~xml
-<dependency>
-  <groupid>org.springframework.boot</groupid>
-  <artifactid>spring-boot-starter-web</artifactid>
-</dependency>
-<!-- Boot 2.3 开始，我们还需要显式添加spring-boot-starter-validation依赖项, 之前不需要-->
-<dependency>
-  <groupid>org.springframework.boot</groupid>
-  <artifactid>spring-boot-starter-validation</artifactid>
-</dependency>
-~~~
-
-#### controller层校验DTO
-
-在controller层, 可以使用@Valid和@Validated标注在方法参数上, 进行校验DTO
-
-**如果校验失败, 如果controller参数后面跟了BindingResult, 那么会把错误放在BindingResult中, ** 不推荐这种方式, 直接在全局异常处理中     
-
-**如果没有这个参数, 那么会直接抛出MethodArgumentNotValidException异常, 这样就必须在全局异常处理中进行处理**
-
-如果要校验的参数有多个，入参写法：(@Validated Foo foo, BindingResult fooBindingResult, @Validated Bar bar, BindingResult barBindingResult);
-
-@Valid和@Validated他们的区别在于
-
-![image-20240111174151939](img/spring/image-20240111174151939.png)
-
-~~~java
-@Data
-public class User {
-    // 每一个注解都包含了message字段，用于校验失败时作为提示信息。不写message将使用默认的错误提示信息。
-    @Size(min = 5, max = 10, message = "请输入5-10个字符的用户名")
-    private String username;
-}
-
-
-@RestController
-@RequestMapping("/a/user")
-public class AUserController {
-    // 使用@Validated, 支持分组校验, 不支持递归校验
-    @PostMapping
-    public Object addUser(@Validated User user, BindingResult bindingResult) {
-        if (bindingResult.hasErrors()) 
-            return "fail";
-        return "success";
-    }
-    // 使用@Valid, 不支持分组, 支持递归校验
-    // 后面跟BindingResult, 保存错误信息
-    @PutMapping("/fun1")
-    public Object updateUser1(@Valid User user, BindingResult bindingResult) {
-        if (bindingResult.hasErrors()) 
-            return "fail";
-        return "success";
-    }
-    // 不推荐这种写法, 这种写法会直接抛出MethodArgumentNotValidException异常
-    @PutMapping("/fun3")
-    public Object updateUser3(@Valid User user) {
-        return null;
-    }
-}
-~~~
-
-#### controller层中校验普通参数
-
-~~~java
-// 校验失败会抛出 ConstraintViolationException 异常。
-// 这个时候不能添加BindingResult
-@GetMapping("/fun3")
-public Object fun3(@Length(min = 5, max = 10) @NotNull String username, @PathVariable @Min(1000L) Long userId) {
-    // 校验通过才会执行业务逻辑
-    return "ok";
-}
-~~~
-
-#### controller层中的分组校验
-
-~~~java
-@Data
-public class User {
-    // groups：标识此校验规则属于哪个分组，可以指定多个分组
-    @NotNull(groups = Update.class)
-    @Min(value = 10000L, groups = Update.class)
-    private Long userId;
-
-    @NotNull(groups = {Save.class, Update.class})
-    @Length(min = 2, max = 10, groups = {Save.class, Update.class})
-    private String userName;
-
-    @NotNull(groups = {Save.class, Update.class})
-    @Length(min = 6, max = 20, groups = {Save.class, Update.class})
-    private String account;
-
-    @NotNull(groups = {Save.class, Update.class})
-    @Length(min = 6, max = 20, groups = {Save.class, Update.class})
-    private String password;
-
-    // 校验分组中不需要定义任何方法，该接口仅仅是为了区分不同的校验规则
-    public interface Save { }
-    public interface Update { }
-}
-
-@RestController
-@RequestMapping("/user")
-public class UserController {
-    // 通过@Validate指定分组
-    @PostMapping
-    public Object saveUser(@RequestBody @Validated(User.Save.class) User user) { }
-}
-~~~
-
-#### 递归校验
-
-~~~java
-@Data
-public class User {
-
-    @Min(value = 1L, groups = Update.class)
-    private Long userId;
-    
-    @Valid  // 添加上@Valid, 表示需要递归校验
-    @NotNull
-    private Job job;
-
-    @Data
-    public static class Job {
-        @Length(min = 2, max = 10)
-        private String jobName;
-    }
-}
-@RestController
-@RequestMapping("/user")
-public class UserController {
-
-    @PostMapping
-    // 这里使用@Valid或者@Validated都可以
-    public Object saveUser(@RequestBody @Validated User user) {
-        // 校验通过，才会执行业务逻辑处理
-        return "ok";
-    }
-}
-~~~
 
 
 
@@ -1772,63 +1500,348 @@ public class UserController {
 
 
 
-#### 自定义注解校验
+# SpringEL表达式
 
-定义一个注解, 修饰的字符串长度在6-12之间
+## 基本使用
+
+spring el表达式用以根据上下文来解析表达式的值
 
 ~~~java
-@Retention(RetentionPolicy.RUNTIME)
-// 指定当前注解可以添加的位置
-@Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.ANNOTATION_TYPE})
-// 指定当前注解的校验器
-@Constraint(validatedBy = {Password.PasswordValidator.class})
-public @interface Password {
-
-    public String message() default "密码格式不合法";
-
-    Class<?>[] groups() default {};
-
-    Class<? extends Payload>[] payload() default {};
-
-    // 自定义校验器
-    // 第一个泛型是当前校验器支持的注解
-    // 第二个泛型是需要校验的值的目标类型
-    public static class PasswordValidator implements ConstraintValidator<Password, String> {
-
-        @Override
-        public void initialize(Password constraintAnnotation) {
-
-        }
-
-        @Override
-        public boolean isValid(String value, ConstraintValidatorContext constraintValidatorContext) {
-            int length = StringUtils.length(value);
-            if (length >= 6 && length <= 12) {
-                return true;
-            }
-            return false;
-        }
+	@Test
+    public void test1() {
+        // 创建一个解析器
+        ExpressionParser parser = new SpelExpressionParser();
+        // 解析表达式并获取值
+        String value = parser.parseExpression("'Hello World'").getValue(String.class);
+        System.out.println(value); // "Hello World"
     }
-}
 ~~~
 
-#### service层校验
+在spring el表达式中, 比较重要的几个点就是
 
-~~~~java
-@Service
-// 添加这个注解后, spring会进行切面, 拦截所有方法, 看上面有没有需要校验的参数
-// 如果无效, 记得导包spring-boot-starter-validation
-@Validated 
-public class MyService {
-    public String testParams(@NotNull @Valid User user, @Min(10) Integer id, @NotBlank String name) {
-        return user.toString();
+1. 你可以通过设置一个EvaluationContext, 用来帮助解析器解析变量, 方法, 属性等等
+
+   ~~~java
+   	@Data
+       @AllArgsConstructor
+       @NoArgsConstructor
+       public static class Person {
+           public String name;
+           public Integer age;
+       }
+   ~~~
+
+   ~~~java
+   @Test
+       public void test2() throws NoSuchMethodException {
+           ExpressionParser parser = new SpelExpressionParser();
+           // ParseContext有两个实现类: SimpleEvaluationContext和StandardEvaluationContext
+           // 我们通常使用StandardEvaluationContext, 他实现的功能更加强大
+           // 至于他们的区别, 查看: https://docs.spring.io/spring-framework/docs/5.2.25.RELEASE/spring-framework-reference/core.html#expressions-evaluation-context
+           StandardEvaluationContext context = new StandardEvaluationContext();
+   
+           // 通过StandardEvaluationContext, 你可以设置变量, 这样就可以在表达式中获取, 也可以获取POJO的属性
+           context.setVariable("array", new Integer[] {1, 2, 3});
+           System.out.println(parser.parseExpression("#array[1]").getValue(context));
+   
+           context.setVariable("person", new Person("zahngsan", 19));
+           System.out.println(parser.parseExpression("#person.age + 1").getValue(context, String.class));
+   
+           // 同时还可以StandardEvaluationContext中注册函数, 这样可以在表达式中调用
+           context.registerFunction("random", Math.class.getMethod("random"));
+           System.out.println(parser.parseExpression("#random()").getValue(context, Double.class));
+       }
+   ~~~
+
+2. 你还可以在解析表达式的时候, 给定一个rootObject, 帮助解析表达式
+
+   ~~~java
+   @Test
+       public void test3() {
+           ExpressionParser parser = new SpelExpressionParser();
+           StandardEvaluationContext context = new StandardEvaluationContext();
+           // rootObject可以设置到context中
+           context.setRootObject(new Person("zhangsan", 23));
+           System.out.println(parser.parseExpression("name + 'wanwu'").getValue(context, String.class));
+           System.out.println(parser.parseExpression("age + 1").getValue(context, String.class));
+   
+           // rootObject也可以在getValue()的时候设置
+           System.out.println(parser.parseExpression("age + 1").getValue(new Person("zhangsan", 123), String.class));
+       }
+   ~~~
+
+   > 设置context.setRootObject()和context.setVariable()比较类似,  但是rootObject中的属性和方法你可以直接访问, 比如上面的name, 而通过setVariable()设置的变量, 你需要通过#{}来访问, 比如上面的#person.age
+
+3. 你还可以通过表达式来给一个属性设置值, 有两种反射
+
+   ~~~java
+   @Test
+       public void test4() {
+           ExpressionParser parser = new SpelExpressionParser();
+           StandardEvaluationContext context = new StandardEvaluationContext();
+           Person person = new Person("zhangsan", 128);
+           context.setVariable("person", person);
+           // 可以通过setValue来根据表达式设置值
+           parser.parseExpression("#person.name").setValue(context, "lisi");
+           System.out.println(person.name); // lisi
+           
+           // 通过 = 赋值运算符和getValue()来设置属性
+           System.out.println(parser.parseExpression("#person.age = #person.age + 1")
+               .getValue(context, String.class)); // 129
+       }
+   ~~~
+
+   
+
+
+
+## 具体语法
+
+https://docs.spring.io/spring-framework/docs/5.2.25.RELEASE/spring-framework-reference/core.html#expressions-language-ref
+
+1. 字面量
+
+   ~~~java
+   ExpressionParser parser = new SpelExpressionParser();
+   String helloWorld = (String) parser.parseExpression("'Hello World'").getValue();
+   double avogadrosNumber = (Double) parser.parseExpression("6.0221415E+23").getValue();
+   int maxValue = (Integer) parser.parseExpression("0x7FFFFFFF").getValue();
+   boolean trueValue = (Boolean) parser.parseExpression("true").getValue();
+   Object nullValue = parser.parseExpression("null").getValue();
+   ~~~
+
+2. List
+
+   您可以使用 `{}` 直接在表达式中表达列表
+
+   ~~~java
+   List numbers = (List) parser.parseExpression("{1,2,3,4}").getValue(context);
+   List listOfLists = (List) parser.parseExpression("{{'a','b'},{'x','y'}}").getValue(context);
+   ~~~
+
+3. Map
+
+   您还可以使用 `{key:value}` 表示法直接在表达式中表达映射。
+
+   ~~~java
+   Map inventorInfo = (Map) parser.parseExpression("{name:'Nikola',dob:'10-July-1856'}").getValue(context);
+   
+   Map mapOfMaps = (Map) parser.parseExpression("{name:{first:'Nikola',last:'Tesla'}, dob:{day:10,month:'July',year:1856}}").getValue(context);
+   ~~~
+
+4. Array
+
+   ~~~java
+   int[] numbers1 = (int[]) parser.parseExpression("new int[4]").getValue(context);
+   int[] numbers2 = (int[]) parser.parseExpression("new int[]{1,2,3}").getValue(context);
+   int[][] numbers3 = (int[][]) parser.parseExpression("new int[4][5]").getValue(context);
+   ~~~
+
+5. 你可以通过`.`来调用变量的属性和方法,  设置可以直接在`字面量`上调用方法和属性
+
+   也可以使用`[]`来访问List和数组中的元素
+
+   使用`[]`来访问Map中的元素
+
+   ~~~java
+   // 调用变量的属性
+   String city = (String) parser.parseExpression("placeOfBirth.City").getValue(context);
+   // 直接在字面量上调用方法
+   String bc = parser.parseExpression("'abc'.substring(1, 3)").getValue(String.class);
+   // 获取List中的元素
+   String invention = parser.parseExpression("inventions[3]").getValue(
+           context,  String.class);
+   // 获取map中的元素
+   parser.parseExpression("Officers['president']").getValue(
+           societyContext, Inventor.class);
+   ~~~
+
+6. 操作符
+
+   Spring EL表达式支持 关系运算符, 赋值运算符, 数学运算符, 逻辑运算符(通过`and, or, not`来表示`&&, ||, !`, 而不是java风格的)
+
+   同时还支持`instanceof` , 基于正则表达式的 `matches` 运算符
+
+   ~~~java
+   // 关系运算符
+   boolean trueValue = parser.parseExpression("2 == 2").getValue(Boolean.class);
+   boolean falseValue = parser.parseExpression("2 < -5.0").getValue(Boolean.class);
+   boolean trueValue = parser.parseExpression("'black' < 'block'").getValue(Boolean.class);
+   
+   // 逻辑运算符
+   boolean falseValue = parser.parseExpression("true and false").getValue(Boolean.class);
+   
+   // 算术运算符
+   int two = parser.parseExpression("1 + 1").getValue(Integer.class);  // 2
+   String testString = parser.parseExpression(
+           "'test' + ' ' + 'string'").getValue(String.class);  // 'test string'
+   int four = parser.parseExpression("1 - -3").getValue(Integer.class);  // 4
+   double d = parser.parseExpression("1000.00 - 1e4").getValue(Double.class)
+       
+   // instanceof运算符
+   boolean falseValue = parser.parseExpression(
+           "'xyz' instanceof T(Integer)").getValue(Boolean.class);
+   
+   // matches运算符
+   boolean trueValue = parser.parseExpression(
+           "'5.00' matches '^-?\\d+(\\.\\d{2})?$'").getValue(Boolean.class); // trie
+   boolean falseValue = parser.parseExpression(
+           "'5.0067' matches '^-?\\d+(\\.\\d{2})?$'").getValue(Boolean.class); // false
+   ~~~
+
+   设置属性，请使用赋值运算符 ( `=` )。这通常在对 `setValue` 的调用中完成，但也可以在对 `getValue` 的调用中完成。以下清单显示了使用赋值运算符的两种方法：
+
+   ~~~java
+   Inventor inventor = new Inventor();
+   EvaluationContext context = SimpleEvaluationContext.forReadWriteDataBinding().build();
+   
+   parser.parseExpression("Name").setValue(context, inventor, "Aleksandar Seovic");
+   
+   // alternatively
+   String aleks = parser.parseExpression(
+           "Name = 'Aleksandar Seovic'").getValue(context, inventor, String.class);
+   ~~~
+
+7. 类型
+
+   如果想要表示`XXX.class`,  可以使用`T()`
+
+   ~~~java
+   Class dateClass = parser.parseExpression("T(java.util.Date)").getValue(Class.class);
+   Class stringClass = parser.parseExpression("T(String)").getValue(Class.class);
+   boolean trueValue = parser.parseExpression(
+           "T(java.math.RoundingMode).CEILING < T(java.math.RoundingMode).FLOOR")
+           .getValue(Boolean.class);
+   ~~~
+
+8. 构造函数
+
+   可以使用 `new` 运算符调用构造函数, 必须使用全类名
+
+   ~~~java
+   Inventor einstein = p.parseExpression(
+           "new org.spring.samples.spel.inventor.Inventor('Albert Einstein', 'German')")
+           .getValue(Inventor.class);
+   
+   //create new inventor instance within add method of List
+   p.parseExpression(
+           "Members.add(new org.spring.samples.spel.inventor.Inventor(
+               'Albert Einstein', 'German'))").getValue(societyContext);
+   ~~~
+
+9. 变量
+
+   可以使用 `#variableName` 语法引用表达式中的变量。变量是通过在 `EvaluationContext` 实现上使用 `setVariable` 方法来设置的。
+
+   ~~~java
+   StandardEvaluationContext context = new StandardEvaluationContext();
+   context.setVariable("newName", "Mike Tesla");
+   
+   parser.parseExpression("Name = #newName").getValue(context, tesla);
+   System.out.println(tesla.getName())  // "Mike Tesla"
+   ~~~
+
+10. #this和#root变量
+
+    https://docs.spring.io/spring-framework/docs/5.2.25.RELEASE/spring-framework-reference/core.html#expressions-this-root
+
+11. 函数
+
+    可以向 `EvaluationContext` 中注册函数, 来扩展SpEL
+
+    ~~~java
+    Method method = ...;
+    
+    EvaluationContext context = SimpleEvaluationContext.forReadOnlyDataBinding().build();
+    context.setVariable("myFunction", method);
+    ~~~
+
+    比如我们有一个字符串反转的函数, 然后我们可以将其注册到context中, 然后就可以在el表达式中进行调用
+
+    ~~~java
+    public abstract class StringUtils {
+        public static String reverseString(String input) {
+            StringBuilder backwards = new StringBuilder(input.length());
+            for (int i = 0; i < input.length(); i++) {
+                backwards.append(input.charAt(input.length() - 1 - i));
+            }
+            return backwards.toString();
+        }
     }
-}
-~~~~
+    ~~~
 
-#### @Validated校验方法参数的原理
+    ~~~java
+    ExpressionParser parser = new SpelExpressionParser();
+    
+    StandardEvaluationContext context = new StandardEvaluationContext();
+    context.setVariable("reverseString",
+            StringUtils.class.getDeclaredMethod("reverseString", String.class));
+    
+    String helloWorldReversed = parser.parseExpression(
+            "#reverseString('hello')").getValue(context, String.class);
+    ~~~
 
+12. 引用Bean
 
+    如果在context中设置了Bean解析器, 则可以使用 `@` 符号从表达式中查找 Bean。
+
+    ~~~java
+    ExpressionParser parser = new SpelExpressionParser();
+    StandardEvaluationContext context = new StandardEvaluationContext();
+    context.setBeanResolver(new MyBeanResolver());
+    
+    // This will end up calling resolve(context,"something") on MyBeanResolver during evaluation
+    Object bean = parser.parseExpression("@something").getValue(context);
+    ~~~
+
+    要访问工厂 bean 本身，您应该在 bean 名称前加上 `&` 符号作为前缀
+
+    ~~~java
+    ExpressionParser parser = new SpelExpressionParser();
+    StandardEvaluationContext context = new StandardEvaluationContext();
+    context.setBeanResolver(new MyBeanResolver());
+    
+    // This will end up calling resolve(context,"&foo") on MyBeanResolver during evaluation
+    Object bean = parser.parseExpression("&foo").getValue(context);
+    ~~~
+
+13. if-then-else
+
+    可以使用三元运算符在表达式内执行 if-then-else 条件逻辑
+
+    ~~~java
+    String falseString = parser.parseExpression(
+            "false ? 'trueExp' : 'falseExp'").getValue(String.class);
+    ~~~
+
+14. elvis操作符
+
+    elvis运算符使用`?:`表示,  等效于`xxx != null ? xxx : bb`
+
+    ~~~java
+    // 等效于 name != null ? name : 'Unknown'
+    String name = parser.parseExpression("name?:'Unknown'").getValue(new Inventor(), String.class);
+    ~~~
+
+15. 安全导航运算符
+
+    ~~~java
+    // 当PlaceOfBirth为null时, 会直接返回null
+    // 当PlaceOfBirth不为null时, 才会返回PlaceOfBirth.City
+    String city = parser.parseExpression("PlaceOfBirth?.City").getValue(context, tesla, String.class);
+    ~~~
+
+16. 表达式模板
+
+    表达式模板`#{}`允许将文字文本与一个或多个计算块混合, 类似于Groovy中的GString中的`${}`占位符
+
+    ~~~java
+    String randomPhrase = parser.parseExpression(
+            "random number is #{T(java.lang.Math).random()}",
+            new TemplateParserContext()).getValue(String.class);
+    ~~~
+
+    
 
 
 
@@ -1866,9 +1879,9 @@ public class MyService {
    @RestControllerAdvice
    public class AdviceController {
    
-       @ResponseBody
-       @@ResponseStatus(HttpStatus.BAD_REQUEST)
-       @ExceptionHandler(RuntimeException.class)
+       @ResponseBody // 返回的json数据
+       @@ResponseStatus(HttpStatus.BAD_REQUEST) // 定义response的http code
+       @ExceptionHandler(RuntimeException.class) // 定义要拦截的异常类型
        public String exception(RuntimeException ex){
            Map<String, String> map = new HashMap<>();
            map.put("code", "300");
@@ -2116,6 +2129,26 @@ public class LoginController {
 ![](img/spring/TIM截图20190708210936.png)
 
 可以看到, 我们在autoConfiguration工程中配置的HelloService被@Autowired了进来, 而不需要我们自动配置.
+
+
+
+
+
+## springboot自动装配原理, SPI机制
+
+https://blog.csdn.net/weixin_42556307/article/details/108405009 自动装配原理
+
+https://zhuanlan.zhihu.com/p/353561846 实现spring boot starter
+
+
+
+SPI 全称为 Service Provider Interface，是一种服务发现机制。本质就是为了解耦, 将接口和实现分开, 然后通过spi机制找到具体的实现类
+
+具体过程是: 将 接口实现类的全限定名配置在文件中，并由特定的classloader读取配置文件，加载文件中的实现类，这样运行时可以动态的为接口替换实现类
+
+https://juejin.cn/post/7197070078361387069
+
+
 
 
 
@@ -3761,6 +3794,8 @@ https://www.bilibili.com/video/BV1rT411U7x2/?spm_id_from=333.788.recommend_more_
            @Override
            public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
                @Nullable Exception ex) {
+               // 一定要在这个方法中remove, 而不能在postHandle方法中remove
+               // 因为如果Controller报错, 那么postHandler方法是不会被执行的
                MDC.remove(TRACE_ID);
            }
        }
@@ -3882,7 +3917,7 @@ initApplicationEventMulticaster()方法负责对该字段的初始化, 集体逻
 1. Listener支持通过Ordered接口, 或者@Order注解来设置Listener的顺序
 2. 如果在SimpleApplicationEventMulticaster设置了ErrorHandler, 那么执行Listener报错会把错误交给ErrorHandler, 否则直接抛出异常
 
-Listener的实现方式有两种: 
+**Listener的两种实现方式** 
 
 1. 通过实现ApplicationListener接口
 
@@ -3905,6 +3940,24 @@ Listener的实现方式有两种:
    }
    ~~~
 
+**spring 容器如何扫描所有的监听器**
+
+1. 对于ApplicationListener的实现方式, 其处理逻辑在`ApplicationListenerDetector`
+
+   该类是实现了`BeanPostProcessor`接口, 并且实现了其`postProcessAfterInitialization`, 该方法会在bean初始化之后执行
+
+   在该方法中, 会判断该bean是否实现了`ApplicationListener`接口, 如果实现了, 那么调用`this.applicationContext.addApplicationListener((ApplicationListener<?>) bean);`将其添加到`SimpleApplicationEventMulticaster`中
+
+2. 对于使用@EventListener的方式, 其处理逻辑在`EventListenerMethodProcessor`
+
+   该类实现了`SmartInitializingSingleton`接口, 并实现了其`afterSingletonsInstantiated`方法, 该方法会在所有的singleton bean都初始化之后执行
+
+   在该方法的逻辑中, 会循环遍历所有的bean, 然后拿到bean对应的class, 然后判断class上是否有被@EventListener标注的方法
+
+   如果有的话, 那么就根据该方法创建一个ApplicationListener, 然后通过`this.applicationContext.addApplicationListener((ApplicationListener<?>) bean);`将其添加到`SimpleApplicationEventMulticaster`中
+
+
+
 **如何实现Listener的异步执行和异常处理**
 
 ~~~java
@@ -3923,4 +3976,2620 @@ Listener的实现方式有两种:
         return multicaster;
     }
 ~~~
+
+
+
+## 通过AOP实现注解式分布式锁, 并支持SpEl
+
+https://www.bilibili.com/video/BV1r642137NJ/?spm_id_from=333.1245.recommend_more_video.0&vd_source=f79519d2285c777c4e2b2513f5ef101a
+
+1. 定义一个注解
+
+   ~~~java
+   // 标注在方法上, 会在获取到分布式锁之后执行方法
+   public @interface DistributedLock {
+   
+       // 获取锁的超时时间
+       long time() default 0;
+       // 超时单位
+       TimeUnit timeUnit() default TimeUnit.MILLISECONDS;
+       // 获取锁路径的spring el表达式, 使用方法的参数来解析
+       String key() default "";
+   }
+   ~~~
+
+2. 定义一个分布式锁的接口
+
+   ~~~java
+   public interface LockService {
+       <T> T execut(String key, long time, TimeUnit timeUnit, Supplier<T> supplier) throws Throwable;
+   
+       @FunctionalInterface
+       public static interface Supplier<T> {
+           T get() throws Throwable;
+       }
+   }
+   ~~~
+
+3. 创建redis分布式锁的实现类, 也可以通过zookeeper来实现
+
+   ~~~gradle
+   // 导入Redisson依赖
+   implementation 'org.redisson:redisson-spring-boot-starter:3.25.2'
+   ~~~
+
+   ~~~java
+   @Service
+   public class RedissonLockService implements LockService{
+   
+       @Autowired
+       private RedissonClient redissonClient;
+   
+       @Override
+       public <T> T execut(String key, long time, TimeUnit timeUnit, Supplier<T> supplier) throws Throwable {
+           RLock lock = redissonClient.getLock(key);
+           boolean locked = false;
+           try {
+               locked = lock.tryLock(time, timeUnit);
+               if (!locked) {
+                   throw new RuntimeException("获取锁超时");
+               }
+               try {
+                   return supplier.get();
+               } finally {
+                   lock.unlock();
+               }
+           } catch (InterruptedException e) {
+               throw new RuntimeException(e);
+           }
+       }
+   }
+   ~~~
+
+4. 创建一个aop, 用来拦截有注解的方法
+
+   ~~~java
+   @EnableAspectJAutoProxy
+   @Aspect
+   public class RedissonLockAop {
+   
+       @Autowired
+       private LockService lockService;
+       private static final ExpressionParser expressionParser = new SpelExpressionParser();
+   
+       // 通过该变量来获取方法的形参
+       private static final DefaultParameterNameDiscoverer PARAMETER_NAME_DISCOVERER = new DefaultParameterNameDiscoverer();
+   
+       @Getter
+       @Setter
+       private String namespace = "com.xxx.lock";
+   
+       /**
+        * 通过SpEl解析key, 方法的args作为context
+        */
+       @Around(value = "@annotation(distributedLock)", argNames = "joinPoint, distributedLock")
+       public Object around(ProceedingJoinPoint joinPoint, DistributedLock distributedLock) {
+           MethodSignature signature = (MethodSignature)joinPoint.getSignature();
+           Method method = signature.getMethod();
+           Object[] args = joinPoint.getArgs();
+           String key = parse(distributedLock.key(), method, args);
+           try {
+               return lockService.execut(key, distributedLock.time(), distributedLock.timeUnit(), joinPoint::proceed);
+           } catch (Throwable e) {
+               throw new RuntimeException(e);
+           }
+       }
+   
+       private String parse(String key, Method method, Object[] args) {
+           // 获取形参
+           String[] params = Optional.ofNullable(PARAMETER_NAME_DISCOVERER.getParameterNames(method)).orElse(new String[]{});
+           StandardEvaluationContext context = new StandardEvaluationContext();
+           for (int i = 0; i < params.length; i++) {
+               if (args[i] instanceof HttpServletRequest) {
+                   continue; // 过滤掉HttpServletRequest
+               }
+               context.setVariable(params[i], args[i]);
+           }
+           return namespace + "." + expressionParser.parseExpression(key).getValue(context, String.class);
+       }
+   }
+   ~~~
+
+
+
+
+## SpringBoot 数据校验
+
+### 相关注解
+
+**空检查**
+
+- @Null       通过 `== null`来判断是否为null
+
+- @NotNull    通过`!= null`来判断不为null
+
+- @NotBlank 通过`obj != null && obj.strim().length != 0`来判断
+
+- @NotEmpty 通过`obj!=null && !"".equals(obj)`来判断
+
+**Booelan检查**
+
+- @AssertTrue     验证 Boolean 对象是否为 true  
+- @AssertFalse    验证 Boolean 对象是否为 false  
+
+**长度检查**
+
+- @Size(min=, max=) 验证对象（Array,Collection,Map,String）长度是否在给定的范围之内  
+- @Length(min=, max=) 校验字符串长度必须在min, max之间
+
+**日期检查**
+
+- @Past           验证 Date 和 Calendar 对象是否在当前时间之前  
+- @Future     验证 Date 和 Calendar 对象是否在当前时间之后  
+- @Pattern    验证 String 对象是否符合正则表达式的规则
+
+**数值检查**
+
+**建议使用在Stirng,Integer类型，不建议使用在int类型上，因为表单值为“”时无法转换为int，但可以转换为Stirng为"",Integer为null**
+
+- @Min            验证 Number 和 String 对象是否大等于指定的值  
+- @Max            验证 Number 和 String 对象是否小等于指定的值  
+- @DecimalMax 被标注的值必须不大于约束中指定的最大值. 这个约束的参数是一个通过BigDecimal定义的最大值的字符串表示.小数存在精度
+- @DecimalMin 被标注的值必须不小于约束中指定的最小值. 这个约束的参数是一个通过BigDecimal定义的最小值的字符串表示.小数存在精度
+- @Digits     验证 Number 和 String 的构成是否合法  
+- @Digits(integer=,fraction=) 验证字符串是否是符合指定格式的数字，interger指定整数精度，fraction指定小数精度。
+- @Range(min=, max=) 检查数字是否介于min和max之间.
+- @Range(min=10000,max=50000,message="range.bean.wage")
+  private BigDecimal wage;
+
+**其他检测**
+
+- @CreditCardNumber信用卡验证
+- @Email  验证是否是邮件地址，如果为null,不进行验证，算通过验证。
+- @ScriptAssert(lang= ,script=, alias=)
+- @URL(protocol=,host=, port=,regexp=, flags=)
+
+### 基础模型包导入依赖
+
+如果我们有一个基础的model包, 他只保存数据库表对应的POJO, 他上面有一些校验的注解, 但是他并不需要校验的功能, 而是由上层包来实现具体的功能, 那么我们可以只导入相关注解的包即可
+
+~~~xml
+<dependency>
+    <groupId>javax.validation</groupId>
+    <artifactId>validation-api</artifactId>
+    <version>2.0.1.Final</version>
+</dependency>
+<dependency>
+    <groupId>org.hibernate.validator</groupId>
+    <artifactId>hibernate-validator</artifactId>
+    <version>6.0.13.Final</version>
+</dependency>
+~~~
+
+
+
+### 使用原生方式进行验证
+
+1. 导入maven
+
+   ~~~xml
+   <!-- 根据 JSR 380 规范，validation-api依赖项包含标准验证 API -->
+   <dependency>
+       <groupId>javax.validation</groupId>
+       <artifactId>validation-api</artifactId>
+       <version>2.0.1.Final</version>
+   </dependency>
+   
+   <!-- Hibernate Validator 是验证 API 的参考实现 -->
+   <dependency>
+       <groupId>org.hibernate.validator</groupId>
+       <artifactId>hibernate-validator</artifactId>
+       <version>6.0.13.Final</version>
+   </dependency>
+   ~~~
+
+2. Bean添加验证注解
+
+   ~~~java
+   @Data
+   public class User {
+       @NotNull(message = "名字不能为空")
+       private String name;
+   
+       @AssertTrue
+       private boolean working;
+   
+       @Size(min = 10, max = 200, message = "字符数应介于10和200之间（含10和200）")
+       private String aboutMe;
+   
+       @Min(value = 18, message = "年龄不应少于18岁")
+       @Max(value = 150, message = "年龄不应超过150岁")
+       private int age;
+   
+       @Email(message = "电子邮件应该是有效的")
+       private String email;
+   
+       private List<@NotBlank(message = "备注说明不能为空") String> preferences;
+   
+       @Past(message = "出生年月必须是一个过去的时间")
+       private LocalDate dateOfBirth;
+   
+       @DecimalMin(value = "0.0", inclusive = false, message = "付款金额不能小于0")
+       @Digits(integer = 4, fraction = 2, message = "付款金额必须小于{integer}位数且不能超过{fraction}位小数")
+       private BigDecimal price;
+       
+   }
+   ~~~
+
+3. 验证程序
+
+   ~~~java
+   public class ValidationTest {
+   
+       private Validator validator;
+   
+       @Before
+       public void setup() {
+           ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
+           validator = factory.getValidator();
+       }
+   
+       @Test
+       public void ifNameIsNull() {
+           User user = new User();
+           user.setWorking(true);
+           user.setAboutMe("me");
+           user.setAge(50);
+           
+           // validate方法来验证我们的 UserBean User对象中定义的约束都将作为Set返回
+           Set<ConstraintViolation<User>> violations = validator.validate(user);
+           for (ConstraintViolation<User> violation : violations) {
+               // getMessage方法获取所有违规消息
+               System.out.println(violation.getMessage());
+           }
+       }
+   }
+   ~~~
+
+   
+
+### springboot中使用参数校验
+
+引入依赖
+
+~~~xml
+<dependency>
+  <groupid>org.springframework.boot</groupid>
+  <artifactid>spring-boot-starter-web</artifactid>
+</dependency>
+<!-- Boot 2.3 开始，我们还需要显式添加spring-boot-starter-validation依赖项, 之前不需要-->
+<dependency>
+  <groupid>org.springframework.boot</groupid>
+  <artifactid>spring-boot-starter-validation</artifactid>
+</dependency>
+~~~
+
+#### controller层校验DTO
+
+在controller层, 可以使用@Valid和@Validated标注在方法参数上, 进行校验DTO
+
+**如果校验失败, 如果controller参数后面跟了BindingResult, 那么会把错误放在BindingResult中, ** 不推荐这种方式, 直接在全局异常处理中     
+
+**如果没有这个参数, 那么会直接抛出MethodArgumentNotValidException异常, 这样就必须在全局异常处理中进行处理**
+
+@Valid和@Validated他们的区别在于
+
+![image-20240111174151939](img/spring/image-20240111174151939.png)
+
+~~~java
+@Data
+public class User {
+    // 每一个注解都包含了message字段，用于校验失败时作为提示信息。不写message将使用默认的错误提示信息。
+    @Size(min = 5, max = 10, message = "请输入5-10个字符的用户名")
+    private String username;
+}
+
+
+@RestController
+@RequestMapping("/a/user")
+public class AUserController {
+    // 使用@Validated, 支持分组校验, 不支持递归校验
+    @PostMapping
+    public Object addUser(@Validated User user, BindingResult bindingResult) {
+        if (bindingResult.hasErrors()) 
+            return "fail";
+        return "success";
+    }
+    
+    // 需要校验多个参数, 直接在参数后面跟一个BindingResult
+    @PostMapping
+    public Object addUser(@Validated Foo foo, BindingResult fooBindingResult, @Validated Bar bar, BindingResult barBindingResult) {
+        if (bindingResult.hasErrors()) 
+            return "fail";
+        return "success";
+    }
+    
+    // 使用@Valid, 不支持分组, 支持递归校验
+    // 后面跟BindingResult, 保存错误信息
+    @PutMapping("/fun1")
+    public Object updateUser1(@Valid User user, BindingResult bindingResult) {
+        if (bindingResult.hasErrors()) 
+            return "fail";
+        return "success";
+    }
+    // 这种写法会直接抛出MethodArgumentNotValidException异常
+    @PutMapping("/fun3")
+    public Object updateUser3(@Valid User user) {
+        return null;
+    }
+}
+~~~
+
+#### controller层中校验普通参数
+
+~~~java
+// 校验失败会抛出 ConstraintViolationException 异常。
+// 这个时候不能添加BindingResult
+@GetMapping("/fun3")
+public Object fun3(@Length(min = 5, max = 10) @NotNull String username, @PathVariable @Min(1000L) Long userId) {
+    // 校验通过才会执行业务逻辑
+    return "ok";
+}
+~~~
+
+#### 异常处理
+
+只处理当前controller中的校验异常
+
+~~~java
+@RestController
+@RequestMapping("/a/user")
+public class AUserController {
+    // 使用@Validated, 支持分组校验, 不支持递归校验
+    @PostMapping
+    public Object addUser(@Validated User user, BindingResult bindingResult) {
+        if (bindingResult.hasErrors()) 
+            return "fail";
+        return "success";
+    }
+    // 这个exception方法会处理当前controller中抛出的所有RuntimeException
+    @ExceptionHandler(RuntimeException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+    public String exception(RuntimeException ex){
+        Map<String, String> map = new HashMap<>();
+        map.put("code", "400");
+        map.put("message", ex.getMessage());
+        return new Gson().toJson(map);
+    }
+}
+~~~
+
+全局的异常处理
+
+~~~java
+@RestControllerAdvice
+public class AdviceController {
+
+    @ResponseBody // 返回的json数据
+    @@ResponseStatus(HttpStatus.BAD_REQUEST) // 定义response的http code
+    @ExceptionHandler({ConstraintViolationException.class, MethodArgumentNotValidException}) // 定义要拦截的异常类型
+    public String exception(RuntimeException ex){
+        Map<String, String> map = new HashMap<>();
+        map.put("code", "300");
+        map.put("message", ex.getMessage());
+        return new Gson().toJson(map);
+    }
+}
+~~~
+
+
+
+
+
+#### controller层中的分组校验
+
+~~~java
+@Data
+public class User {
+    // groups：标识此校验规则属于哪个分组，可以指定多个分组
+    @NotNull(groups = Update.class)
+    @Min(value = 10000L, groups = Update.class)
+    private Long userId;
+
+    @NotNull(groups = {Save.class, Update.class})
+    @Length(min = 2, max = 10, groups = {Save.class, Update.class})
+    private String userName;
+
+    @NotNull(groups = {Save.class, Update.class})
+    @Length(min = 6, max = 20, groups = {Save.class, Update.class})
+    private String account;
+
+    @NotNull(groups = {Save.class, Update.class})
+    @Length(min = 6, max = 20, groups = {Save.class, Update.class})
+    private String password;
+
+    // 校验分组中不需要定义任何方法，该接口仅仅是为了区分不同的校验规则
+    public interface Save { }
+    public interface Update { }
+}
+
+@RestController
+@RequestMapping("/user")
+public class UserController {
+    // 通过@Validate指定分组
+    @PostMapping
+    public Object saveUser(@RequestBody @Validated(User.Save.class) User user) { }
+}
+~~~
+
+#### 递归校验
+
+~~~java
+@Data
+public class User {
+
+    @Min(value = 1L, groups = Update.class)
+    private Long userId;
+    
+    @Valid  // 添加上@Valid, 表示需要递归校验
+    @NotNull
+    private Job job;
+
+    @Data
+    public static class Job {
+        @Length(min = 2, max = 10)
+        private String jobName;
+    }
+}
+@RestController
+@RequestMapping("/user")
+public class UserController {
+
+    @PostMapping
+    // 这里使用@Valid或者@Validated都可以
+    public Object saveUser(@RequestBody @Validated User user) {
+        // 校验通过，才会执行业务逻辑处理
+        return "ok";
+    }
+}
+~~~
+
+
+
+
+
+
+
+
+
+#### 自定义注解校验
+
+定义一个注解, 修饰的字符串长度在6-12之间
+
+~~~java
+@Retention(RetentionPolicy.RUNTIME)
+// 指定当前注解可以添加的位置
+@Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.ANNOTATION_TYPE})
+// 指定当前注解的校验器
+@Constraint(validatedBy = {Password.PasswordValidator.class})
+public @interface Password {
+
+    public String message() default "密码格式不合法";
+
+    Class<?>[] groups() default {};
+
+    Class<? extends Payload>[] payload() default {};
+
+    // 自定义校验器
+    // 第一个泛型是当前校验器支持的注解
+    // 第二个泛型是需要校验的值的目标类型
+    public static class PasswordValidator implements ConstraintValidator<Password, String> {
+
+        @Override
+        public void initialize(Password constraintAnnotation) { }
+
+        @Override
+        public boolean isValid(String value, ConstraintValidatorContext constraintValidatorContext) {
+            int length = StringUtils.length(value);
+            if (length >= 6 && length <= 12) {
+                return true;
+            }
+            return false;
+        }
+    }
+}
+~~~
+
+#### service层校验
+
+~~~~java
+@Service
+// 添加这个注解后, spring会进行切面, 拦截所有方法, 看上面有没有需要校验的参数
+// 如果无效, 记得导包spring-boot-starter-validation
+@Validated 
+public class MyService {
+    public String testParams(@NotNull @Valid User user, @Min(10) Integer id, @NotBlank String name) {
+        return user.toString();
+    }
+}
+~~~~
+
+#### @Validated校验方法参数的原理
+
+# SpringCloud
+
+
+
+
+
+
+
+# 相关源码
+
+
+
+### 关于BeanFactory的说明
+
+![image-20201201154845681](img/spring/image-20201201154845681.png)
+
+用于访问Spring bean容器的根接口。是bean容器的基本客户端视图；
+
+该接口的实现对象应该持有多个bean difinition。  每个bean difinition均由String名称唯一标识。
+
+取决于bean的定义，*工厂将返回一个包含对象的独立实例*（原型设计模式），或者返回一个共享实例（Singleton设计模式）。
+
+如果该接口的实现了是HierarchicalBeanFactory，此接口中的所有*操作还将检查父工厂。如果在此工厂实例中未找到bean，则*将询问直接的父工厂。该工厂实例中的Bean应该覆盖任何父工厂中同名的Bean。
+
+BeanFactory实现应尽可能支持标准Bean生命周期接口。全套初始化方法及其标准顺序为：
+
+```shell
+# void setBeanName(String name); 让并可以知道自己的bean id。
+# Spring 自动调用，并且会在完成Bean属性装配之后，且在调用任何Bean生命周期回调（初始化或者销毁）方法之前就调用这个方法
+BeanNameAware's {@code setBeanName}
+
+# void setBeanClassLoader(ClassLoader classLoader);
+# 将当前 bean 对象相应的 ClassLoader 注入到当前对象实例中
+BeanClassLoaderAware's {@code setBeanClassLoader}
+
+# void setBeanFactory(BeanFactory beanFactory) throws BeansException;
+# BeanFactory 容器会将自身注入到当前对象实例中，这样当前对象就会拥有一个 BeanFactory 容器的引用
+BeanFactoryAware's {@code setBeanFactory}
+
+EnvironmentAware's {@code setEnvironment}
+
+EmbeddedValueResolverAware's {@code setEmbeddedValueResolver}
+
+ResourceLoaderAware's {@code setResourceLoader}
+(only applicable when running in an application context)
+
+ApplicationEventPublisherAware's {@code setApplicationEventPublisher}
+(only applicable when running in an application context)
+
+MessageSourceAware's {@code setMessageSource}
+(only applicable when running in an application context)
+
+ApplicationContextAware's {@code setApplicationContext}
+(only applicable when running in an application context)
+
+ServletContextAware's {@code setServletContext}
+(only applicable when running in a web application context)
+
+# 后置处理器postProcessBeforeInitialization，通过实现BeanPostProcessors实现
+{@code postProcessBeforeInitialization} methods of BeanPostProcessors
+
+# bean 生命周期的初始化方法， 通过继承InitializingBean实现
+InitializingBean's {@code afterPropertiesSet}
+
+# bean 生命周期的初始化方法， 通过@Bean的initMethod属性实现
+a custom init-method definition
+
+# 后置处理器postProcessAfterInitialization，通过实现BeanPostProcessors实现
+{@code postProcessAfterInitialization} methods of BeanPostProcessors
+```
+
+在关闭BeanFactory时，以下生命周期方法适用:
+
+
+```
+{@code postProcessBeforeDestruction} methods of DestructionAwareBeanPostProcessors
+
+DisposableBean's {@code destroy}
+
+a custom destroy-method definition
+```
+
+### 关于BeanDefinition的说明
+
+
+
+### 关于spring的注解编程模型和@AliasFor注解的说明
+
+https://github.com/spring-projects/spring-framework/wiki/Spring-Annotation-Programming-Model
+
+https://github.com/spring-projects/spring-framework/wiki/MergedAnnotation-API-internals
+
+https://docs.spring.io/spring-framework/docs/current/javadoc-api/ api文档搜索AliasFor的说明
+
+https://www.jianshu.com/p/d6bba708100d
+
+@see MergedAnnotations
+
+@see AttributeMethods
+
+@see AnnotationTypeMappings
+
+@see AnnotationUtils
+
+@see AnnotatedElementUtils
+
+https://studyidea.cn/spring-stereotype-annotations
+
+https://studyidea.cn/articles/2019/07/05/1562314284729.html
+
+https://studyidea.cn/articles/2019/07/10/1562768280760.html
+
+https://studyidea.cn/articles/2019/06/15/1560598141405.html↓↓↓
+
+
+
+> Meta-Annotations（元注解）
+
+**A *meta-annotation* is an annotation that is declared on another annotation**. An annotation is therefore *meta-annotated* if it is annotated with another annotation. For example, any annotation that is declared to be *documented* is meta-annotated with `@Documented` from the `java.lang.annotation` package.
+
+标注在注解上的注解，类似于@Documented，@Target。包括@Component也是元注解，因为他可以标注在其他注解上。
+
+
+
+> Stereotype Annotations（模式注解）
+
+**A *stereotype annotation* is an annotation that is used to declare the role that a component plays within the application**. For example, the `@Repository` annotation in the Spring Framework is a marker for any class that fulfills the role or *stereotype* of a repository (also known as Data Access Object or DAO).
+
+**`@Component` is a generic stereotype for any Spring-managed component**. Any component annotated with `@Component` is a candidate for component scanning. Similarly, any component annotated with an annotation that is itself meta-annotated with `@Component` is also a candidate for component scanning. For example, `@Service` is meta-annotated with `@Component`.
+
+Core Spring provides several stereotype annotations out of the box, including but not limited to: `@Component`, `@Service`, `@Repository`, `@Controller`, `@RestController`, and `@Configuration`. `@Repository`, `@Service`, etc. are specializations of `@Component`.
+
+模式注解：只要在相应的类上标注这些注解，就能成为 Spring 中组件(Bean)。@Component是spring中通用的模式注解。任何被@Component注解标注的注解都是模式注解（例如@Controller）。任何被@Component标注的注解标注的注解都是模式注解（例如@RestController被@Controller标注，而@Controller被@Component标注，所以@RestController也是模式注解）。
+
+
+
+> Composed Annotations（复合注解）
+
+**A *composed annotation* is an annotation that is *meta-annotated* with one or more annotations with the intent of combining the behavior associated with those meta-annotations into a single custom annotation**. For example, an annotation named `@TransactionalService` that is meta-annotated with Spring's `@Transactional` and `@Service` annotations is a composed annotation that combines the semantics of `@Transactional` and `@Service`. `@TransactionalService` is technically also a custom *stereotype annotation*.
+
+复合注解：被一个或者多个元注解标注以结合这些元注解的特性到一个注解上。例如@RestController被@Controller和@ResponseBody标注以结合两者的特性。
+
+
+
+> Attribute Overrides（属性覆写）
+
+An ***attribute override*** is an annotation attribute that *overrides* (or *shadows*) an annotation attribute in a meta-annotation. Attribute overrides can be categorized as follows.
+
+1. **Implicit Overrides**: given attribute `A` in annotation `@One` and attribute `A` in annotation `@Two`, if `@One` is meta-annotated with `@Two`, then attribute `A` in annotation `@One` is an *implicit override* for attribute `A` in annotation `@Two` based solely on a naming convention (i.e., both attributes are named `A`).
+
+   ~~~java
+   // HelloComponent的value属性隐式覆写Component的value属性
+   @Component
+   public @interface HelloComponent {
+       String value() default "";
+   }
+   ~~~
+
+2. **Explicit Overrides**: if attribute `A` is declared as an alias for attribute `B` in a meta-annotation via `@AliasFor`, then `A` is an *explicit override* for `B`.
+
+   ~~~java
+    @ContextConfiguration
+    public @interface XmlTestConfig {
+       @AliasFor(annotation = ContextConfiguration.class, attribute = "locations")
+       String[] xmlFiles();
+    }
+   ~~~
+
+3. **Transitive Explicit Overrides**: if attribute `A` in annotation `@One` is an explicit override for attribute `B` in annotation `@Two` and `B` is an explicit override for attribute `C` in annotation `@Three`, then `A` is a *transitive explicit override* for `C` following the [law of transitivity](https://en.wikipedia.org/wiki/Transitive_relation).
+
+   ~~~java
+   @RequestMapping
+   public @interface CoolMapping{
+       @AliasFor(annotation = RequestMapping.class, attribute = "path")
+       String requestPath() default "";
+   }
+   
+   @CoolMapping
+   public @interface HotMapping{
+       @AliasFor(annotation = CoolMapping.class, attribute = "requestPath")
+       String hotRequestPath() default "";
+   }
+   ~~~
+
+
+
+> Attribute Aliases属性别名
+
+An ***attribute alias*** is an alias from one annotation attribute to another annotation attribute. Attributes within a set of aliases can be used interchangeably and are treated as equivalent. Attribute aliases can be categorized as follows.
+
+1. **Explicit aliases within an annotation**: if two attributes in one annotation are declared as aliases for each other via `@AliasFor`, they are *explicit aliases*.
+
+   In `@ContextConfiguration`, `value` and `locations` are explicit aliases for each other.
+
+   ```java
+    public @interface ContextConfiguration {
+   
+       @AliasFor("locations")
+       String[] value() default {};
+   
+       @AliasFor("value")
+       String[] locations() default {};
+   
+       // ...
+    }
+   ```
+
+2. **Explicit alias for attribute in meta-annotation**: if the [`annotation()`](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/annotation/AliasFor.html#annotation--) attribute of `@AliasFor` is set to a different annotation than the one that declares it, the [`attribute()`](https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/annotation/AliasFor.html#attribute--) is interpreted as an alias for an attribute in a meta-annotation (i.e., an explicit meta-annotation attribute override). This enables fine-grained control over exactly which attributes are overridden within an annotation hierarchy. In fact, with `@AliasFor` it is even possible to declare an alias for the `value` attribute of a meta-annotation.
+
+   In `@XmlTestConfig`, `xmlFiles` is an explicit alias for `locations` in `@ContextConfiguration`. In other words, `xmlFiles` overrides the `locations` attribute in `@ContextConfiguration`.
+
+   ```java
+    @ContextConfiguration
+    public @interface XmlTestConfig {
+   
+       @AliasFor(annotation = ContextConfiguration.class, attribute = "locations")
+       String[] xmlFiles();
+    }
+   ```
+
+3. **Implicit Aliases**: if two or more attributes in one annotation are declared as explicit overrides for the same attribute in a meta-annotation via `@AliasFor`, they are *implicit aliases*.
+
+   In `@MyTestConfig`, `value`, `groovyScripts`, and `xmlFiles` are all explicit meta-annotation attribute overrides for the `locations` attribute in `@ContextConfiguration`. These three attributes are therefore also implicit aliases for each other.
+
+   ~~~java
+    @ContextConfiguration
+    public @interface MyTestConfig {
+   
+       @AliasFor(annotation = ContextConfiguration.class, attribute = "locations")
+       String[] value() default {};
+   
+       @AliasFor(annotation = ContextConfiguration.class, attribute = "locations")
+       String[] groovyScripts() default {};
+   
+       @AliasFor(annotation = ContextConfiguration.class, attribute = "locations")
+       String[] xmlFiles() default {};
+    }
+   ~~~
+
+   
+
+4. **Transitive Implicit Aliases**: given two or more attributes in one annotation that are declared as explicit overrides for attributes in meta-annotations via `@AliasFor`, if the attributes *effectively* override the same attribute in a meta-annotation following the [law of transitivity](https://en.wikipedia.org/wiki/Transitive_relation), they are *transitive implicit aliases*.
+
+   In `@GroovyOrXmlTestConfig`, `groovy` is an explicit override for the `groovyScripts` attribute in `@MyTestConfig`; whereas, `xml` is an explicit override for the `locations` attribute in `@ContextConfiguration`. Furthermore, `groovy` and `xml` are transitive implicit aliases for each other, since **they both effectively override the `locations` attribute in `@ContextConfiguration`.（<font color=red>有效覆写即可传递，不管是显式覆写还是隐式覆写</font>）**
+
+   ```java
+    @MyTestConfig
+    public @interface GroovyOrXmlTestConfig {
+   
+       @AliasFor(annotation = MyTestConfig.class, attribute = "groovyScripts")
+       String[] groovy() default {};
+   
+       @AliasFor(annotation = ContextConfiguration.class, attribute = "locations")
+       String[] xml() default {};
+    }
+   ```
+
+
+
+
+
+> 属性覆写和属性别名的要求
+
+- 覆写和别名的两个属性必须要有默认值，并且默认值一样
+- 覆写和别名的两个属性类型必须一样
+- AliasFor注解的annotation属性必须引用合适的注解，并且该注解必须标注在原来的注解上
+- attribute不写的话表示引用同名的属性
+
+~~~java
+// requestPath和RequestMapping的path属性类型一样，必须要有默认值切默认值一样
+// annotation必须引用RequestMapping注解，且@RequestMapping需要标注在CoolMapping上
+// attribute不写的话表示引用同名的属性
+@RequestMapping
+public @interface CoolMapping{
+    @AliasFor(annotation = RequestMapping.class, attribute = "path")
+    String requestPath() default "";
+}
+~~~
+
+>  Can `@AliasFor` be used with the `value` attributes for `@Component` and `@Qualifier`?
+
+The short answer is: no.
+
+The `value` attributes in `@Qualifier` and in *stereotype* annotations (e.g., `@Component`, `@Repository`, `@Controller`, and any custom stereotype annotations) *cannot* be influenced by `@AliasFor`. The reason is that the special handling of these `value` attributes was in place years before `@AliasFor` was invented. Consequently, due to backward compatibility issues it is simply not possible to use `@AliasFor` with such `value` attributes.
+
+~~~java
+// 这样设置的别名是无效的，beanName并不能设置bean的id
+@Controller
+public @interface BeautifulController{
+    @AliasFor(annotation = Controller.class, attribute = "value")
+    String beanName() default "";
+}
+
+// 这样是可以的，value属性可以设置bean的id，这属于隐式覆写
+@Controller
+public @interface BeautifulController{
+    @AliasFor(annotation = Controller.class)
+    String value() default "";
+}
+~~~
+
+
+
+
+
+### 关于@ComponentScan的说明
+
+- ComponentScan默认扫描当前类所在的包及其子包
+
+- ComponentScan默认会将@Component及其衍生注解注册成bean
+
+- **在同一个ComponentScan中，excludeFilters的优先级大于includeFilters**
+
+  ~~~java
+  // 在同一个@ComponentScan中，同一个类即被include又被exclude， exclude是优先include的，因为源码先处理exclude，所以以下结果为exclude掉了SimpleScopeMetadataResolver
+  @ComponentScan(includeFilters = {
+          @Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class}, excludeFilters = {
+          @Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})
+  })
+  public class SpringTestApplication{}
+  ~~~
+
+- **若存在多个ComponentScan，每个ComponentScan之间是单独扫描的，不存在联系**，即：
+
+  ~~~java
+  // 第一个ComponentScan exclude掉了SimpleScopeMetadataResolver， 但是第二个注解include了SimpleScopeMetadataResolver， 两者之间并无联系，所以整体的结果还是include了SimpleScopeMetadataResolver
+  @ComponentScan(excludeFilters = {
+          @Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})
+  })
+  @ComponentScan(includeFilters = {
+          @Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})
+  })
+  public class SpringTestApplication{}
+  ~~~
+
+  **推荐一个@ComponentScan只进行一个包的包扫描处理。**
+
+- useDefaultFilters等效于@ComponentScan(includeFilters = {@Filter(type = FilterType.ANNOTATION, value = {Component.class})})， 源码也是添加了一个includeFilters
+
+- 对于@ComponentScan，@ComponentScan(excludeFilters = {
+      @Filter(type = FilterType.ANNOTATION, value = {Component.class})
+  })相当于把Component，Controller，Service，Repository及他们的衍生注解都排除了。
+
+> 关于@Component的includeFilters和excludeFilters的说明
+
+```java
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.TYPE)
+@Documented
+@Repeatable(ComponentScans.class)
+public @interface ComponentScan {
+
+   // 通过字符串指定需要扫描的包，@ComponentScan("com.example")
+   @AliasFor("basePackages")
+   String[] value() default {};
+
+   // see value
+   @AliasFor("value")
+   String[] basePackages() default {};
+
+   /**
+    通过class指定需要扫描的包，若存在com.example.SimpleScan类，则@ComponentScan(basePackageClasses = SimpleScan)表示需要扫描SimpleScan所在的包，即com.example包。
+    推荐写一个类似于Serializable一样的无任何属性的接口，并通过basePackageClasses属性进行引用。
+    该属性相比较于basePackages更加的安全，因为字符串可能出错。
+    */
+   Class<?>[] basePackageClasses() default {};
+
+   // 使用该属性可以自定义检测到的Component的bean id
+   Class<? extends BeanNameGenerator> nameGenerator() default BeanNameGenerator.class;
+
+   // 使用该属性可以自定义检测到的Component的Scope
+   Class<? extends ScopeMetadataResolver> scopeResolver() default AnnotationScopeMetadataResolver.class;
+
+   /**
+    * Indicates whether proxies should be generated for detected components, which may be
+    * necessary when using scopes in a proxy-style fashion.
+    * <p>The default is defer to the default behavior of the component scanner used to
+    * execute the actual scan.
+    * <p>Note that setting this attribute overrides any value set for {@link #scopeResolver}.
+    * @see ClassPathBeanDefinitionScanner#setScopedProxyMode(ScopedProxyMode)
+    */
+   ScopedProxyMode scopedProxy() default ScopedProxyMode.DEFAULT;
+
+   // 通过该属性可以使只有匹配该pattern的class文件才进行扫描, 默认为"**/*.class"
+   String resourcePattern() default ClassPathScanningCandidateComponentProvider.DEFAULT_RESOURCE_PATTERN;
+
+   // 开启该选项的话，会将扫描到的带有@Component及其衍生注解（@Controller,@Service,@Repository）的类自动注册成bean。关闭的话就不会将这些有注解的类注册成bean了，需要自己通过includeFilters属性进行添加。
+    // 该属性相当于@ComponentScan(includeFilters = {
+        @Filter(type = FilterType.ANNOTATION, value = {Component.class})
+})
+   boolean useDefaultFilters() default true;
+
+   
+   /**
+   指定哪些类型适合进行组件扫描。
+   进一步将候选组件的范围从basePackages中的所有内容basePackages到与给定过滤器匹配的基本包中的所有内容。
+   默认过滤器也将应用指定的includeFilters 
+   即使不匹配默认过滤器（即未使用@Component注释），也将    包括与指定过滤器匹配的指定基本软件包下的任何类型
+   */
+   Filter[] includeFilters() default {};
+
+   Filter[] excludeFilters() default {};
+
+   // 设置检测到的Component是否进行懒加载
+   boolean lazyInit() default false;
+
+   /**
+    * Declares the type filter to be used as an {@linkplain ComponentScan#includeFilters
+    * include filter} or {@linkplain ComponentScan#excludeFilters exclude filter}.
+    */
+   @Retention(RetentionPolicy.RUNTIME)
+   @Target({})
+   @interface Filter {
+
+      /**
+       * The type of filter to use.
+       * <p>Default is {@link FilterType#ANNOTATION}.
+       */
+      FilterType type() default FilterType.ANNOTATION;
+
+      @AliasFor("classes")
+      Class<?>[] value() default {};
+
+      /**
+       如果type被设置为FilterType#ANNOTATION，classes请填写注解，spring将会对标有该注解的类进行处理（exclude或者include）
+       @ComponentScan(excludeFilters = {@Filter(type = FilterType.ANNOTATION, value = {Component.class})})表示排除被Component及其衍生注解标注的类
+       
+       如果type被设置为FilterType#ASSINGABLE_TYPE，classes请填写类或者接口，spring将会对该类及其子类进行处理（exclude or include）
+       @ComponentScan(includeFilters = {@Filter(type = FilterType.ASSIGNABLE_TYPE, value = {SimpleScopeMetadataResolver.class})})表示要将SimpleScopeMetadataResolver及其子类注册成bean（即使他没有被@Component标注）
+       
+       如果type被设置为FilterType#CUSTOM，classes请填写自定义的过滤器，该过滤器需要继承TypeFilter接口，自定义TypeFilter可以选择实现以下任何Aware接口，并且将在匹配之前调用它们各自的方法：
+       EnvironmentAware
+       BeanFactoryAware
+       BeanClassLoaderAware
+       ResourceLoaderAware
+       
+       */
+      @AliasFor("value")
+      Class<?>[] classes() default {};
+
+      /**
+       如果type被设置为FilterType#ASPECTJ, pattern被解析为AspectJ表达式
+       如果type被设置为FilterType#REGEX, pattern被解析为正则表达式
+       */
+      String[] pattern() default {};
+
+   }
+
+}
+```
+
+> @Component的源码解析
+
+处理@Configuration的代码从ConfigurationClassParser#doProcessConfigurationClass()开始
+
+![image-20201215135237192](img/spring/image-20201215135237192.png)
+
+从上面可以看出来，因为每一个@ComponentScan是在for循环中处理的，所以也就验证了上面所说的：**若存在多个ComponentScan，每个ComponentScan之间是单独扫描的，不存在联系**
+
+下面进入this.componentScanPaser.paser()方法中
+
+![image-20201217140308950](img/spring/image-20201217140308950.png)
+
+下面来开下useDefaultFilters的作用：
+
+进入到ClassPathBeanDefinitionScanner的构造方法里面
+
+![image-20201217140819004](img/spring/image-20201217140819004.png)
+
+![image-20201217141119902](img/spring/image-20201217141119902.png)
+
+从上面可以看出来,useDefaultFilters会导致注册一个默认的AnnotationTypeFilter类型的includeFilters, 这就相当于
+
+```java
+@ComponentScan(includeFilters = {
+        @Filter(type = FilterType.ANNOTATION, value = {Component.class})
+})
+```
+
+下面进入doScan()方法来看下
+
+![image-20201217142412978](img/spring/image-20201217142412978.png)
+
+进入findCandidateComponents()
+
+![image-20201217194954624](img/spring/image-20201217194954624.png)
+
+进入到ClassPathScanningCandidateComponentProvider#scanCandidateComponents()方法
+
+![image-20201218101556595](img/spring/image-20201218101556595.png)
+
+下面进入到第一个isCandidateComponent()方法，从下面验证：**在同一个ComponentScan中，excludeFilters的优先级大于includeFilters**
+
+![image-20201218102416027](img/spring/image-20201218102416027.png)
+
+我们上面还记得，如果@ComponentScan的useDefaultFilters = true的话，会向includeFilters中注册一个Filter，debug图片如下，可以看到，这是一个AnnotationTypeFilter，扫描的注解是Component。
+
+![image-20201218103050571](img/spring/image-20201218103050571.png)
+
+下面进入到AnnotationTypeFilter的match()方法，该方法定义在TypeFilter接口中。
+
+### 关于spring Environment的说明
+
+spring中的Environment是一个集成了properties和profile两个方面的集合。
+
+其中properties就是引用的各种配置了，包括配置中心的配置，系统配置，各种框架的配置，数据库的配置。
+
+而profile翻译成中文就是配置文件，很容易让人怀疑他表示的是类似于一系列配置的集合。而事实上他仅仅就是一个字符串而已，这个profile主要是配合@Profile功能使用。与配置没有什么关系。
+
+> PropertySource
+
+对于应用的各种的配置来说，其对应的接口是PropertySource, 这个PropertySource接口不是表示单个配置，而是表示一类配置的集合。**他有一个name属性和一个T类型的source属性，这个T类型中存储的就是具体的配置了。**
+
+![image-20210101200808260](img/spring/image-20210101200808260.png)
+
+这个接口有众多的子类，表示不同种类的配置，如EnumerablePropertySource（可枚举的PropertySource，即通过getPropertyNames()方法可以获取所有的keyName），MapPropertySource，CommandLinePropertySource等等子类，但是查看他们的方法你会发现，**绝大多数的PropertySource只允许在创建的时候通过构造函数传入具体的配置，而不允许创建完之后改变配置**。
+
+![image-20210101201824917](img/spring/image-20210101201824917.png)
+
+> PropertySources
+
+PropertySources接口对应的就是多个PropertySource的集合了，一般一个应用的所有的配置都放在这里面。
+
+PropertySources有一个重要的实现：**MutablePropertySources，意为可变的PropertySources，但是这里的可变并不是配置可变。而是提供了操控PropertySource优先级的能力。**
+
+一个应用中那么多配置，重要有个优先级吧，查看MutablePropertySources你会发现他有个List<PropertySource<?>>的属性，这里面保存的就是各种PropertySource了，**在List里面排在前面的即index小的优先级最高**。（apollo设置spring配置的时候会调用它的addFirst方法把配置放在最前面，即index=0的位置，这样就保证了配置中心的配置优先级最高）。
+
+这是调试的截图：
+
+![image-20210101212124270](img/spring/image-20210101212124270.png)
+
+可以看到一个PropertySources中保存了非常多的PropertySource对象，而一个PropertySource对象中又保存了非常多的配置。
+
+**并且可以发现他同样没有提供修改配置的方法，只提供了修改PropertySource优先级的方法以及一个replace方法。**
+
+![image-20210101203715905](img/spring/image-20210101203715905.png)
+
+> PropertyResolver与ConfigurablePropertyResolver
+
+有了PropertySources保存各种配置项，可以通过其获得配置。但是如果我们需要将配置项解析为不同类型呢？比如需要的配置项是Int，而需要的配置项的类型是String类型。如果我们需要解析一个字符串中的占位符（${prop.name:defaultVale}）并把它替换为对应的配置项呢？如果我们需要验证某个必要的配置项在PropertySources中是否存在呢？这时候PropertyResolver接口就来了。
+
+但是呢，其子类AbstractPropertyResolver并不自己解析属性，而是依赖PropertyPlaceholderHelper和DefaultConversionService这两个类来进行解析属性（单一责任原则？）
+
+
+
+![image-20210101213642464](img/spring/image-20210101213642464.png)
+
+### 关于CommandLineRunner和ApplicationRunner接口的说明
+
+https://cloud.tencent.com/developer/article/1524264
+
+https://www.jianshu.com/p/5d4ffe267596
+
+![image-20210113202117314](img/spring/image-20210113202117314.png)
+
+![image-20210113202146309](img/spring/image-20210113202146309.png)
+
+
+
+> 主要功能（总结现在前面）
+
+- Spring boot的`CommandLineRunner`和`ApplicationRunner`接口主要用于实现在应用初始化后，去执行一段代码块逻辑，这段初始化代码在整个应用生命周期内**只会执行一次**。
+
+- 只需要实现这两个接口并实现其中的方法，然后像普通的bean一样注册到spring容器里面即可。
+
+- **可以在这两个接口的实现类内autowired依赖**，因为接口调用的时候context已经创建出来了。
+
+- **在这两个接口中抛出异常将会导致spring容器启动失败**
+- 通过标注@Order注解或者实现Order，PriorityOrdered接口来控制执行顺序，**PriorityOrdered整体优先Order**，**顺序的数字越低优先级越高，未实现Order，PriorityOrdered接口或者标注@Order默认最低优先级**（看源码可以知道，这两个类是放在一个list里面比较顺序，这就**导致了这两个接口的实现类根据顺序交替执行，而不是先全部执行完某一类接口的实现类在执行另一个接口的实现类**）
+
+> 两者区别
+
+![img](img/spring/5225109-f48c0c7425b63375.png)
+
+发现二者的官方javadoc一样，区别在于接收的参数不一样。**CommandLineRunner的参数是最原始的参数，没有做任何处理。ApplicationRunner的参数是ApplicationArguments，是对原始参数做了进一步的封装。**
+
+ApplicationArguments是对参数（main方法）做了进一步的处理，可以解析--name=value的，我们就可以通过name来获取value（而CommandLineRunner只是获取--name=value）
+
+![img](img/spring/5225109-6525665739459c55.png)
+
+**--getOptionNames()方法可以得到foo这样的key的集合。**
+ **--getOptionValues(String name)方法可以得到bar这样的集合的value。**
+
+```java
+@Component
+public class MyApplicationRunner implements ApplicationRunner{
+
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        System.out.println("===MyApplicationRunner==="+                           Arrays.asList(args.getSourceArgs()));
+        System.out.println("===getOptionNames========"+args.getOptionNames());
+        System.out.println("===getOptionValues======="+args.getOptionValues("foo"));
+System.out.println("==getOptionValues========"+args.getOptionValues("developer.name"));
+    }
+}
+// 启动类
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class,args);
+    }
+}
+```
+
+![img](img/spring/5225109-0769f6adc418896d.png)
+
+打印结果：
+
+![image-20210113203527632](img/spring/image-20210113203527632.png)
+
+> 顺序控制
+
+可以通过标注@Order注解或者实现Order，PriorityOrdered接口来控制CommandLineRunner和ApplicationRunner的顺序，**PriorityOrdered默认比Order优先**，**顺序的数字越低优先级越高，未实现Order接口或者标注@Order默认最低优先级**（看源码可以知道，这两个类是放在一个list里面比较顺序，这就导致了这两个类会交替执行，而不是先全部执行完某一类接口的实现类在执行另一个接口的实现类）
+
+> 源码解析
+
+在spring-boot1.5.22.release版本中，这两个接口的实现执行的时机在于SpringApplication初始化之后，调用的run方法中被调用的。
+
+~~~java
+public ConfigurableApplicationContext run(String... args) {
+		// 创建 StopWatch 对象，用于统计 run 方法启动时长。
+		StopWatch stopWatch = new StopWatch();
+		// 启动统计。
+		stopWatch.start();
+		ConfigurableApplicationContext context = null;
+		FailureAnalyzers analyzers = null;
+		// 配置 headless 属性。
+		configureHeadlessProperty();
+		// 获得 SpringApplicationRunListener 数组，
+		// 该数组封装于 SpringApplicationRunListeners 对象的 listeners 中。
+		SpringApplicationRunListeners listeners = getRunListeners(args);
+		// 启动监听，遍历 SpringApplicationRunListener 数组每个元素，并执行。
+		listeners.starting();
+		try {
+			//创建 ApplicationArguments 对象
+			ApplicationArguments applicationArguments = new DefaultApplicationArguments(
+					args);
+			// 加载属性配置，包括所有的配置属性（如：application.properties 中和外部的属性配置）
+			ConfigurableEnvironment environment = prepareEnvironment(listeners,
+					applicationArguments);
+			// 打印 Banner
+			Banner printedBanner = printBanner(environment);
+			// 创建容器
+			context = createApplicationContext();
+            analyzers = new FailureAnalyzers(context);
+			// 准备容器，组件对象之间进行关联
+			prepareContext(context, environment, listeners, applicationArguments,
+					printedBanner);
+			// 初始化容器
+			refreshContext(context);
+			// 初始化操作之后执行。
+			afterRefresh(context, applicationArguments);
+            // 调用监听器的完成动作
+            listeners.finished(context, null);
+			// 停止时长统计
+			stopWatch.stop();
+			// 打印启动日志
+			if (this.logStartupInfo) {
+				new StartupInfoLogger(this.mainApplicationClass)
+						.logStarted(getApplicationLog(), stopWatch);
+			}
+            return context;
+		}catch (Throwable ex) {
+			// 异常处理
+			handleRunFailure(context, listeners, analyzers, ex);
+			throw new IllegalStateException(ex);
+		}
+		
+	}
+~~~
+
+其中在afterRefresh方法中， 因为是在afterRefresh中调用这两个接口，所以其他的bean都已经被实例化好了（懒加载除外），所以可以在这两个类里面使用自动注入。
+
+~~~java
+protected void afterRefresh(ConfigurableApplicationContext context, ApplicationArguments args) {
+        // 调用CommandLineRunner和ApplicationRunner
+		callRunners(context, args);
+	}
+~~~
+
+~~~java
+	private void callRunners(ApplicationContext context, ApplicationArguments args) {
+		List<Object> runners = new ArrayList<Object>();
+        
+       // 获取容器中所有实现了ApplicationRunner接口的类
+		runners.addAll(context.getBeansOfType(ApplicationRunner.class).values());
+        // 获取容器中所有实现了ApplicationRunner接口的类
+		runners.addAll(context.getBeansOfType(CommandLineRunner.class).values());
+        // 通过Order接口，@Order注解，PriorityOrdered接口来排序
+		AnnotationAwareOrderComparator.sort(runners);
+		for (Object runner : new LinkedHashSet<Object>(runners)) {
+            // 调用两个类的run方法
+			if (runner instanceof ApplicationRunner) {
+				callRunner((ApplicationRunner) runner, args);
+			}
+			if (runner instanceof CommandLineRunner) {
+				callRunner((CommandLineRunner) runner, args);
+			}
+		}
+	}
+
+	private void callRunner(ApplicationRunner runner, ApplicationArguments args) {
+		try {
+			(runner).run(args);
+		}
+		catch (Exception ex) {
+			throw new IllegalStateException("Failed to execute ApplicationRunner", ex);
+		}
+	}
+
+	private void callRunner(CommandLineRunner runner, ApplicationArguments args) {
+		try {
+            // 这里可以看到调用CommandLineRunner传入的参数其实就是ApplicationArguments.getSourceArgs()
+			(runner).run(args.getSourceArgs());
+		}
+		catch (Exception ex) {
+			throw new IllegalStateException("Failed to execute CommandLineRunner", ex);
+		}
+	}
+~~~
+
+下面来看下AnnotationAwareOrderComparator如何对两个接口排序的呢？一路追踪下去可以到实现了Comparator<Object>接口的OrderComparator类的doCompare方法，
+
+~~~java
+    private int doCompare(Object o1, Object o2, OrderSourceProvider sourceProvider) {
+        // 判断两者是否是实现的同一个接口，PriorityOrdered接口整体优先Order接口
+        // 这里没有对@Order注释做处理，不知道为什么，但是文档写着@Order接口是有用的。。。。
+		boolean p1 = (o1 instanceof PriorityOrdered);
+		boolean p2 = (o2 instanceof PriorityOrdered);
+		if (p1 && !p2) {
+			return -1;
+		}
+		else if (p2 && !p1) {
+			return 1;
+		}
+        // 不是实现同一个接口的话，上面就return出去了，所以这里比较实现同一个接口的类的顺序
+		int i1 = getOrder(o1, sourceProvider);
+		int i2 = getOrder(o2, sourceProvider);
+		return (i1 < i2) ? -1 : (i1 > i2) ? 1 : 0;
+	}
+
+	protected int getOrder(Object obj) {
+		Integer order = findOrder(obj);
+        // 这里如果不是Order的实现类的话就是最低的优先级了
+		return (order != null ? order : Ordered.LOWEST_PRECEDENCE);
+	}
+
+	private int getOrder(Object obj, OrderSourceProvider sourceProvider) {
+		Integer order = null;
+		if (sourceProvider != null) {
+			Object orderSource = sourceProvider.getOrderSource(obj);
+			if (orderSource != null && orderSource.getClass().isArray()) {
+				Object[] sources = ObjectUtils.toObjectArray(orderSource);
+				for (Object source : sources) {
+					order = findOrder(source);
+					if (order != null) {
+						break;
+					}
+				}
+			}
+			else {
+				order = findOrder(orderSource);
+			}
+		}
+		return (order != null ? order : getOrder(obj));
+        
+    protected Integer findOrder(Object obj) {
+		return (obj instanceof Ordered ? ((Ordered) obj).getOrder() : null);
+	}
+~~~
+
+### 关于ResolvableType的说明
+
+参看https://blog.csdn.net/u012881904/article/details/80813294
+
+[关于java Type的说明](#关于java.lang.reflect.Type的说明)
+
+该类主要用于解析字段，方法返回值和入参，类定义的类型，包括泛型。
+
+如果使用原生的解析方法，类和字段，还有方法上的解析方法都不一样，麻烦。
+
+ResolvableType封装了上述的解析方法，统一了api，使用该类可以轻松解析类型。
+
+创建ResolvableType的方法主要是使用forXXX来创建的
+
+~~~java
+public static ResolvableType forClass(@Nullable Class<?> clazz)
+public static ResolvableType forRawClass(@Nullable Class<?> clazz)
+public static ResolvableType forClassWithGenerics(Class<?> clazz, Class<?>... generics)
+public static ResolvableType forConstructorParameter(Constructor<?> constructor, int parameterIndex)
+public static ResolvableType forField(Field field)
+public static ResolvableType forInstance(Object instance) 
+
+// 这里的implementationClass表示实现类，因为有些类是带有泛型的
+// 比如直接forClass(List.class), 那么list上面的泛型是K，给定一个实现类MyList exends List<String>
+// 那么forClass(List.class, MyList.class)获得的list上面的泛型是string
+public static ResolvableType forClass(Class<?> baseType, Class<?> implementationClass)
+// 字段与上面同理，因为字段上面的泛型有可能需要根据实现类来具体决定
+public static ResolvableType forField(Field field, Class<?> implementationClass)
+~~~
+
+解析字段上面的泛型
+
+~~~java
+    public class Three<K,V,F> {}
+
+    public interface Two<K,V> {}
+
+    public class MySimple extends Three<List<String>, Map<String, Number>, Integer[]> implements Two<ArrayList<Double>, AbstractMap<Long, Character>>{}
+
+    public MySimple mySimple = new MySimple();
+
+    @Test
+    @SneakyThrows
+    public void test(){
+        ResolvableType resolvableType =
+            ResolvableType.forField(ReflectionUtils.findField(ResolvableTypeTest.class, "mySimple"));
+        ResolvableType three = resolvableType.getSuperType();
+        ResolvableType number = three.getGeneric(1, 1); // 等同于three.getGeneric(1).getGeneric(1)，下标从0开始。找不到返回NONE
+        System.out.println(number);
+
+        Class<?> resolve = number.resolve(); // 返回对应的class类，无法解析返回null
+        System.out.println(resolve);
+
+        Arrays.stream(three.getGeneric(1).getGenerics()).forEach(System.out::println); //获取Map上所有的泛型
+
+        System.out.println(three.getGeneric(2).isArray()); // 判断当前代表的类型是否为数组
+        System.out.println(three.getGeneric(2).getComponentType()); // 获得数组的元素类型
+
+        ResolvableType two = resolvableType.getInterfaces()[0];
+        System.out.println(ResolvableType.forRawClass(two.getGeneric(0).resolve())); // rawClass, 同forClass但是消除了泛型
+
+        System.out.println(two.getGeneric(0).as(AbstractList.class)); // as,类似于强转，将ArrayList<Double>转换为AbstractList<Double>
+
+        System.out.println(two.resolveGeneric(1, 0)); // 同getGeneric(1，0).resolve();
+    }
+~~~
+
+
+
+### 关于TypeDescriptor的所用
+
+与ResolvableType使用类似， ResolvableType主要用于解析类型，而该类主要用于描述一个类型。
+
+~~~java
+public class Three<K,V,F> {}
+
+    public interface Two<K,V> {}
+
+    public class MySimple extends Three<List<String>, Map<String, Number>, Integer[]>
+        implements Two<ArrayList<Double>, AbstractMap<Long, Character>> {}
+
+    public MySimple mySimple = new MySimple();
+
+    @Test
+    @SneakyThrows
+    public void test(){
+        TypeDescriptor typeDescriptor = TypeDescriptor.valueOf(MySimple.class);
+        TypeDescriptor object = TypeDescriptor.forObject(mySimple);
+        ResolvableType resolvableType = typeDescriptor.getResolvableType(); // 获取ResolvableType
+        typeDescriptor.getType(); // 获取具体的Type类型
+        typeDescriptor.getObjectType(); // 同getType，但是会把基础类型转为包装类型
+
+        TypeDescriptor abstractList = TypeDescriptor.collection(AbstractList.class, TypeDescriptor.valueOf(String.class)); //AbstractList<String>
+        TypeDescriptor list = abstractList.upcast(List.class); // 向上强转为List<String>
+        TypeDescriptor arrayList = abstractList.narrow(Lists.newArrayList()); // 向下强转为ArrayList<String>
+        abstractList.getElementTypeDescriptor(); // 获取集合的元素类型
+
+        TypeDescriptor map =
+            TypeDescriptor.map(Map.class, TypeDescriptor.valueOf(String.class), TypeDescriptor.valueOf(Integer.class));
+        map.isMap();
+        map.getMapKeyTypeDescriptor();
+        map.getMapValueTypeDescriptor();
+
+        TypeDescriptor array = TypeDescriptor.array(TypeDescriptor.valueOf(String.class));
+        array.getElementTypeDescriptor(); //获取数组元素的类型
+    }
+~~~
+
+
+
+
+
+### 关于DefaultConversionService的说明
+
+这个类是Spring用来进行数据转换用的，比如有些数据需要从set转换到list，从string到datatime。这是所有数据转换的一个入口。
+
+所有负责具体的转换功能的转换器都注册到这里面来，然后转换时指定数据源，源类型，目的类型就行了，DefaultConversionService会根据源类型和目的类型自动选择转换器来进行转换。所以这里涉及到两个概念：负责具体转换工作的转换器（converter），集合这些转换器的转换服务（conversion service）
+
+> 转换器基本接口
+
+![image-20211230141228600](img/spring/image-20211230141228600.png)
+
+Converter表示1:1的转换器，只能只能将一种类型转换为另一种类型
+
+~~~java
+// S,T表示源类型和目的类型
+public interface Converter<S, T> {
+	T convert(S source);
+}
+~~~
+
+ConverterFactory表示1：N的转换器，能将一种类型转换为多种类型的数据
+
+```java
+// S,R表示源类型和目的类型
+public interface ConverterFactory<S, R> {
+   <T extends R> Converter<S, T> getConverter(Class<T> targetType);
+}
+```
+
+GenericConverter表示N：N的转换器
+
+~~~java
+// getConvertibleTypes返回的ConvertiblePair中的sourceType和targetType表示源类型和目的类型
+// 因为GenericConverter表示N：N所以返回的是一个Set。
+public interface GenericConverter {
+	Set<ConvertiblePair> getConvertibleTypes();
+    
+	Object convert(@Nullable Object source, TypeDescriptor sourceType, TypeDescriptor targetType);
+    
+    class ConvertiblePair {
+		private final Class<?> sourceType;
+		private final Class<?> targetType;
+    }
+}
+~~~
+
+ConditionalConverter表示有条件的转换器。这个接口常常与上面三个接口一同被其他类继承，表示继承类是在特定条件下才能完成上面三个类的转换功能的。**常常用来处理泛型**
+
+~~~java
+public interface ConditionalConverter {
+	boolean matches(TypeDescriptor sourceType, TypeDescriptor targetType);
+}
+~~~
+
+设计原则是：<font color=red>**只在Converter<S, T>，ConverterFactory<S, R>，GenericConverter的ConvertiblePair做类型的限制，而对泛型的限制放在ConditionalConverter上面。**</font>
+
+比如Converter<Map, List>和Converter<Map<String,Integer>, List\<String>>都会让spring认为这个转换器能够将所有的Map转换为List而不管泛型（至于为什么源码里面会讲到）。如果想表达这个转换器只能从Map<String,Integer>转换到List\<String>，请继承Converter<Map,List>和ConditionalConverter，只在Converter<Map,List>上面做Map到List类型的限制，然后在ConditionalConverter的matches方法里面进行泛型的判断。
+
+> 转换服务基本接口
+
+![image-20211230153148603](img/spring/image-20211230153148603.png)
+
+ConversionService表示一个转换服务，能够进行数据转换
+
+~~~java
+public interface ConversionService {
+	boolean canConvert(@Nullable Class<?> sourceType, Class<?> targetType);
+
+	boolean canConvert(@Nullable TypeDescriptor sourceType, TypeDescriptor targetType);
+
+	<T> T convert(@Nullable Object source, Class<T> targetType);
+    
+	Object convert(@Nullable Object source, @Nullable TypeDescriptor sourceType, TypeDescriptor targetType);
+}
+~~~
+
+ConverterRegistry表示对Converter的增删功能
+
+~~~java
+public interface ConverterRegistry {
+    
+	void addConverter(Converter<?, ?> converter);
+
+	<S, T> void addConverter(Class<S> sourceType, Class<T> targetType, Converter<? super S, ? extends T> converter);
+
+	void addConverter(GenericConverter converter);
+
+	void addConverterFactory(ConverterFactory<?, ?> factory);
+
+	void removeConvertible(Class<?> sourceType, Class<?> targetType);
+}
+~~~
+
+ConfigurableConversionService是上面两个接口的结合，GenericConversionService实现了上面两个接口的所有方法，而DefaultConversionService只是在构造方法里面添加了许多默认的转换器，所以这里只讲GenericConversionSerivce
+
+> GenericConversionSerivce源码
+
+基本逻辑就是对于添加到GenericConversionService里面的Converter和ConverterFactory分别包装成ConditionalGenericConverter类型的ConverterAdapter和ConverterFactoryAdapter，然后获取到对应的ConvertiblePair，保存在一个内部类Converters的Map里面。在转换的时候，将源类型和目的类型包装成ConvertiblePair，然后从Map里面获取对应的转换器。
+
+> 添加Converter源码
+
+~~~java
+	public void addConverter(Converter<?, ?> converter) {
+        // 这里获取到实现类的Converter接口上的泛型
+		ResolvableType[] typeInfo = getRequiredTypeInfo(converter.getClass(), Converter.class);
+		if (typeInfo == null && converter instanceof DecoratingProxy) {
+			typeInfo = getRequiredTypeInfo(((DecoratingProxy) converter).getDecoratedClass(), Converter.class);
+		}
+		if (typeInfo == null) {
+			throw new IllegalArgumentException("Unable to determine source type <S> and target type <T> for your " +
+					"Converter [" + converter.getClass().getName() + "]; does the class parameterize those types?");
+		}
+        // 包装成一个ConditionalGenericConverter到converter里面
+		addConverter(new ConverterAdapter(converter, typeInfo[0], typeInfo[1]));
+	}
+
+	private ResolvableType[] getRequiredTypeInfo(Class<?> converterClass, Class<?> genericIfc) {
+        // 这里获取到forClass获取到Converter的实现类的类型，然后as方法强转为Converter，不同可以查看ResolvableType的说明
+		ResolvableType resolvableType = ResolvableType.forClass(converterClass).as(genericIfc);
+        // 获取Converter接口上的两个泛型
+		ResolvableType[] generics = resolvableType.getGenerics();
+		if (generics.length < 2) {
+			return null;
+		}
+		Class<?> sourceType = generics[0].resolve();
+		Class<?> targetType = generics[1].resolve();
+		if (sourceType == null || targetType == null) {
+			return null;
+		}
+		return generics;
+	}
+~~~
+
+上面基本上就是获取实现类的Converter接口上的两个泛型，然后包装成ConverterAdapter，下面看看这个包装类
+
+~~~java
+private final class ConverterAdapter implements ConditionalGenericConverter {
+
+		private final Converter<Object, Object> converter;
+
+    	// 这个类保存了源类型和目的类型的Class，并且重写的equals方法
+		private final ConvertiblePair typeInfo;
+
+		private final ResolvableType targetType;
+
+		public ConverterAdapter(Converter<?, ?> converter, ResolvableType sourceType, ResolvableType targetType) {
+			this.converter = (Converter<Object, Object>) converter;
+            // 注意这里的toClass，因为ConvertiblePair里面保存的是Class，这里toClass也就意味着丢掉了sourceType和targetType上面的泛型。
+			this.typeInfo = new ConvertiblePair(sourceType.toClass(), targetType.toClass());
+			this.targetType = targetType;
+		}
+
+		@Override
+		public Set<ConvertiblePair> getConvertibleTypes() {
+			return Collections.singleton(this.typeInfo);
+		}
+
+		@Override
+		public boolean matches(TypeDescriptor sourceType, TypeDescriptor targetType) {
+			// Check raw type first...
+			if (this.typeInfo.getTargetType() != targetType.getObjectType()) {
+				return false;
+			}
+			// Full check for complex generic type match required?
+			ResolvableType rt = targetType.getResolvableType();
+			if (!(rt.getType() instanceof Class) && !rt.isAssignableFrom(this.targetType) &&
+					!this.targetType.hasUnresolvableGenerics()) {
+				return false;
+			}
+			return !(this.converter instanceof ConditionalConverter) ||
+					((ConditionalConverter) this.converter).matches(sourceType, targetType);
+		}
+
+		@Override
+		@Nullable
+		public Object convert(@Nullable Object source, TypeDescriptor sourceType, TypeDescriptor targetType) {
+			if (source == null) {
+				return convertNullSource(sourceType, targetType);
+			}
+			return this.converter.convert(source);
+		}
+
+		@Override
+		public String toString() {省略}
+	}
+~~~
+
+
+
+
+### 关于ConfigurationPropertySources.attach的说明
+
+![image-20220109140344980](img/spring/image-20220109140344980.png)
+
+这个函数在SpringApplication中使用了两次，其实这两个方法用处不打，不是说明很重要的作用。
+
+个人觉得是和Spring Boot的relaxed bind（松散绑定）有关系，即在application.property中定义一个my-property，通过environment.getProperty("myproperty")也能够获取。可以不用严格指定。
+
+
+
+其实现原理大概就是将environment中的MutablePropertySource中的PropertySource包装起来，变成一个ConfigurationPropertySourcesPropertySource，然后加入MutablePropertySource中并且优先级设置高一点，取变量的时候先从ConfigurationPropertySourcesPropertySource中取，他会将my-property映射成各种格式的属性进行获取。源码如下
+
+~~~java
+public static void attach(Environment environment) {
+		public static void attach(Environment environment) {
+		Assert.isInstanceOf(ConfigurableEnvironment.class, environment);
+		MutablePropertySources sources = ((ConfigurableEnvironment) environment).getPropertySources();
+		PropertySource<?> attached = sources.get(ATTACHED_PROPERTY_SOURCE_NAME);
+		if (attached != null && attached.getSource() != sources) {
+			sources.remove(ATTACHED_PROPERTY_SOURCE_NAME);
+			attached = null;
+		}
+		if (attached == null) {
+            // 将MutablePropertySources包装起来变成ConfigurationPropertySourcesPropertySource，还包装了两层，并且还是调用的addFirst添加到优先级第一的位置
+			sources.addFirst(new ConfigurationPropertySourcesPropertySource(ATTACHED_PROPERTY_SOURCE_NAME,
+					new SpringConfigurationPropertySources(sources)));
+		}
+	}
+~~~
+
+既然ConfigurationPropertySourcesPropertySource继承了PropertySource<Iterable<ConfigurationPropertySource>>，直接看他的getProperty方法
+
+~~~java
+	@Override
+	public Object getProperty(String name) {
+		ConfigurationProperty configurationProperty = findConfigurationProperty(name);
+		return (configurationProperty != null) ? configurationProperty.getValue() : null;
+	}
+
+	private ConfigurationProperty findConfigurationProperty(String name) {
+		try {
+            // 注意这里的ConfigurationPropertyName.of
+			return findConfigurationProperty(ConfigurationPropertyName.of(name, true));
+		}
+		catch (Exception ex) {
+			return null;
+		}
+	}
+
+	private ConfigurationProperty findConfigurationProperty(ConfigurationPropertyName name) {
+		if (name == null) {
+			return null;
+		}
+        // 注意看这里的for，getSource返回的就是SpringConfigurationPropertySources
+		for (ConfigurationPropertySource configurationPropertySource : getSource()) {
+			ConfigurationProperty configurationProperty = configurationPropertySource.getConfigurationProperty(name);
+			if (configurationProperty != null) {
+				return configurationProperty;
+			}
+		}
+		return null;
+	}
+~~~
+
+上面的getSource返回的是attach方法里面new的SpringConfigurationPropertySources，并且是for循环这个对象，那么这个对象就应该实现迭代器的接口
+
+~~~java
+class SpringConfigurationPropertySources implements Iterable<ConfigurationPropertySource> {
+    	@Override
+	public Iterator<ConfigurationPropertySource> iterator() {
+        // 这里的iterator是MutablePropertySource的迭代器
+		return new SourcesIterator(this.sources.iterator(), this::adapt);
+	}
+    private static class SourcesIterator implements Iterator<ConfigurationPropertySource> {
+        		@Override
+		public boolean hasNext() {
+			return fetchNext() != null;
+		}
+        private ConfigurationPropertySource fetchNext() {
+            if (this.next == null) {
+                if (this.iterators.isEmpty()) {
+                    return null;
+                }
+                if (!this.iterators.peek().hasNext()) {
+                    this.iterators.pop();
+                    return fetchNext();
+                }
+                // 这里调用MutablePropertySource的迭代器，迭代他里面的PropertySource
+                // 但是这里就会有个问题就是，MutablePropertySource.getProperty会调用ConfigurationPropertySourcesPropertySource，继而调用上面的for，然后调用到这里，这个迭代器的next还是ConfigurationPropertySourcesPropertySource，就变成了递归调用了
+                PropertySource<?> candidate = this.iterators.peek().next();
+                if (candidate.getSource() instanceof ConfigurableEnvironment) {
+                    push((ConfigurableEnvironment) candidate.getSource());
+                    return fetchNext();
+                }
+                // 这里调用了ignore，会忽略ConfigurationPropertySourcesPropertySource，StubPropertySource，RandomValuePropertySource，继而解决掉了递归调用
+                if (isIgnored(candidate)) {
+                    return fetchNext();
+                }
+                // 这里调用adapter的apply方法，将PropertySource适配成ConfigurationPropertySource
+                // 这里的adapter就是SpringConfigurationPropertySources::adapter
+                this.next = this.adapter.apply(candidate);
+            }
+            return this.next;
+        }
+        private boolean isIgnored(PropertySource<?> candidate) {
+			return (isRandomPropertySource(candidate) || candidate instanceof StubPropertySource
+					|| candidate instanceof ConfigurationPropertySourcesPropertySource);
+		}
+        
+    }
+    
+}
+~~~
+
+上面SpringConfigurationPropertySources的iterator返回了一个SourcesIterator，那么直接看这个迭代器的hasNext方法，hasNext方法也是调用fetchNext。看fetchNext，这个方法将MutablePropertySource中的PropertySource拿出来，然后将ConfigurationPropertySourcesPropertySource，StubPropertySource，RandomValuePropertySource（这里暂时就知道这一个PropertySource符合isRandomPropertySource方法）三种类型过滤掉。剩下的PropertySoruce通过SpringConfigurationPropertySources::adapter变成ConfigurationPropertySource。
+
+adapter方法也还是调用的SpringConfigurationPropertySource的from方法
+
+~~~java
+	static SpringConfigurationPropertySource from(PropertySource<?> source) {
+		Assert.notNull(source, "Source must not be null");
+		PropertyMapper[] mappers = getPropertyMappers(source);
+		if (isFullEnumerable(source)) {
+			return new SpringIterableConfigurationPropertySource((EnumerablePropertySource<?>) source, mappers);
+		}
+		return new SpringConfigurationPropertySource(source, mappers);
+	}
+~~~
+
+上面的getPropertyMappers(source)返回的就是属性名的映射器，能够将name映射成别的格式。
+
+直接看SpringConfigurationPropertySource，他既然实现了ConfigurationPropertySource接口，就有getConfigurationProperty这个方法
+
+```java
+public ConfigurationProperty getConfigurationProperty(ConfigurationPropertyName name) {
+   if (name == null) {
+      return null;
+   }
+   for (PropertyMapper mapper : this.mappers) {
+      try {
+         for (String candidate : mapper.map(name)) {
+            Object value = getPropertySource().getProperty(candidate);
+            if (value != null) {
+               Origin origin = PropertySourceOrigin.get(getPropertySource(), candidate);
+               return ConfigurationProperty.of(name, value, origin);
+            }
+         }
+      }
+      catch (Exception ex) {
+      }
+   }
+   return null;
+}
+```
+
+上面调用构造方法里面传入进来的mapper，调用map返回一个list，这个list就是mapper映射出来的其他格式的属性名。然后通过getPropertySource().getProperty(candidate)，这里getPropertySource()返回的就是被包装的PropertySource。
+
+解析到这里就算玩了，没怎么仔细看到底是怎么解析出来的，里面的代码蛮复杂的。点到为止算了。
+
+~~~~java
+	
+private ConfigurableEnvironment prepareEnvironment(SpringApplicationRunListeners listeners,
+			DefaultBootstrapContext bootstrapContext, ApplicationArguments applicationArguments) {
+		// Create and configure the environment
+		ConfigurableEnvironment environment = getOrCreateEnvironment();
+		configureEnvironment(environment, applicationArguments.getSourceArgs());
+		ConfigurationPropertySources.attach(environment);
+		listeners.environmentPrepared(bootstrapContext, environment);
+		DefaultPropertiesPropertySource.moveToEnd(environment);
+		configureAdditionalProfiles(environment);
+		bindToSpringApplication(environment);
+		if (!this.isCustomEnvironment) {
+			environment = new EnvironmentConverter(getClassLoader()).convertEnvironmentIfNecessary(environment,
+					deduceEnvironmentClass());
+		}
+		ConfigurationPropertySources.attach(environment);
+		return environment;
+	}
+~~~~
+
+最后在prepareEnvironment的最后有调用了一次attach方法应该是为了保证ConfigurationPropertySourcesPropertySource的优先级吧。
+
+
+
+
+
+
+
+### MutablePropertySources
+
+在spring中属性与配置的来源多种多样，比如系统属性，电脑的环境变量，application.yml，application.property，命令行参数，jdni。该类就是主要用于存放Spring中各种配置与属性，其内部是一个List的PropertySource，所以在List中顺序也就决定了属性的优先级。
+
+先从PropertySource说起，PropertySource表示一个具体的数据源，内部保存了具体的属性与属性值。每个数据源都有一个名称。
+
+需要注意的是，大多数的PropertySource没有提供对属性的add方法，只有get方法，所以一般认为PropertySource是只读的，只有在创建的时候可以设置属性值。又或者这个PropertySource是自己创建的，能够拿到内部保存数据的source引用，通过修改这个source达到修改PropertySource的目的
+
+~~~java
+public abstract class PropertySource<T> {
+
+	protected final String name;
+	protected final T source;
+    
+	public PropertySource(String name, T source) {
+		this.name = name;
+		this.source = source;
+	}
+	public boolean containsProperty(String name) {
+		return (getProperty(name) != null);
+	}
+    public abstract Object getProperty(String name);
+}
+~~~
+
+PropertySource有一个子类EnumerablePropertySource，在该方法中添加了一个getPropertyNames方法，很多类都继承了这个类
+
+~~~java
+public abstract class EnumerablePropertySource<T> extends PropertySource<T> {
+    public abstract String[] getPropertyNames();
+}
+~~~
+
+下面讲下几个常用的继承类，MapPropertySource和CompositePropertySource
+
+MapPropertySource就是一个map类型的数据源，通过传入name和Map类型的source来创建，这个source保存着内部的所有属性。
+
+~~~java
+public class MapPropertySource extends EnumerablePropertySource<Map<String, Object>> {
+
+	public MapPropertySource(String name, Map<String, Object> source) {
+		super(name, source);
+	}
+
+	@Override
+	public Object getProperty(String name) {
+		return this.source.get(name);
+	}
+
+	@Override
+	public boolean containsProperty(String name) {
+		return this.source.containsKey(name);
+	}
+
+	@Override
+	public String[] getPropertyNames() {
+		return StringUtils.toStringArray(this.source.keySet());
+	}
+
+}
+~~~
+
+CompositePropertySource表示一个复合的数据源，即可以将多个数据源组合成一个数据源。
+
+已知的一个使用场景是，如果spring内部定义了一个名为aaa的数据源，而你自己也定义了一个aaa的数据源，那么你可以将这两个数据源组合成一个数据源然后放入spring中。
+
+~~~java
+public class CompositePropertySource extends EnumerablePropertySource<Object> {
+	// 通过一个LinkedHashSet来保存添加进来的所有的PropertySource
+	private final Set<PropertySource<?>> propertySources = new LinkedHashSet<>();
+
+	@Override
+	public Object getProperty(String name) {
+		// 遍历所有的propertySources获取属性值，否则null
+	}
+
+	@Override
+	public boolean containsProperty(String name) {
+		// 遍历所有的propertySources判断是否contain
+	}
+
+	@Override
+	public String[] getPropertyNames() {
+		// 遍历所有的propertySources获取所有的name
+	}
+    
+	public void addPropertySource(PropertySource<?> propertySource) {
+		this.propertySources.add(propertySource);
+	}
+	public void addFirstPropertySource(PropertySource<?> propertySource) {
+		List<PropertySource<?>> existing = new ArrayList<>(this.propertySources);
+		this.propertySources.clear();
+		this.propertySources.add(propertySource);
+		this.propertySources.addAll(existing);
+	}
+    
+	public Collection<PropertySource<?>> getPropertySources() {
+		return this.propertySources;
+	}
+}
+~~~
+
+下面再回到MutablePropertySource
+
+~~~java
+public class MutablePropertySources implements PropertySources {
+
+	private final List<PropertySource<?>> propertySourceList = new CopyOnWriteArrayList<>();
+	public MutablePropertySources() { }
+
+	public MutablePropertySources(PropertySources propertySources) {
+		this();
+		for (PropertySource<?> propertySource : propertySources) {
+			addLast(propertySource);
+		}
+	}
+	@Override
+	public boolean contains(String name) {
+		for (PropertySource<?> propertySource : this.propertySourceList) {
+			if (propertySource.getName().equals(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
+	@Nullable
+	public PropertySource<?> get(String name) {
+		for (PropertySource<?> propertySource : this.propertySourceList) {
+			if (propertySource.getName().equals(name)) {
+				return propertySource;
+			}
+		}
+		return null;
+	}
+    // 添加一个PropertySource到第一位，也就是最大优先级
+	public void addFirst(PropertySource<?> propertySource) {
+		synchronized (this.propertySourceList) {
+			removeIfPresent(propertySource);
+			this.propertySourceList.add(0, propertySource);
+		}
+	}
+	// 添加到最后
+	public void addLast(PropertySource<?> propertySource) {
+		synchronized (this.propertySourceList) {
+			removeIfPresent(propertySource);
+			this.propertySourceList.add(propertySource);
+		}
+	}
+	// 添加到某某数据源前面
+	public void addBefore(String relativePropertySourceName, PropertySource<?> propertySource) {
+		assertLegalRelativeAddition(relativePropertySourceName, propertySource);
+		synchronized (this.propertySourceList) {
+			removeIfPresent(propertySource);
+			int index = assertPresentAndGetIndex(relativePropertySourceName);
+			addAtIndex(index, propertySource);
+		}
+	}
+	// 添加到某某数据源前面
+	public void addAfter(String relativePropertySourceName, PropertySource<?> propertySource) {
+		assertLegalRelativeAddition(relativePropertySourceName, propertySource);
+		synchronized (this.propertySourceList) {
+			removeIfPresent(propertySource);
+			int index = assertPresentAndGetIndex(relativePropertySourceName);
+			addAtIndex(index + 1, propertySource);
+		}
+	}
+	// 防护某某数据源的下标，也就是优先级
+	public int precedenceOf(PropertySource<?> propertySource) {
+		return this.propertySourceList.indexOf(propertySource);
+	}
+	// 删除某某数据源
+	public PropertySource<?> remove(String name) {
+		synchronized (this.propertySourceList) {
+			int index = this.propertySourceList.indexOf(PropertySource.named(name));
+			return (index != -1 ? this.propertySourceList.remove(index) : null);
+		}
+	}
+	// 替换
+	public void replace(String name, PropertySource<?> propertySource) {
+		synchronized (this.propertySourceList) {
+			int index = assertPresentAndGetIndex(name);
+			this.propertySourceList.set(index, propertySource);
+		}
+	}
+}
+~~~
+
+上面可以看到，MutablePropertySource就是对PropertySource的一个集合，并且添加了对优先级的控制以及具体属性的调用。
+
+
+
+### PropertySourcesPropertyResolver
+
+这个类在Spring的AbstractEnvironment中使用到了，AbstractEnvironment实现了ConfugurablePropertyResolver接口，而其实现就是调用也实现了ConfugurablePropertyResolver的PropertySourcesPropertyResolver的相同方法来实现的。换句话说就是AbstractEnvironment把ConfugurablePropertyResolver这个接口的实现委托给了PropertySourcesPropertyResolver去实现。
+
+上面说到了MutablePropertySources，这个类管理着各种数据源中的属性，提供了对数据源优先级的控制和具体属性的调用。也讲到了ConversionService转换服务，这个接口负责保存各种Converter，然后通过调用Converter将一个类型的变量转换为另一个类型的变量。
+
+那么现在这个类就是集成上面的两个功能以及一个PropertyPlaceholderHelper的功能。PropertyPlaceHolderHelper主要用于解析占位符。
+
+**这样PropertySourcesPropertyResolver这个类就可以先从MutablePropertySources中获取指定的属性，然后通过PropertyPlaceHolderHelper解析其中的占位符，解析完之后通过ConversionService将其转换为指定的类型返回。**
+
+下面先看接口，顶层接口是PropertyResolver，表示属性的解析器
+
+~~~java
+public interface PropertyResolver {
+	boolean containsProperty(String key);
+
+	String getProperty(String key);
+
+	String getProperty(String key, String defaultValue);
+
+	<T> T getProperty(String key, Class<T> targetType);
+
+	<T> T getProperty(String key, Class<T> targetType, T defaultValue);
+
+	String getRequiredProperty(String key) throws IllegalStateException;
+
+	<T> T getRequiredProperty(String key, Class<T> targetType) throws IllegalStateException;
+	// 解析属性，无法解析原样返回
+	String resolvePlaceholders(String text);
+	// 解析属性，无法解析报错
+	String resolveRequiredPlaceholders(String text) throws IllegalArgumentException;
+}
+~~~
+
+这个接口中定义了两类方法，一类是getProperty获取解析后的属性，一类是resolvePlaceholders解析指定的属性
+
+下面看看他的子接口ConfugurablePropertyResolver
+
+~~~java
+public interface ConfigurablePropertyResolver extends PropertyResolver {
+	ConfigurableConversionService getConversionService();
+	void setConversionService(ConfigurableConversionService conversionService);
+    
+	void setPlaceholderPrefix(String placeholderPrefix);
+	void setPlaceholderSuffix(String placeholderSuffix);
+
+	void setValueSeparator(@Nullable String valueSeparator);
+
+	void setIgnoreUnresolvableNestedPlaceholders(boolean ignoreUnresolvableNestedPlaceholders);
+
+	void setRequiredProperties(String... requiredProperties);
+	void validateRequiredProperties() throws MissingRequiredPropertiesException;
+}
+~~~
+
+这个接口提供了更为具体的抽象方法，如ConversionService的getter/setter，占位符前后缀的setter，占位符中变量名和默认值的分隔符，是否忽略无法解析的占位符，设置与验证必要的属性。
+
+下面看看他的抽象实现类AbstractPropertyResolver和实现类PropertySourcesPropertyResolver，ConfugurablePropertyResolver中添加的接口都是些getter/setter，没啥好看的，直接看重要的public \<T> T getProperty(String key, Class\<T> targetValueType)这个方法的实现，这个实现在PropertySourcesPropertyResolver中
+
+~~~java
+	public <T> T getProperty(String key, Class<T> targetValueType) {
+		return getProperty(key, targetValueType, true);
+	}
+	// resolveNestedPlaceholders表示是否解析占位符
+	protected <T> T getProperty(String key, Class<T> targetValueType, boolean resolveNestedPlaceholders) {
+		if (this.propertySources != null) {
+			for (PropertySource<?> propertySource : this.propertySources) {
+                // 从MutablePropertySources中获取属性值
+				Object value = propertySource.getProperty(key);
+				if (value != null) {
+                    // 如果是String并且需要解析占位符，调用resolveNestedPlaceholders
+					if (resolveNestedPlaceholders && value instanceof String) {
+						value = resolveNestedPlaceholders((String) value);
+					}
+                    // 调用ConversionService转换为指定的类
+					return convertValueIfNecessary(value, targetValueType);
+				}
+			}
+		}
+		return null;
+	}
+~~~
+
+上面两个重要的方法resolveNestedPlaceholders和convertValueIfNecessary都是在AbstractPropertyResolver类中，先看resolveNestedPlaceholders
+
+~~~java
+	// 根据ignoreUnresolvableNestedPlaceholders判断是否忽略不能解析的占位符调用不同的方法
+	protected String resolveNestedPlaceholders(String value) {
+		if (value.isEmpty()) {
+			return value;
+		}
+		return (this.ignoreUnresolvableNestedPlaceholders ?
+				resolvePlaceholders(value) : resolveRequiredPlaceholders(value));
+	}
+	// 下面两个方法都是一样的，就是创建的PlaceholderHelper不一样
+	public String resolvePlaceholders(String text) {
+		if (this.nonStrictHelper == null) {
+			this.nonStrictHelper = createPlaceholderHelper(true);
+		}
+		return doResolvePlaceholders(text, this.nonStrictHelper);
+	}
+	public String resolveRequiredPlaceholders(String text) throws IllegalArgumentException {
+		if (this.strictHelper == null) {
+			this.strictHelper = createPlaceholderHelper(false);
+		}
+		return doResolvePlaceholders(text, this.strictHelper);
+	}
+		// 创建PlaceholderHelper
+		private PropertyPlaceholderHelper createPlaceholderHelper(boolean ignoreUnresolvablePlaceholders) {
+          // 这里这几个参数很好理解，技术占位符前缀后缀等待
+		return new PropertyPlaceholderHelper(this.placeholderPrefix, this.placeholderSuffix,
+				this.valueSeparator, ignoreUnresolvablePlaceholders);
+	}
+	// 调用helper真正解析占位符，this::getPropertyAsRawString这个方法表示发现了占位符怎么来获取占位符中变量对应的值，也就是通过key获取value
+	// 可以看到调用了getPropertyAsRawString，顾名思义就是直接冲MutablePropertySources中直接获取对应变量的值，不再解析
+	private String doResolvePlaceholders(String text, PropertyPlaceholderHelper helper) {
+		return helper.replacePlaceholders(text, this::getPropertyAsRawString);
+	}
+	// 这个方法在AbstractPropertyResolver中是抽象方法，由PropertySourcesPropertyResolver实现的
+	protected String getPropertyAsRawString(String key) {
+        // false表示不再解析占位符
+		return getProperty(key, String.class, false);
+	}
+~~~
+
+看到这里就很好理解了，根据ignoreUnresolvableNestedPlaceholders创建了两个不一样的PropertyPlaceholderHelper，然后在让这个类去解析对应的属性。
+
+在看看convertValueIfNecessary，因为解析出来的属性是String类型的，需要将他转换为指定的T类型
+
+~~~java
+	protected <T> T convertValueIfNecessary(Object value, @Nullable Class<T> targetType) {
+		if (targetType == null) {
+			return (T) value;
+		}
+		ConversionService conversionServiceToUse = this.conversionService;
+		if (conversionServiceToUse == null) {
+			if (ClassUtils.isAssignableValue(targetType, value)) {
+				return (T) value;
+			}
+            // 单例模式，获取了DefaultConversionService
+			conversionServiceToUse = DefaultConversionService.getSharedInstance();
+		}
+		return conversionServiceToUse.convert(value, targetType);
+	}
+~~~
+
+如果this.conversionService为null，直接调用DefaultConversionService转换，在ConfigurablePropertyResolver中有conversionService的getter/setter的喔，可以通过这个来设置不使用默认的DefaultConversionService。
+
+
+
+### 关于Binder的说明
+
+这个类的作用主要用于从ConfigurationPropertySource或者Environment中获取指定的属性，然后转换为指定的类返回。与Environment的属性获取，转换的功能相同。
+
+除了可以绑定Environment还可以绑定ConfigurationPropertySource
+
+~~~java
+    public void test() {
+        StandardEnvironment environment = new StandardEnvironment();
+        // 获取Binder对象
+        Binder binder = Binder.get(environment);
+        
+        // 转换以及默认值
+        // 与Environment.getProperty(String name, Class<?> target)类型，但是更高级
+        String datestr = binder.bind("kaka.cream.date", Bindable.of(String.class))
+            // 映射为大写
+            .map(String::toUpperCase)
+            // 默认值
+            .orElse("bad date string");
+
+        // 绑定对象, 指定绑定的属性名，与返回的对象类型
+        Student propertiesC = binder.bind("kaka.cream.mail-c", Bindable.of(Student.class)).get();
+        
+        // 绑定Map
+        Map<String, Object> propMap =
+            binder.bind("fish.jdbc.datasource", Bindable.mapOf(String.class, Object.class)).get();
+        // 绑定List
+        List<String> list = binder.bind("kaka.cream.list", Bindable.listOf(String.class)).get();
+
+
+
+        // 绑定过程回调函数，高度定制
+        // BindHandler是处理绑定过程的事件的回调函数
+        LocalDate str =
+            binder.bind("kaka.cream.date", Bindable.of(LocalDate.class), new BindHandler() {
+                @Override
+                public <T> Bindable<T> onStart(ConfigurationPropertyName name, Bindable<T> target,
+                    BindContext context) {
+                    // name为指定属性名的ConfigurationPropertyName
+                    // target为指定的需要绑定的类
+                    System.out.println("绑定开始");
+                    return target;
+                }
+                @Override
+                public Object onSuccess(ConfigurationPropertyName name, Bindable<?> target, BindContext context,
+                    Object result) {
+                    System.out.println("绑定成功");
+                    return result;
+                }
+                @Override
+                public Object onFailure(ConfigurationPropertyName name, Bindable<?> target, BindContext context,
+                    Exception error) throws Exception {
+                    System.out.println("绑定失败");
+                    return "没有找到匹配的属性";
+                }
+
+                @Override
+                public void onFinish(ConfigurationPropertyName name, Bindable<?> target, BindContext context,
+                    Object result) throws Exception {
+                    System.out.println("绑定结束");
+                }
+            }).get();
+    }
+~~~
+
+
+
+### 关于SpringBoot读取配置文件的说明
+
+springboot版本为2.4.0， 2.4.0版本对读取配置文件做了很大的调整。
+
+> 调用时机
+
+读取配置文件主要在environmentPrepared的时候进行的。
+
+![image-20220111202742485](img/spring/image-20220111202742485.png)
+
+linsteners调用environmentPrepared发送事件给监听environmentPrepared事件的监听器
+
+**在spring-boot:2.4.0的spring.factories中定义了许多ApplicationListener，其中就有EnvironmentPostProcessorApplicationListener**
+
+![image-20220111203008844](img/spring/image-20220111203008844.png)
+
+**EnvironmentPostProcessorApplicationListener会在environmentPrepared的时候从所有的spring.factories中读取EnvironmentPostProcessor，然后将其实例化，并调用他们的postProcessEnvironment方法**
+
+~~~java
+public class EnvironmentPostProcessorApplicationListener implements SmartApplicationListener, Ordered {
+
+	public EnvironmentPostProcessorApplicationListener() {
+		this(EnvironmentPostProcessorsFactory
+				.fromSpringFactories(EnvironmentPostProcessorApplicationListener.class.getClassLoader()));
+	}
+    
+    	private void onApplicationEnvironmentPreparedEvent(ApplicationEnvironmentPreparedEvent event) {
+		ConfigurableEnvironment environment = event.getEnvironment();
+		SpringApplication application = event.getSpringApplication();
+        // getEnvironmentPostProcessors从所有spring.factories中读取EnvironmentPostProcessor然后实例化
+		for (EnvironmentPostProcessor postProcessor : getEnvironmentPostProcessors(event.getBootstrapContext())) {
+			postProcessor.postProcessEnvironment(environment, application);
+		}
+	}
+}
+~~~
+
+读取出来的EnvironmentPostProcessor中就有处理配置文件的ConfigDataEnvironmentPostProcessor这个类，并且这个类也在spring-boot:2.4.0的spring.factories中定义的
+
+![image-20220111204237785](img/spring/image-20220111204237785.png)
+
+
+
+
+
+> 创建ConfigDataEnvironment
+
+~~~java
+public class ConfigDataEnvironmentPostProcessor implements EnvironmentPostProcessor, Ordered {
+    
+	void postProcessEnvironment(ConfigurableEnvironment environment, ResourceLoader resourceLoader,
+			Collection<String> additionalProfiles) {
+		try {
+			this.logger.trace("Post-processing environment to add config data");
+			resourceLoader = (resourceLoader != null) ? resourceLoader : new DefaultResourceLoader();
+            // getConfigDataEnvironment获取ConfigDataEnvironment对象
+            // 然后调用processAndApply加载对象
+			getConfigDataEnvironment(environment, resourceLoader, additionalProfiles).processAndApply();
+		}
+        // 当environment中有spring.config.use-legacy-processing属性为true时，会报错
+        // 回退到2.4.之前的处理逻辑进行加载配置文件
+		catch (UseLegacyConfigProcessingException ex) {
+			this.logger.debug(LogMessage.format("Switching to legacy config file processing [%s]",
+					ex.getConfigurationProperty()));
+			postProcessUsingLegacyApplicationListener(environment, resourceLoader);
+		}
+	}
+}
+~~~
+
+~~~java
+	ConfigDataEnvironment(DeferredLogFactory logFactory, ConfigurableBootstrapContext bootstrapContext,
+			ConfigurableEnvironment environment, ResourceLoader resourceLoader, Collection<String> additionalProfiles) {
+        // 获取Binder，之前已经说过Binder的作用了
+		Binder binder = Binder.get(environment);
+        // 通过binder获取environment中的spring.config.use-legacy-processing属性，如果为true报错
+        // 被上层catch，并按照之前的2.4之前的版本逻辑加载配置文件
+		UseLegacyConfigProcessingException.throwIfRequested(binder);
+		this.logFactory = logFactory;
+		this.logger = logFactory.getLog(getClass());
+		this.notFoundAction = binder.bind(ON_NOT_FOUND_PROPERTY, ConfigDataNotFoundAction.class)
+				.orElse(ConfigDataNotFoundAction.FAIL);
+		this.bootstrapContext = bootstrapContext;
+		this.environment = environment;
+        // 加载ConfigDataLocationResolvers，这里也是通过读取spring.factories文件读取ConfigDataLocationResolver然后包装成ConfigDataLocationResolvers
+        // ConfigDataLocationResolver在spring.factories中指定了两个，分别是StandardConfigDataLocationResolver，ConfigTreeConfigDataLocationResolver
+        // ConfigDataLocationResolver的作用是解析配置文件
+        // StandardConfigDataLocationResolver用于解析本地的配置文件
+        // ConfigTreeConfigDataLocationResolver貌似（不确定，至少和云有关系）解析云服务器上的配置文件，类型k8s
+		this.resolvers = createConfigDataLocationResolvers(logFactory, bootstrapContext, binder, resourceLoader);
+		this.additionalProfiles = additionalProfiles;
+        // 加载ConfigDataLoaders，与上面类型，从spring.factories中读取ConfigDataLoader接口然后包装成ConfigDataLoaders
+        // ConfigDataLoaders在spring.factories中指定的实现类有两个ConfigTreeConfigDataLoader， StandardConfigDataLoader
+        // StandardConfigDataLoader用于加载本地的配置文件
+        // ConfigTreeConfigDataLoader用于加载云上的配置文件
+		this.loaders = new ConfigDataLoaders(logFactory, bootstrapContext);
+        // 创建ConfigDataEnvironmentContributors
+		this.contributors = createContributors(binder);
+	}
+~~~
+
+上面比较重要的方法就是创建ConfigDataLocationResolvers，ConfigDataLoaders和ConfigDataEnvironmentContributors，下面着重讲ConfigDataEnvironmentContributors这个核心类。
+
+> 核心类概念
+
+首先来理解下ConfigDataEnvironmentContributor这个核心类
+
+- **这个类表示的是能够向Environment对象提供配置的一个元素，他可以表示一个可能存在配置文件的路径（如file:/config），也可以表示一个配置文件（如application.yml），还可以表示yml中的一段代码块（代码块通过---分隔），也可以表示一个已经存在Environment中已经存在的PropertySource。根据Contributor的properties.imports决定**
+
+- **ConfigDataEnvironmentContributor是不可变的，与String类似，所以修改其中的某个属性都是重新创建一个。**
+- **ConfigDataEnvironmentContributor有一个Map<ImportPhase, List\<ConfigDataEnvironmentContributor>>类型的children成员变量，<font color=red>这意味着ConfigDataEnvironmentContributor是一个树形结构。</font>其实也好理解，当Contributer表示的是一个目录时，他的children就是这个解析出来的配置文件或者代码段。**
+- **如果Contributor表示的是文件或者代码段时，resource表示的是对应配置文件的Resource。propertySource表示读取到的配置，configurationPropertySource表示propertySource对应的ConfigurationPropertySource类型的包装类**
+- **每个Contributor都有Kind类型，用到的时候讲**
+- **ConfigDataEnvironmentContributor实现了Iterable接口，调用for的时候会深度优先递归children中ImportPhase.AFTER_PROFILE_ACTIVATION对应的List，然后深度递归Import.BEFORE_PROFILE_ACTIVATION对应的List，最后返回他自己。**
+- **<font color=red>properties中保存了一组imports，为List\<ConfigDataLocation>类型，这组imports表示需要解析的资源路径或者资源名称，这些imports会被解析最终转换为Contributior的children。</font>这一组imports很重要**
+
+~~~java
+class ConfigDataEnvironmentContributor implements Iterable<ConfigDataEnvironmentContributor> {
+
+	private final ConfigDataResource resource;
+
+	private final PropertySource<?> propertySource;
+
+	private final ConfigurationPropertySource configurationPropertySource;
+
+	private final ConfigDataProperties properties;
+
+	private final boolean ignoreImports;
+
+	private final Map<ImportPhase, List<ConfigDataEnvironmentContributor>> children;
+
+	private final Kind kind;
+}
+~~~
+
+
+
+ConfigDataEnvironmentContributors表示的是一组ConfigDataEnvironmentContributor的集合，里面封装了一个ConfigDataEnvironmentContributor root对象。**上面说过Contributor是一个树结构，那么这个root就是最终的根节点，所有的其他的Contributor都是他的子节点**
+
+并且Contributors实现了Iterable接口，对Contributors的for循环会转换为root对象的for循环。
+
+~~~java
+class ConfigDataEnvironmentContributors implements Iterable<ConfigDataEnvironmentContributor> {
+
+	private final Log logger;
+	private final ConfigDataEnvironmentContributor root;
+	private final ConfigurableBootstrapContext bootstrapContext;
+    	@Override
+	public Iterator<ConfigDataEnvironmentContributor> iterator() {
+		return this.root.iterator();
+	}
+}
+~~~
+
+
+
+> 创建ConfigDataEnvironmentContributors
+
+下面回到Contributos的创建
+
+~~~java
+	private ConfigDataEnvironmentContributors createContributors(Binder binder) {
+		this.logger.trace("Building config data environment contributors");
+		MutablePropertySources propertySources = this.environment.getPropertySources();
+		List<ConfigDataEnvironmentContributor> contributors = new ArrayList<>(propertySources.size() + 10);
+		PropertySource<?> defaultPropertySource = null;
+		for (PropertySource<?> propertySource : propertySources) {
+			if (DefaultPropertiesPropertySource.hasMatchingName(propertySource)) {
+				defaultPropertySource = propertySource;
+			}
+			else {
+				this.logger.trace(LogMessage.format("Creating wrapped config data contributor for '%s'",
+						propertySource.getName()));
+                // 对于所有已经存在在environment中的PropertySource，创建Contributor，kind为EXISTING
+		contributors.add(ConfigDataEnvironmentContributor.ofExisting(propertySource));
+			}
+		}
+        // 添加需要初始化的Contributor，kind为INITIAL_IMPORT
+		contributors.addAll(getInitialImportContributors(binder));
+		if (defaultPropertySource != null) {
+			this.logger.trace("Creating wrapped config data contributor for default property source");
+            // defaultPropertySource添加到最后，类型为EXISTING
+	contributors.add(ConfigDataEnvironmentContributor.ofExisting(defaultPropertySource));
+		}
+        // 创建Contributors，传入上面构建的List类型的contributors
+		return new ConfigDataEnvironmentContributors(this.logFactory, this.bootstrapContext, contributors);
+	}
+
+	private List<ConfigDataEnvironmentContributor> getInitialImportContributors(Binder binder) {
+		List<ConfigDataEnvironmentContributor> initialContributors = new ArrayList<>();
+        // 从environment中获取spring.config.location，找不到默认为空，并构建Contributor
+		addInitialImportContributors(initialContributors, bindLocations(binder, IMPORT_PROPERTY, EMPTY_LOCATIONS));
+        // 从environment中获取spring.config.additional-location，找不到默认为空，并构建Contributor
+		addInitialImportContributors(initialContributors,
+				bindLocations(binder, ADDITIONAL_LOCATION_PROPERTY, EMPTY_LOCATIONS));
+        // 从environment中获取spring.config.location，找不到默认为DEFAULT_SEARCH_LOCATIONS，并构建Contributor
+        // DEFAULT_SEARCH_LOCATIONS也定义了SpringBoot加载配置文件的优先级，优先级由低到高
+        // optional:classpath:/, optional:classpath:/config/, optional:file:./, optional:file:./config/*/, optional:file:./config/
+        // optional表示指定的目录可以不存在
+		addInitialImportContributors(initialContributors,
+				bindLocations(binder, LOCATION_PROPERTY, DEFAULT_SEARCH_LOCATIONS));
+		return initialContributors;
+	}
+
+	private void addInitialImportContributors(List<ConfigDataEnvironmentContributor> initialContributors,
+			ConfigDataLocation[] locations) {
+        // 注意这里是从后往前循环，所以ConfigDataLocation的优先级是有低到高！！！
+		for (int i = locations.length - 1; i >= 0; i--) {
+            // 创建Contributor， kind类型为INITIAL_IMPORT
+			initialContributors.add(createInitialImportContributor(locations[i]));
+		}
+	}
+	// Contributors的构造函数，root为新建一个Contributor，Kind为ROOT类型。上面创建的各种类型的Contributor作为子节点都保存在root对象的children变量里面
+	ConfigDataEnvironmentContributors(DeferredLogFactory logFactory, ConfigurableBootstrapContext bootstrapContext,
+			List<ConfigDataEnvironmentContributor> contributors) {
+		this.logger = logFactory.getLog(getClass());
+		this.bootstrapContext = bootstrapContext;
+		this.root = ConfigDataEnvironmentContributor.of(contributors);
+	}
+~~~
+
+**<font color=red>创建Contributors的过程其实就是将已经存在在Environment中的PropertySource创建为Kind为EXISTING类型为Contributor。</font>**
+
+**<font color=red>然后获取Environment中的spring.config.location, spring.config.additional-location, spring.config.import创建为Kind为INITIAL_IMPORT类型的Contributor。这三个属性的顺序决定了加载配置文件的优先级。同时对于这三个属性，"/"结尾被认为是目录，否则被认为是文件。上面三个数据都可以通过环境变量，命令行参数，SpringApplication.defaultProperties来设置。</font>**
+
+**<font color=red>创建完上面的Contributor后，创建Contributors，其root对象一个Kind类型为ROOT的Contributor。上面创建的Contributor都作为root的子节点保存在root对象children变量里面。</font>**
+
+创建完之后的ConfigDataEnvironment
+
+![image-20220112183007246](img/spring/image-20220112183007246.png)
+
+> 配置文件如下
+
+![image-20220112204332870](img/spring/image-20220112204332870.png)
+
+~~~yml
+# application.property
+aaa=100
+
+# appliation-mysql.yml
+xx: 111
+
+# application-zk.yml
+cc: bb
+
+# application.yml
+spring:
+  profiles:
+    include: mysql, zk
+    active: dev, test
+    group:
+      dev: dev-mysql, dev-zk
+
+---
+test: test
+spring:
+  config:
+    activate:
+      on-profile: test
+---
+spring:
+  config:
+    activate:
+      on-profile: dev-mysql
+bb: 222
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev-zk
+cc: 333
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev-zk
+cc: 333
+~~~
+
+
+
+> processAndApply方法
+
+创建完ConfigDataEnvironment, 调用它的processAndApply方法
+
+processAndApply可以分为process（加载解析配置文件，设置active的profile），apply（将配置文件中属性加载到Environment中），process又可以分为三个阶段
+
+- processInitial，此时未创建ConfigDataActivationContext，使用ConfigDataImport处理Contributor中properties的imports
+- processWithoutProfiles，此时创建了ConfigDataActivationContext但是为设置active的profile。貌似用于处理云平台相关配置（k8s）
+- processWithProfiles，此时设置了active的profile。
+
+~~~java
+	void processAndApply() {
+        // 结合ConfigDataLoaders和ConfigDataLocationResolvers的功能，加载并解析配置文件
+		ConfigDataImporter importer = new ConfigDataImporter(this.logFactory, this.notFoundAction, this.resolvers,
+				this.loaders);
+        // 不清楚，不重要貌似
+		this.bootstrapContext.register(Binder.class, InstanceSupplier
+				.from(() -> this.contributors.getBinder(null, BinderOption.FAIL_ON_BIND_TO_INACTIVE_SOURCE)));
+        // 第一阶段
+		ConfigDataEnvironmentContributors contributors = processInitial(this.contributors, importer);
+		Binder initialBinder = contributors.getBinder(null, BinderOption.FAIL_ON_BIND_TO_INACTIVE_SOURCE);
+        // 不清楚，不重要貌似
+		this.bootstrapContext.register(Binder.class, InstanceSupplier.of(initialBinder));
+		ConfigDataActivationContext activationContext = createActivationContext(initialBinder);
+        // 第二阶段，创建了ConfigDataActivationContext，但是没有设置active的profile
+		contributors = processWithoutProfiles(contributors, importer, activationContext);
+        // 设置active的profile
+		activationContext = withProfiles(contributors, activationContext);
+        // 第三阶段
+		contributors = processWithProfiles(contributors, importer, activationContext);
+        // 将加载到的配置文件放入Environment中
+		applyToEnvironment(contributors, activationContext);
+	}
+~~~
+
+> 第一阶段
+
+下面看看第一阶段processInitial
+
+~~~java
+	ConfigDataEnvironmentContributors withProcessedImports(ConfigDataImporter importer,
+			ConfigDataActivationContext activationContext) {
+        // activationContext为null
+        // 前两个阶段ImportPhase为BEFORE_PROFILE_ACTIVATION，第三阶段为AFTER_PROFILE_ACTIVATION
+		ImportPhase importPhase = ImportPhase.get(activationContext);
+		this.logger.trace(LogMessage.format("Processing imports for phase %s. %s", importPhase,
+				(activationContext != null) ? activationContext : "no activation context"));
+		ConfigDataEnvironmentContributors result = this;
+		int processed = 0;
+		while (true) {
+            // for循环递归root查找需要处理的Contributor
+			ConfigDataEnvironmentContributor contributor = getNextToProcess(result, activationContext, importPhase);
+			if (contributor == null) {
+				this.logger.trace(LogMessage.format("Processed imports for of %d contributors", processed));
+				return result;
+			}
+            // 处理Kind为UNBOUND_IMPORT类型的Contributor，第一阶段不用管这里
+			if (contributor.getKind() == Kind.UNBOUND_IMPORT) {
+				Iterable<ConfigurationPropertySource> sources = Collections
+						.singleton(contributor.getConfigurationPropertySource());
+				PlaceholdersResolver placeholdersResolver = new ConfigDataEnvironmentContributorPlaceholdersResolver(
+						result, activationContext, true);
+				Binder binder = new Binder(sources, placeholdersResolver, null, null, null);
+				ConfigDataEnvironmentContributor bound = contributor.withBoundProperties(binder);
+				result = new ConfigDataEnvironmentContributors(this.logger, this.bootstrapContext,
+						result.getRoot().withReplacement(contributor, bound));
+				continue;
+			}
+			ConfigDataLocationResolverContext locationResolverContext = new ContributorConfigDataLocationResolverContext(
+					result, contributor, activationContext);
+			ConfigDataLoaderContext loaderContext = new ContributorDataLoaderContext(this);
+            // 获取Contributior.properties.imports, 这个imports表示需要加载的资源路径或者资源名称
+			List<ConfigDataLocation> imports = contributor.getImports();
+			this.logger.trace(LogMessage.format("Processing imports %s", imports));
+            // importer处理这组ConfigDataLocation，扫描指定路径ConfigDataResource表示加载到的文件的Resource，ConfigData表示加载到的属性，如何加载的下面将
+			Map<ConfigDataResource, ConfigData> imported = importer.resolveAndLoad(activationContext,
+					locationResolverContext, loaderContext, imports);
+			this.logger.trace(LogMessage.of(() -> imported.isEmpty() ? "Nothing imported" : "Imported "
+					+ imported.size() + " resource " + ((imported.size() != 1) ? "s" : "") + imported.keySet()));
+            // 之前说过Contributor是不可变的，与String类型
+            // asContributors将imported转换为单个或者多个类型为UNBOND_IMPORT的Contributor
+            // withChildren表示创建一个与contributor一样的对象，但是children设置为imported转换出来的List<Contributor>
+			ConfigDataEnvironmentContributor contributorAndChildren = contributor.withChildren(importPhase,
+					asContributors(imported));
+            // 使用contributorAndChildren替换掉contributor，但是是以新建的方式
+            // 其实这里的作用就是将imported转换出来的Contributor设置为contributor的children，但是因为Contributors是不可变的，所以搞得这么麻烦！！！！！不知道为啥要设置他为不可变的。
+			result = new ConfigDataEnvironmentContributors(this.logger, this.bootstrapContext,
+					result.getRoot().withReplacement(contributor, contributorAndChildren));
+			processed++;
+		}
+       
+        	private ConfigDataEnvironmentContributor getNextToProcess(ConfigDataEnvironmentContributors contributors,
+			ConfigDataActivationContext activationContext, ImportPhase importPhase) {
+                // for循环递归root。之前说过，root是树形结构的根节点，深度优先查找子节点，最后返回自己。
+		for (ConfigDataEnvironmentContributor contributor : contributors.getRoot()) {
+            // 判断是否需要处理的Contributor
+            // 这个if真的奇妙，三个阶段总是能够找到符合条件的Contributor，不知道顶层怎么设计的。
+			if (contributor.getKind() == Kind.UNBOUND_IMPORT
+					|| isActiveWithUnprocessedImports(activationContext, importPhase, contributor)) {
+				return contributor;
+			}
+		}
+		return null;
+	}
+~~~
+
+根据当前配置，处理的imports依次为"optional:file:./config/"  "optional:file:./config/*/"  "optional:file:./" "optional:classpath:/config/" "optional:classpath:/"，**optional表示该路径或者资源可以不存在**。只有当imports为"optional:classpath:/"加载到数据：
+
+其中application.yml对应的ConfigData包含五个PropertySource，分别对应yml文件的五个代码段
+
+application.property对应的ConfigData包含一个PropertySource。
+
+![image-20220113114538555](img/spring/image-20220113114538555.png)
+
+调用contributor.withChildren(importPhase, asContributors(imported))创建contributorAndChildren，可以看到asContributor将imported转换为了六个Kind=UNBOUND_IMPORT类型的Contributor，然后设置为了contributorAndChildren的children变量中。
+
+![image-20220113115310525](img/spring/image-20220113115310525.png)
+
+最后将root中的contributor替换成contributorAndChildren
+
+![image-20220113171457001](img/spring/image-20220113171457001.png)
+
+
 

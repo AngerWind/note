@@ -1128,8 +1128,4 @@ clone一个有100个元素的int数组，用系统默认的clone比静态copy方
 
 
 
-## Java8
-
-### lambda表达式、函数接口、方法引用、流、可选方法
-
-### 接口中的静态方法和[默认方法](https://liushiming.cn/2020/02/23/java-default-methods/)。
+## 

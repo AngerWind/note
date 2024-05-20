@@ -1,4 +1,4 @@
-### Jackson Serialization And Deserialization Annotations
+## Jackson Serialization And Deserialization Annotations
 
 #### @JsonDeserialize 和 @JsonSerialize
 
@@ -90,6 +90,10 @@ public class Student {
 
 
 #### 枚举序列化与反序列化
+
+
+
+
 
 
 
@@ -920,7 +924,7 @@ public class JsonTest {
 
 
 
-### Ignore Null Fields with Jackson
+### 忽略null值
 
 ~~~java
 // Include.Include.ALWAYS 默认 
@@ -987,7 +991,7 @@ public class Animal2NonNull {
 
 
 
-### Jackson Ignore Property
+### 忽略指定属性
 
 #### @JsonIgnoreProperties
 
@@ -1138,9 +1142,7 @@ fieldVisibility
 
 当使用`@JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.NONE)`时将抛出异常，因为没有可以序列化的字段。
 
-
-
-### ObjectMapper
+## ObjectMapper
 
 ~~~java
 public class Car {
@@ -1149,7 +1151,7 @@ public class Car {
 }
 ~~~
 
-#### Java Object to JSON
+### java转json
 
 ~~~java
 ObjectMapper objectMapper = new ObjectMapper();
@@ -1164,7 +1166,7 @@ String carAsString = objectMapper.writeValueAsString(car);
 byte[] bytes = objectMapper.writeValueAsBytes(car);
 ~~~
 
-#### JSON to Java Object
+### json转java
 
 ~~~java
 // 从字符串读取
@@ -1179,7 +1181,7 @@ Car car =
   objectMapper.readValue(new URL("file:src/test/resources/json_car.json"), Car.class);
 ~~~
 
-#### JSON to Jackson JsonNode
+json 转 Jackson JsonNode
 
 获取到的JsonNode一般要强转成ObjectNode才会有类似新增，删除，修改JsonNode的方法，JsonNode的方法不太全。数组的话可以转成ArrayNode。
 
@@ -1190,7 +1192,7 @@ ObjectNode objectNode = (ObjectNode)jsonNode
 String color = jsonNode.get("color").asText();
 ~~~
 
-#### JSON Array String to Java List
+### JSON Array 转  Java List
 
 ~~~java
 String jsonCarArray = 
@@ -1198,7 +1200,7 @@ String jsonCarArray =
 List<Car> listCar = objectMapper.readValue(jsonCarArray, new TypeReference<List<Car>>(){});
 ~~~
 
-#### JSON String to Java Map
+### JSON String 转 Java Map
 
 ~~~java
 String json = "{ \"color\" : \"Black\", \"type\" : \"BMW\" }";
@@ -1206,7 +1208,7 @@ Map<String, Object> map
   = objectMapper.readValue(json, new TypeReference<Map<String,Object>>(){});
 ~~~
 
-#### Configuring Serialization or Deserialization Feature
+### Configuring Serialization or Deserialization Feature
 
 ~~~java
 objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -1219,7 +1221,7 @@ objectMapper.configure(DeserializationFeature.FAIL_ON_NUMBERS_FOR_ENUMS, false);
 
 
 
-### Else
+## 其他
 
 
 
@@ -1367,4 +1369,64 @@ spring的注解， 用于controller接收前端数据时， 指定前端数据�
 @DateTimeFormat(pattern = "yyyy-MM-dd")
 private Date symendtime;
 ~~~
+
+
+
+## Jackson的使用
+
+spring-boot-starter-web默认引入了以下依赖：
+
+```xml
+<dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-annotations</artifactId>
+        <version>2.8.0</version>
+</dependency>
+<dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-core</artifactId>
+        <version>2.8.7</version>
+</dependency>
+<dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>2.8.7</version>
+</dependency>
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### 
+
+#### 
+
+#### 
+
+
+
+
 

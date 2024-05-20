@@ -33,11 +33,11 @@ gradle会在`构建的最开始按照顺序执行如下地方的的gradle脚本`
 
    你可以多次输入此命令来指定多个init文件  
 
-2. 把init.gradle文件放到 USER_HOME/.gradle/ 目录下
+2. 把`init.gradle`文件放到 `GRADLE_USER_HOME/.gradle/` 目录下
 
-3. 把以.gradle结尾的文件放到 USER_HOME/.gradle/init.d/ 目录下
+3. 把`以.gradle结尾的文件`放到 `GRADLE_USER_HOME/.gradle/init.d/` 目录下
 
-4. 把以.gradle结尾的文件放到 GRADLE_HOME/init.d/ 目录下  
+4. 把以`.gradle结尾的文件`放到 `GRADLE_HOME/init.d/` 目录下  
 
 如果同一目录下有多个gradle文件, 那么会按照a-z的顺序执行
 
@@ -85,7 +85,7 @@ allprojects {
 
 ### 项目单独设置
 
-在项目的build.gradle中配置
+在项目的`build.gradle`中配置
 
 ~~~groovy
 repositories {
@@ -371,9 +371,178 @@ test {
 |   test   |         |  √   |         | junit       | 否                                    |
 | runtime  |         |  √   |    √    | JDBC驱动    | 是                                    |
 
-todo ....
+### Gradle中的scope
+
+![image-20240315171554593](img/gradle/image-20240315171554593.png)
 
 
 
+### api和implement的区别
+
+![image-20240315171752178](img/gradle/image-20240315171752178.png)
+
+总结就是
+
+1. a implementation b, 和a api b, b在编译, 运行时都有效
+
+2. 不同的点在于, 当a被c引用时
+
+   a implementation b这种方式不会把b暴露给c, 所以c不能使用b
+
+   a api b这种方式会把c暴露给c, 所以c可以直接使用b
+   
+   
+
+## Gradle 打包发布
+
+~~~gradle
+plugins {
+	// 如果发布war包， 需要war插件
+	// java-library支持带源码、 文档发布
+	id 'java-library' 
+	// 添加发布插件
+	id 'maven-publish' 
+}
+
+// 在打包的时候, 如果要把源码和javadoc打包进去, 需要引入java-library
+javadoc.options.encoding("UTF-8")
+java {
+    withJavadocJar()
+    withSourcesJar()
+}
+publishing {
+    // 发布的仓库，有多个可选择
+    // 不需要指定本地的maven仓库, gradle会找到${M2_HOME}下的settings.xml文件中指定的仓库位置
+    repositories {
+
+        maven {
+            name = "localRepo"
+            // 发布到当前项目根目录下的/build/repo/文件夹下
+            url = layout.buildDirectory.dir("repo")
+        }
+        // 发布到网络上
+        maven {
+            name = "nexus"
+            // 用户口令
+            credentials {
+                username 'your-username'
+                password 'your-password'
+            }
+
+            // release仓库地址
+            def releasesRepoUrl = "https://www.your-domain.com/repository/maven-releases/"
+            // snapshots仓库地址
+            def snapshotsRepoUrl = "https://www.your-domain.com/repository/maven-snapshots/"
+            // 根据版本信息动态判断发布到snapshots还是release仓库
+            url = version.endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
+            // 禁用使用非安全协议通信(比如http)
+            allowInsecureProtocol false
+        }
+    }
+    publications {    // 配置发布的产出包，一个项目也有可能有多个产出，但大部分时候只有一个
+
+        // 指定一个产出包, myJar为名字
+        myJar(MavenPublication) {
+            // 指定gav
+            groupId = "com.example"
+            artifactId = "projectc"
+            version = "1.0-SNAPSHOT"
+
+            // 指定为jar包
+            // 如果发布为war包, 那么需要引入war插件, 然后使用 from components.web
+            from components.java
+
+            // 给pom文件添加内容
+            pom {
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+                developers {
+                    developer {
+                        id = 'hengyumo'
+                        name = 'hengyumo'
+                        email = 'le@hengyumo.cn'
+                    }
+                }
+            }
+            
+            // 修改pom文件中的配置
+            pom.withXml {
+                asNode()
+                        .dependencies
+                        .dependency
+                        .findAll { dependency ->
+                            (dependency.groupId.text() == 'com.example' &&
+                             dependency.artifactId.text() == 'projectc' &&
+                             dependency.scope.text() == 'runtime' )
+
+                        }
+                        .each { dependency ->
+                            // 设置scope范围为compile
+                            // *表示对scope数组下的所有节点进行操作
+                            dependency.scope*.value = "compile"
+                        }
+            }
+        }
+    }
+}
+~~~
+
+在配置了上面的配置之后, 在idea的task中, 会出现如下一个`publishing`组
+
+![image-20240320224824407](img/gradle/image-20240320224824407.png)
+
+里面的任务可以分为三类:
+
+1. publish:  发布所有发布包到所有参考???? 可能吧, 不确定
+2. generateMetadataFileForXXXXPublication:   为XXXX发布包生成metadata文件
+3. generatePomFileForXXXX:   为XXXX发布包生成pom.xml, 生成的pom文件的位置在`build/publications/<publicationName>/pom-default.xml`
+4. publishXXXXPublicationToBBBBB:  发布XXXX发布包到BBBBB仓库
+5. publicXXXXPublicationToMavenLocal: 发布XXXX发布包到本地仓库
+6. publishAllPublicationsToBBBBB:  发布所有的发布包到BBBBB仓库
+7. publishToMavenLocal: 发布所有发布包到BBBBB仓库
 
 
+
+需要注意的是, 在生成pom.xml文件中, **所有`test`类型的依赖都不会包含在pom.xml文件中, 并且所有其他范围的依赖都是`runtime`类型的, 而不是`compile`类型的**, 这就会导致我们在使用该依赖包的时候, 非常容易报`ClassNotFound`的异常, 这个时候我们就需要使用上面的`pom.withXml()`方法来修改我们的scope
+
+
+
+## Groovy和Java混合编译
+
+1. 创建一个java项目
+
+   ![image-20240325190331112](img/gradle/image-20240325190331112.png)
+
+2. 创建完成之后, 这个项目就是可以正常编译java的,  之后我们就需要添加对`Groovy` 的支持了
+
+3. 在`build.gradle`文件中添加插件, 这样gradle就支持编译groovy了
+
+   ~~~gradle
+   plugins {
+   	id "groovy"
+   }
+   ~~~
+
+4. 添加groovy sdk,  用于编译groovy, 他可以是本机上的groovy, 也可以直接以maven依赖包的形式添加进来
+
+   ~~~gradle
+   dependencies {
+   	// 用以编译groovy, 使用maven依赖包
+       implementation 'org.codehaus.groovy:groovy-all:3.0.11'
+       
+       // 导入本机上的groovy sdk来编译groovy
+       // 假如groovy_home为E:/groovy-3.0.9, 那么可以使用如下形式
+       implementation fileTree('E:/groovy-3.0.9/lib') {
+           include '*.jar'
+           include '*/*.jar'
+       }
+   }
+   ~~~
+
+5. 在项目中创建存放`groovy`的文件夹
+
+   <img src="img/gradle/image-20240325191535071.png" alt="image-20240325191535071" style="zoom:33%;" />
