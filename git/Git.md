@@ -1159,7 +1159,57 @@ git config --global alias.co checkout
 
 
 
+# git 设置代理
 
+~~~bash
+# 全局代理
+git config --global https.proxy http://127.0.0.1:7890
+git config --global http.proxy http://127.0.0.1:7890
+
+# 单个仓库代理
+git config  https.proxy http://127.0.0.1:7890
+git config  http.proxy http://127.0.0.1:7890
+
+# 取消代理
+git config  --unset https.proxy 
+git config  --unset http.proxy 
+# 取消全局代理
+git config --global  --unset https.proxy 
+git config --global --unset http.proxy 
+~~~
+
+
+
+
+
+# git 认证
+
+2021.8.13起, 在推送仓库到github时, github不支持通过账号密码来认证, 必须通过token认证
+
+1. 生成token
+
+   <img src="img/Git/image-20240520233307187.png" alt="image-20240520233307187" style="zoom:33%;" />![image-20240520233333213](img/Git/image-20240520233333213.png)
+
+   <img src="img/Git/image-20240520233307187.png" alt="image-20240520233307187" style="zoom:33%;" />
+
+   <img src="img/Git/image-20240520233333213.png" alt="image-20240520233333213" style="zoom:33%;" />
+
+   ![image-20240520233346876](img/Git/image-20240520233346876.png)
+
+2. 配置token到本地仓库
+
+   ~~~bash
+   # 编辑仓库的配置
+   git config --edit
+   ~~~
+
+   在远程仓库原来的地址上添加token
+
+   ~~~uri
+   https://<your_token>@github.com/<USERNAME>/<REPO>.git
+   ~~~
+
+   
 
 # git branch
 
