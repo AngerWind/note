@@ -1,1 +1,0 @@
-English version documentation of Apollo
