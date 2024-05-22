@@ -1,5 +1,5 @@
-[arthas](arthas/arthas.md)
-[elasticsearch](elasticsearch/elasticsearch.md)
+
+
 [Git](git/Git.md)
 [gradle](gradle/gradle.md)
 [jackson](jackson/jackson.md)
@@ -9,13 +9,21 @@
 [minio](minio/minio.md)
 [mybatis](mybatis/mybatis.md)
 [mysql](mysql/mysql高级.md)
-[redis](redis/redis.md)
 [scala](Scala/Scala.md)
 [shell](shell/shell.md)
 [spring](spring/spring.md)
 [tenma](tenma/tenma.md)
 [wsl](其他/wsl/wsl.md)
+
 [分布式与多线程与JVM](分布式与多线程与JVM/分布式与多线程.md)
+
+* redis
+  * [01-入门篇-redis数据结构和java客户端](redis/01-入门篇-redis数据结构和java客户端\讲义/1-Redis基础篇.md)
+  * [02-实战篇](redis\02-实战篇\讲义\2-Redis实战篇)
+  * [03-高级篇-分布式缓存](redis\03-高级篇-集群,哨兵,优化\讲义\01-分布式缓存\3-Redis高级篇-分布式缓存.md)
+  * [03-高级篇-多级缓存](redis\03-高级篇-集群,哨兵,优化\讲义\02-多级缓存-unimportant\多级缓存.md)
+  * [03-高级篇-最佳实践](redis/03-高级篇-集群,哨兵,优化/讲义/03-Redis最佳实践/Redis高级篇之最佳实践.md)
+  * [04-原理篇-底层数据结构和网络模型和内存过期](redis\04-原理篇-redis底层数据结构,网络模型,内存过期\讲义\4-Redis原理篇.md)
 
 * logback 
   * [logback总结](logback/logback.md)
