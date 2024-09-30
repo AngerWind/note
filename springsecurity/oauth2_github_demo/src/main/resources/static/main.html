@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Title</title>
+</head>
+<body>
+<h3>一些其他内容</h3><br>
+<button id="btn">点击</button>
+<script>
+  var btn = document.getElementById('btn');
+  // 点击登录之后要跳转回当前页面, 所以需要将当前页面的url传过去
+  btn.addEventListener('click', function () {
+    location.href = "http://localhost:8080/login.html?redirect_to=" + location.href;
+  })
+</script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+plugins {
+    id 'java'
+}
+
+group = 'org.example'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.9.1')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+println("正在执行layout11")
+
+// task实际上是一个actions的列表
+// 执行task的时候会按照顺序执行所有的action
+
+// task taskName {} 实际上的语法是 task("myTask1", {})
+task myTask1 {
+    // 每个task都有一个group, 可以用来分组
+    // 如果不设置, 那么默认是other
+    group = "myGroup"
+    description = "myTask1"
+
+    // 所有在这里的代码都会在配置阶段执行
+    println "run in configure phase"
+
+    // 添加一个action到列表尾部
+    doLast {
+        println("action1")
+    }
+    // 添加一个action到列表头部
+    doFirst {
+        println("action2")
+    }
+    // 添加一个action到列表尾部
+    Action<? super Task> action = {
+        println("action3")
+    }
+    actions.add(action)
+}
+
+
+class MyTask2 extends DefaultTask {
+
+    // todo 需要添加public字段, 不让他变成属性, 否则会报错说没有添加@Input注解
+    public String firstName = "zhang"
+    public String lastName = "san"
+
+    MyTask2() {
+        // 可以在构造函数中对当前Task进行配置
+        // 也可以在注册Task的时候通过闭包进行配置
+        description = "myTask2 description here"
+    }
+
+    @TaskAction
+    void run() {
+        println "firstName: ${firstName}"
+    }
+}
+// 以MyTask2为模板创建一个task, 该Task具有两个属性
+// 同时自带一个action
+tasks.register("myTask2",MyTask2 ){
+    group = "myGroup"
+
+    // 添加一个action到列表尾部
+    doLast {
+        println("lastName: ${lastName}")
+    }
+}
+
+myTask1.dependsOn(myTask2)

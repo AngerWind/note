@@ -1,0 +1,10 @@
+
+
+// 可以在这里添加task, 指定依赖, 指定仓库, 指定另外一个插件
+// 所有在build.gradle中能够使用的api都可以在这里使用
+
+tasks.register('hello') {
+    println "xxxxxxxxxxxxxxxxxxxxxxx"
+}
+
+

@@ -1910,6 +1910,139 @@ todo
 
 # SpringBoot
 
+## SpringBoot配置文件
+
+
+
+### 加载配置文件的位置
+
+在SpringBoot启动的时候, 默认情况下, 他会加载
+
+- `spring.config.import`
+
+  默认值为空
+
+- `spring.config.additional-location`
+
+  默认为空
+
+- `spring.config.location`
+
+  默认值为
+
+  `optional:classpath:/;optional:classpath:/config/;optional:file:./;optional:file:./config/;optional:file:./config/*/`
+
+  
+
+1. 这三个值可以指定为路径, 比如: `optional:file:./config`, 这样会加载jar包平级目录config下的所有`application.properties/yml/yaml`文件
+
+   也可以指定为文件, 比如: `application-test.yml`, 这样会加载jar包平级的application-test.yml
+
+   也可以配置为`optional:/etc/config/application.properties`, 这样会根据绝对路径来查找application.properties
+
+
+
+2. 这三个值都可以配置多个路径或者文件, 通过分号间隔
+
+   比如`optional:file./config;optional:/etc/config/dev.yaml;application-test.yml`
+
+   
+
+3. optional表示可选的, 即没有找到对应的文件/路径就直接忽略掉, 否则会报错
+
+
+
+4. 上面三个参数都可以通过`java -Dspring.config.location=xxx -jar xxx.jar`的形式来指定
+
+   `spring.config.import`还可以配置在`application.yaml`中, 用来指定需要额外加载的配置文件
+
+
+
+5. 上面三个参数的优先级: 
+
+   `spirng.config.import` > `spring.config.additional-location`  >  `spring.config.location`
+
+   如果一个配置指定了多个路径/文件,  那么后面的优先于前面的
+
+   如果同一个路径下有application.properties和application.yaml,   那么properties大于yaml
+
+
+
+### 特定环境下激活的配置文件
+
+我们可以通过`spring.profiles.active`来指定当前激活的环境
+
+- 可以在properties中指定, 比如`spirng.profiles.active=test`
+- 也可以在命令行指定, 比如`--spring.profiles.active=test`
+
+如果没有指定, 那么会启用一个名为`default`的环境,  当然也可以通过`spirng.profiels.default`来指定默认启用的环境
+
+
+
+当激活了环境之后, 那么springboot除了会加载`application.yaml/properties`文件, 还会加载`application-${env}.yaml/properties`配置文件
+
+
+
+### 配置文件-多文档块
+
+在`properties`配置文件中, 我们可以配置多个配置段, 每个配置段使用`#---`来分割
+
+在`yaml/yml`配置文件中, 我们可以使用`---`来表示多文档块
+
+~~~yaml
+# 这个配置段默认生效
+
+spring.profiles.active=prod # 激活prod环境
+
+# include用于激活一些公共的配置
+spring.profiles.include[0]=common # 激活common环境
+spring.profiles.include[1]=local # 激活local环境
+
+#---
+# 这个配置段只在prod环境下生效
+spring.config.activate.on-profile=prod
+aa=prod
+
+#---
+# 这个配置段只在test环境下生效
+spring.config.activate.on-profile=test
+aa=test
+
+#--- 
+# 这个配置段默认生效
+cc=hello
+~~~
+
+**写在下面的配置会覆盖写在上面的配置**
+
+
+
+注意: `spring.profiles.active=prod`和`spring.profiles.include`都只能放在默认激活的代码片段中, 而不能和`spring.config.activate.on-profile`一起使用
+
+
+
+### 环境组
+
+我们可以定义一个环境组, 这样只要激活一个组, 就可以激活多个环境
+
+~~~yml
+spring:
+  profiles:
+    active: prod
+    groups:
+      prod: # 定义一个prod环境, 只要激活这个环境, 就会同时激活mysql, redis
+        - mysql
+        - redis
+~~~
+
+
+
+
+
+
+
+
+
 ## SpringBoot自定义starter
 
 按照一般的模式, 我们创建一个启动器, 但是该启动器只用来做依赖导入
@@ -1924,7 +2057,7 @@ todo
 
 ![](img/spring/TIM截图20190708211414.png)
 
-我们可以看到, 在mybatis-spring-boot-starter中没有任何java代码,只是在pom文件中定义了依赖, 而自动配置的代码都在mybatis-spring-boot-autoconfiguration中
+我们可以看到, 在`mybatis-spring-boot-starter`中没有任何java代码,只是在pom文件中定义了依赖, 而自动配置的代码都在`mybatis-spring-boot-autoconfiguration`中
 
 ### 1. 创建自动配置模块
 
@@ -2138,15 +2271,39 @@ public class LoginController {
 
 https://blog.csdn.net/weixin_42556307/article/details/108405009 自动装配原理
 
-https://zhuanlan.zhihu.com/p/353561846 实现spring boot starter
+`@SpringBootApplication`是一个符合注解, 它是由如下注解组成的:
+
+![image-20240924172611792](img/spring/image-20240924172611792.png)
+
+- @Configuration的作用是让配置类注入到IOC中,  作为整个SpringBoot扫描的起点
+
+- @ComponentScan的作用是扫描当前配置类所在的包, 注册其中的bean
+
+- @Import(AutoConfigurationPackages.Registrar.class)
+
+  获取主配置类所在的包, 包装为BasePackage, 并注册到IOC容器中, id为`org.springframework.boot.autoconfigure.AutoConfigurationPackages`
+
+  他的作用主要是告诉其他第三方包当前主配置类所在的包, 比如:
+
+  1. MybatisPlusAutoConfiguration会根据id获取这个bean, 然后去主配置类包下面查找所有@Mapper
+  2. JPA的EntityScanner也会根据id获取这个bean, 然后去主配置类包下面扫描特定的bean
+
+  
+
+- @Import(AutoConfigurationSelector)
+
+  其中AutoConfigurationImportSelector类中有一个`getCandidateConfigurations()`方法，该方法通过`SpringFactoriesLoader.loadFactoryNames()`方法查找位于`META-INF/spring.factories`文件中的所有自动配置类，并加载这些类。
+
+  主要的步骤如下:
+
+  1. 从spring.factories中获取EnableAutoConfiguration对应的所有类
+  2. 通过在注解@EnableAutoConfiguration设置的exclude的相关属性, 可以排除指定的自动配置类
+  3. 根据@Conditional来判断是否需要排除某些自动配置类
+  4. 触发AutoConfiguration导入的相关事件
+
+  
 
 
-
-SPI 全称为 Service Provider Interface，是一种服务发现机制。本质就是为了解耦, 将接口和实现分开, 然后通过spi机制找到具体的实现类
-
-具体过程是: 将 接口实现类的全限定名配置在文件中，并由特定的classloader读取配置文件，加载文件中的实现类，这样运行时可以动态的为接口替换实现类
-
-https://juejin.cn/post/7197070078361387069
 
 
 
@@ -4105,12 +4262,10 @@ https://www.bilibili.com/video/BV1r642137NJ/?spm_id_from=333.1245.recommend_more
 **空检查**
 
 - @Null       通过 `== null`来判断是否为null
-
 - @NotNull    通过`!= null`来判断不为null
-
 - @NotBlank 通过`obj != null && obj.strim().length != 0`来判断
-
-- @NotEmpty 通过`obj!=null && !"".equals(obj)`来判断
+- @NotEmpty 判断一个`字符串/集合`是否为空
+- @Pattern    验证 String 对象是否符合正则表达式的规则
 
 **Booelan检查**
 
@@ -4126,19 +4281,38 @@ https://www.bilibili.com/video/BV1r642137NJ/?spm_id_from=333.1245.recommend_more
 
 - @Past           验证 Date 和 Calendar 对象是否在当前时间之前  
 - @Future     验证 Date 和 Calendar 对象是否在当前时间之后  
-- @Pattern    验证 String 对象是否符合正则表达式的规则
 
 **数值检查**
 
 **建议使用在Stirng,Integer类型，不建议使用在int类型上，因为表单值为“”时无法转换为int，但可以转换为Stirng为"",Integer为null**
 
 - @Min            验证 Number 和 String 对象是否大等于指定的值  
+
 - @Max            验证 Number 和 String 对象是否小等于指定的值  
-- @DecimalMax 被标注的值必须不大于约束中指定的最大值. 这个约束的参数是一个通过BigDecimal定义的最大值的字符串表示.小数存在精度
-- @DecimalMin 被标注的值必须不小于约束中指定的最小值. 这个约束的参数是一个通过BigDecimal定义的最小值的字符串表示.小数存在精度
-- @Digits     验证 Number 和 String 的构成是否合法  
-- @Digits(integer=,fraction=) 验证字符串是否是符合指定格式的数字，interger指定整数精度，fraction指定小数精度。
+
+- @DecimalMax 验证BigDecimal的最大值
+
+  ~~~java
+  @DecimalMax(value = "100.00", inclusive = true, message = "Value must be less than or equal to 100.00") // inclusive表示是否包括100.00
+  private BigDecimal amount;
+  ~~~
+
+- @DecimalMin 验证BigDecimal的最小值
+
+  ~~~java
+  @DecimalMin(value = "0.00", inclusive = false, message = "Value must be greater than 0.00")
+  private BigDecimal amount;
+  ~~~
+
+- @Digits     校验数字元素的整数部分和小数部分的位数, 作用于`BigDecimal`，`BigInteger`，字符串，以及`byte`, `short`,`int`, `long`以及它们的包装类型。
+
+  ~~~java
+  @Digits(integer = 5, fraction = 2, message = "Number must have up to 5 integer digits and 2 fraction digits")
+  private BigDecimal amount;
+  ~~~
+
 - @Range(min=, max=) 检查数字是否介于min和max之间.
+
 - @Range(min=10000,max=50000,message="range.bean.wage")
   private BigDecimal wage;
 
@@ -4486,7 +4660,9 @@ public @interface Password {
     public static class PasswordValidator implements ConstraintValidator<Password, String> {
 
         @Override
-        public void initialize(Password constraintAnnotation) { }
+        public void initialize(Password constraintAnnotation) {
+            // 这里可以获取注解的配置
+        }
 
         @Override
         public boolean isValid(String value, ConstraintValidatorContext constraintValidatorContext) {
@@ -6186,50 +6362,340 @@ public interface ConfigurablePropertyResolver extends PropertyResolver {
 
 
 
-### 关于SpringBoot读取配置文件的说明
+## 关于SpringBoot读取配置文件的说明
 
-springboot版本为2.4.0， 2.4.0版本对读取配置文件做了很大的调整。
+参考https://www.cnblogs.com/coderacademy/p/18023165
 
-> 调用时机
-
-读取配置文件主要在environmentPrepared的时候进行的。
-
-![image-20220111202742485](img/spring/image-20220111202742485.png)
-
-linsteners调用environmentPrepared发送事件给监听environmentPrepared事件的监听器
-
-**在spring-boot:2.4.0的spring.factories中定义了许多ApplicationListener，其中就有EnvironmentPostProcessorApplicationListener**
-
-![image-20220111203008844](img/spring/image-20220111203008844.png)
-
-**EnvironmentPostProcessorApplicationListener会在environmentPrepared的时候从所有的spring.factories中读取EnvironmentPostProcessor，然后将其实例化，并调用他们的postProcessEnvironment方法**
-
-~~~java
-public class EnvironmentPostProcessorApplicationListener implements SmartApplicationListener, Ordered {
-
-	public EnvironmentPostProcessorApplicationListener() {
-		this(EnvironmentPostProcessorsFactory
-				.fromSpringFactories(EnvironmentPostProcessorApplicationListener.class.getClassLoader()));
-	}
-    
-    	private void onApplicationEnvironmentPreparedEvent(ApplicationEnvironmentPreparedEvent event) {
-		ConfigurableEnvironment environment = event.getEnvironment();
-		SpringApplication application = event.getSpringApplication();
-        // getEnvironmentPostProcessors从所有spring.factories中读取EnvironmentPostProcessor然后实例化
-		for (EnvironmentPostProcessor postProcessor : getEnvironmentPostProcessors(event.getBootstrapContext())) {
-			postProcessor.postProcessEnvironment(environment, application);
-		}
-	}
-}
-~~~
-
-读取出来的EnvironmentPostProcessor中就有处理配置文件的ConfigDataEnvironmentPostProcessor这个类，并且这个类也在spring-boot:2.4.0的spring.factories中定义的
-
-![image-20220111204237785](img/spring/image-20220111204237785.png)
+https://developer.aliyun.com/article/1462749
 
 
 
+加载配置文件大致流程如下：
 
+![image.png](img/spring/20240205003852.png)
+
+### 调用时机
+
+1. 在执行SpringBoot的时候, 首先我们需要new一个SpringApplication, 在构造函数中会读取spring.factories中所有的`ApplicationListener`
+
+   ~~~java
+   public SpringApplication(ResourceLoader resourceLoader, Class<?>... primarySources) {
+   		this.resourceLoader = resourceLoader;
+   
+   		// ...
+   
+   		// 设置ApplicationListener，getSpringFactoriesInstances：从 META-INF/spring.factories 中获取配置
+   		// 在SpringBoot中会自动配置一个EventPublishingRunListener, 他是一个SpringApplicationListener
+   		// 在调用SpringApplicationListener的回调的时候, 就会转而调用ApplicationListener的回调方法
+   		setListeners((Collection) getSpringFactoriesInstances(ApplicationListener.class));
+   
+   		// ...
+   	}
+   ~~~
+
+   
+
+2. 在SpringBoot启动的时候, 首先会执行run方法, 在该方法中会调用getRunListeners来从spring.factories中获取所有的SpringApplicationRunListener, 然后再执行到各个步骤的时候, 调用对应的回调函数
+
+   ~~~java
+   public ConfigurableApplicationContext run(String... args) {
+   		// ...
+   
+   		/**
+   		 * 从 META-INF/spring.factories 中获取指定的所有SpringApplicationRunListener, 并封装到SpringApplicationRunListeners中
+   		 * 在SpringBoot中会自动配置一个EventPublishingRunListener, 他是一个SpringApplicationListener
+   		 * 在调用SpringApplicationListener的回调的时候, 就会转而调用 this.listeners 的回调方法
+   		 */
+   		SpringApplicationRunListeners listeners = getRunListeners(args);
+   
+       // ...
+   			// 处理Enviroment
+   			ConfigurableEnvironment environment = prepareEnvironment(listeners, bootstrapContext, applicationArguments);
+   
+   			// ...
+   		return context;
+   	}
+   ~~~
+
+3. 然后再prepareEnvironment的方法中, 会对创建一个ConfigurableEnvironment并对他进行一些配置
+
+   然后回调用所有`SpringApplicationRunListener`的`environmentPrepared`方法
+
+   ~~~java
+   private ConfigurableEnvironment prepareEnvironment(SpringApplicationRunListeners listeners,
+   			DefaultBootstrapContext bootstrapContext, ApplicationArguments applicationArguments) {
+   		// 根据webApplicationType创建对应的StandardEnvironment, StandardServletEnvironment, StandardReactiveWebEnvironment
+   		ConfigurableEnvironment environment = getOrCreateEnvironment();
+   
+   		// 配置Environment
+   		configureEnvironment(environment, applicationArguments.getSourceArgs());
+   
+   		ConfigurationPropertySources.attach(environment);
+   
+   		// 【回调】SpringApplicationRunListener 的 environmentPrepared 方法
+   		// （Environment构建完成，但在创建ApplicationContext之前）
+   		listeners.environmentPrepared(bootstrapContext, environment);
+       
+       // ...
+   	}
+   ~~~
+
+4. 其中就有一个名为`EventPublishingRunListener`的实现类, 他是一个`SpringApplicationRunListener`, 所以当springboot执行的每个步骤, 都会调用对应的回调函数
+
+   而他的作用就是在回调函数中, 将回调包装为事件, 通过一个`SimpleApplicationEventMulticaster`事件发布器, 发送给所有监听`ApplicationEnvironmentPreparedEvent`的`ApplicationListener`
+
+   这里的`ApplicationListener`就是步骤1中获取到的
+
+   ~~~java
+   	public void environmentPrepared(ConfigurableBootstrapContext bootstrapContext,
+   			ConfigurableEnvironment environment) {
+   		this.initialMulticaster.multicastEvent(
+   				new ApplicationEnvironmentPreparedEvent(bootstrapContext, this.application, this.args, environment));
+   	}
+   ~~~
+
+5. 这些ApplicationListener中, 有一个实现类`EnvironmentPostProcessorApplicationListener`, 他会监听`ApplicationEnvironmentPreparedEvent`这个事件, 所以此时会回调他的`onApplicationEvent`方法
+
+   `EnvironmentPostProcessorApplicationListener`这个类在构造函数中会从spring.factories中获取所有的`EnvironmentPostProcessor`, 并且在`onApplicationEvent`中回调`EnvironmentPostProcessor.postProcessEnvironment`方法
+
+   ~~~java
+   @Override
+   	public void onApplicationEvent(ApplicationEvent event) {
+   		if (event instanceof ApplicationEnvironmentPreparedEvent) {
+   			onApplicationEnvironmentPreparedEvent((ApplicationEnvironmentPreparedEvent) event);
+   		}
+   		if (event instanceof ApplicationPreparedEvent) {
+   			onApplicationPreparedEvent();
+   		}
+   		if (event instanceof ApplicationFailedEvent) {
+   			onApplicationFailedEvent();
+   		}
+   	}
+   
+   	private void onApplicationEnvironmentPreparedEvent(ApplicationEnvironmentPreparedEvent event) {
+   		ConfigurableEnvironment environment = event.getEnvironment();
+   		SpringApplication application = event.getSpringApplication();
+   		// 从 spring.factories 中加载的 EnvironmentPostProcessor 类
+   		for (EnvironmentPostProcessor postProcessor : getEnvironmentPostProcessors(application.getResourceLoader(),
+   				event.getBootstrapContext())) {
+   			/**
+   			     默认情况下会有7个实现类:
+   			     
+   			 */
+   			postProcessor.postProcessEnvironment(environment, application);
+   		}
+   	}
+   ~~~
+
+6. 步骤5中提到的`EnvironmentPostProcessor`一共有7个实现类, 分别是:
+
+   1. RandomValuePropertySourceEnvironmentPostProcessor
+         用于向 Environment 中添加一个特殊的 PropertySource
+         它允许你在配置文件中使用 ${random} 占位符来生成随机值
+         这些值可以是随机的整数、long、UUID、或字符串等。
+
+   2. **SystemEnvironmentPropertySourceEnvironmentPostProcessor**
+         负责将系统环境变量（如操作系统环境变量）加载到 Spring Environment 中。
+
+   3. SpringApplicationJsonEnvironmentPostProcessor
+         它处理通过 SPRING_APPLICATION_JSON 环境变量提供的 JSON 数据,将其加载到Environment中
+
+   4. CloudFoundryVcapEnvironmentPostProcessor
+         专门用于 Cloud Foundry 平台，处理 Cloud Foundry 提供的 VCAP 配置数据
+
+   5. **ConfigDataEnvironmentPostProcessor**: 从配置文件中读取配置信息
+         在 Spring Boot 2.4+ 版本中，替代了传统的 application.properties 加载方式。
+         它用于从配置文件（如 application.properties 或 application.yml）
+         或其他外部配置源（如远程配置、Kubernetes ConfigMap 等）加载配置信息，
+         并将其添加到应用程序的 Environment 中。
+
+   6. IntegrationPropertiesEnvironmentPostProcessor
+         负责加载与 Spring Integration 框架相关的属性。Spring Integration 是用于构建消息驱动的微服务系统的框架。
+         这个处理器会将与集成相关的默认配置加载到 Environment 中。
+
+   7.  DebugAgentEnvironmentPostProcessor
+   
+         主要用于在调试模式下增强应用的环境配置。
+         它允许在启动应用时使用一些调试代理功能来调整环境变量，比如提供更详细的日志信息或启用调试工具
+
+7. 其中**SystemEnvironmentPropertySourceEnvironmentPostProcessor**会加载系统的环境变量
+
+   **ConfigDataEnvironmentPostProcessor**用于加载配置文件中的配置
+
+8. 在**ConfigDataEnvironmentPostProcessor**的`postProcessEnvironment`方法中, 会创建一个ConfigDataEnvironment, 调用调用其processAndApply来加载配置
+
+
+
+### 概念解读
+
+
+
+**在进行概念解读之前, 一定要提前了解springboot如何激活profile, 如何从一个配置文件中导入另外一个配置文件等等**
+
+可以看上面写的`SpringBoot配置文件`这个文章了解!!!!
+
+
+
+上面我们说到, 在**ConfigDataEnvironmentPostProcessor**的`postProcessEnvironment`方法中, 会创建一个ConfigDataEnvironment, 调用调用其processAndApply来加载配置
+
+那么我们先来了解一下ConfigDataEnvironment中的一些概念
+
+1. ConfigDataLocation
+
+   本质上是一个字符串, 表示一个需要加载配置的路径或者文件的字符串
+
+   比如`file:./config/`, `classpath:/config/`, `optional:file:./test.yaml`, `option:file:/etc/config/test.yaml`
+
+   如果有多个需要加载的, 可以使用分号进行间隔
+
+   比如`file:./config/;classpath:/config/;optional:file:./test.yaml;option:file:/etc/config/test.yaml`
+
+   optional表示这个路径可以不存在
+
+2. ConfigDataResource
+
+   表示一个扫描出来的需要加载的配置文件的具体路径
+
+   比如file:./application.yaml, classpath:/config/test.yaml, classpath:/config/application.properties
+
+3. ConfigData
+
+   表示一个配置文件加载出来的配置, 里面是一个List\<PropertySource>, 因为一个配置文件可以配置多个文档块(properties文件使用#---分割, yaml使用---分割), 所以一个配置文件加载出来可以有多个PropertySource
+
+4. ConfigDataLocationResolver
+
+   就是负责将ConfigDataLocation解析为具体需要读取的配置文件的路径
+
+   比如ConfigDataLocation表示的路径是`classpath:/config/`, 那么ConfigDataLocationResolver的作用就是扫描这个路径, 找到可以读取的配置文件, 然后将其转换为ConfigDataResource
+
+   一个ConfigDataLocation, 可以转换出多个ConfigDataResource, 因为一个路径下可以扫描出多个可以读取的配置文件
+
+   
+
+   他有两个实现类:
+
+   - ConfigTreeConfigDataLocationResolver:
+     主要用于解析Config Tree 类型的配置数据位置, 主要用于K8S的ConfigMap
+
+     ConfigTree的详细情况查看https://developer.aliyun.com/article/1462749
+
+   - StandardConfigDataLocationResolver:
+        解析ConfigDataLocation时
+        
+        如果是一个路径, 那么他会查找路径下的application.properties/yaml/yml/xml文件, 作为配置文件, 并转换为ConfigDataResource
+        
+        如果是一个文件, 那么他会判断这个文件是否存在, 然后转换为ConfigDataResource
+   
+5. ConfigDataLoader
+
+   负责根据ConfigDataResource, 读取指定位置的文件, 然后将其解析为ConfigData
+   他有两个实现类:
+
+   - ConfigTreeConfigDataLoader: 用于加载Config Tree类型的配置数据
+   - StandardConfigDataLoader: 内部会调用YamlPropertySourceLoader和PropertiesPropertySourceLoader来加载yaml,yml,properties文件
+
+6. ConfigDataEnvironmentContributor:
+
+   - **这个类表示的是能够向Environment对象提供配置的一个元素，他可以表示一个可能存在配置文件的路径（如file:/config），也可以表示一个配置文件（如application.yml），还可以表示yml中的一段代码块（代码块通过---分隔），也可以表示一个已经存在Environment中已经存在的PropertySource。根据Contributor的kind属性决定**
+   - **ConfigDataEnvironmentContributor是不可变的，与String类似，所以修改其中的某个属性都是重新创建一个。**
+   - **ConfigDataEnvironmentContributor有一个Map<ImportPhase, List\<ConfigDataEnvironmentContributor>>类型的children成员变量，<font color=red>这意味着ConfigDataEnvironmentContributor整体是一个树形结构。</font>其实也好理解，当Contributer表示的是一个目录时，他的children就是这个解析出来的配置文件或者代码段。**
+
+   - 上面说到ConfigDataEnvironmentContributor整体是一个树结构, 同时ConfigDataEnvironmentContributor还是不可变的, 所有每次需要修改ConfigDataEnvironmentContributor的时候, 都是创建一个新的ConfigDataEnvironmentContributor, 然后替换掉**数结构**中原来的ConfigDataEnvironmentContributor
+
+   - ImportPhase是一个枚举
+
+     BEFORE_PROFILE_ACTIVATION表示当前这个ConfigDataEnvironmentContributor是在profile激活之前加载的
+
+     AFTER_PROFILE_ACTIVATION表示当前这个ConfigDataEnvironmentContributor是在profile激活之后加载的
+
+   - **如果Contributor表示的是文件或者代码段时，resource表示的是对应配置文件的Resource。propertySource表示读取到的配置，configurationPropertySource表示propertySource对应的ConfigurationPropertySource类型的包装类**
+
+   - **每个Contributor都有Kind类型**
+
+     如果是ROOT类型, 说明这个Contributor是所有Contributor的根节点, 仅此而已
+
+     如果是INITAL_IMPORT类似, 表示这个Contributor是一个需要扫描的路径或者文件, 基本可以等同于ConfigDataLocation数组
+
+     如果是EXISTING, 说明这个Contributor是创建自Environment中一个已有的PropertySource
+
+     如果是UNBOUND_IMPORT, 说明这个Contributor是根据另外一个Contributor的配置扫描出来的, 并且此时还没有对这个Contributor做一些特殊的处理
+
+     如果是BOUND_IMPORT, kind为UNBOUND_IMPORT
+
+     
+
+     这里所说的特殊处理是:   当ConfigDataLoader从一个配置文件读取出一个ConfigData(内部包含多个PropertySource)时, 每一个PropertySource都会转换为Contributor, 并且kind为UNBOUND_IMPORT
+
+     然后会从这些Contributor的PropertySource中提取出一些特殊的配置, 比如`spring.profiles.active`和`spring.profiles.include`等等保存起来
+
+     然后就将这个kind为UNBOUND_IMPORT的Contributor转换为kind为BOUND_IMPORT的Contributor, 表示已经处理完毕
+
+     
+
+   - **ConfigDataEnvironmentContributor实现了Iterable接口，调用for的时候会深度优先递归children中ImportPhase.AFTER_PROFILE_ACTIVATION对应的List，然后深度优先递归Import.BEFORE_PROFILE_ACTIVATION对应的List，最后返回他自己。**
+
+   - 因为ConfigDataEnvironmentContributor实现了Iterable接口, 所以迭代的顺序实际上就是配置的优先级
+
+     越先迭代的ConfigDataEnvironmentContributor中包含的配置的优先级是越高的
+
+     
+
+### 基本步骤
+
+初始化:
+
+1. 从spring.factories中加载所有的ConfigDataLocationResolvers
+
+   ConfigTreeConfigDataLocationResolver和StandardConfigDataLocationResolver
+
+2. 从spring.factories中加载所有的ConfigDataLoader
+
+   ConfigTreeConfigDataLoader和StandardConfigDataLoader
+
+3. 根据Environment中现有的PropertySource创建Contributors, kind为EXISTING
+
+4. 从Environment中读取`spring.config.import`, `spring.config.additional-location`, `spring.config.location`三个配置, 并转换为ConfigDataLocation
+
+   根据这些ConfigDataLocation创建Contributor, kind为INITAL_IMPORT
+
+初始化扫描:
+
+1. 获取默认激活的contributor, 如果他们内部有未处理的imports(ConfigDataLocation), 获取他们的内部的ConfigDataLocation
+
+2. 使用ConfigDataLocationResolver去查找ConfigDataLocation路径下的`application.xml/properties/yaml/yml`, 并转换为多个ConfigDataResouce
+
+3. 使用ConfigDataLoader读取ConfigDataResource, 并转换为多个ConfigData
+
+4. 将ConfigData中的PropertySource转换为Contributor, kind为UMBOUND_IMPORT
+
+5. 获取类型为UMBOUND_IMPORT的contributor, 从他们的PropertySource中提取特殊的属性, 放到ConfigDataProperties中, 并创建一个新的kind为BOUND_IMPORT的contributor替换这个contributor
+
+
+激活Profile:
+
+1. 经过上面的扫描之后, 我们已经获得了application.xml等配置文件的信息了
+2. 此时遍历所有的contributor, 获取`spring.profiles.active`和`spring.profiles.include`这两个配置, 表示激活的profile
+
+
+
+根据激活的profile扫描
+
+1. 这一步的步骤和初始化扫描的步骤相同
+2. 只不过这里已经获取了激活的profile, 所以会查找各个ConfigDataLocation下的application-${profile}.yaml/yml/xml/properties
+
+
+
+将Contributor中扫描到的配置添加到Environment:
+
+1. 这一步的目的是遍历所有的Contributor, 从中获取PropertySource, 然后将其添加到Environment
+
+2. 所以这里遍历Contributor的顺序决定了PropertySource加入到Environment中的属性
+
+   即越先遍历的Contributor越先将PropertySource加入到Environment中
+
+### 源码解析
+
+具体的源码解析查看源码代码
 
 > 创建ConfigDataEnvironment
 
@@ -6293,14 +6759,6 @@ public class ConfigDataEnvironmentPostProcessor implements EnvironmentPostProces
 
 首先来理解下ConfigDataEnvironmentContributor这个核心类
 
-- **这个类表示的是能够向Environment对象提供配置的一个元素，他可以表示一个可能存在配置文件的路径（如file:/config），也可以表示一个配置文件（如application.yml），还可以表示yml中的一段代码块（代码块通过---分隔），也可以表示一个已经存在Environment中已经存在的PropertySource。根据Contributor的properties.imports决定**
-
-- **ConfigDataEnvironmentContributor是不可变的，与String类似，所以修改其中的某个属性都是重新创建一个。**
-- **ConfigDataEnvironmentContributor有一个Map<ImportPhase, List\<ConfigDataEnvironmentContributor>>类型的children成员变量，<font color=red>这意味着ConfigDataEnvironmentContributor是一个树形结构。</font>其实也好理解，当Contributer表示的是一个目录时，他的children就是这个解析出来的配置文件或者代码段。**
-- **如果Contributor表示的是文件或者代码段时，resource表示的是对应配置文件的Resource。propertySource表示读取到的配置，configurationPropertySource表示propertySource对应的ConfigurationPropertySource类型的包装类**
-- **每个Contributor都有Kind类型，用到的时候讲**
-- **ConfigDataEnvironmentContributor实现了Iterable接口，调用for的时候会深度优先递归children中ImportPhase.AFTER_PROFILE_ACTIVATION对应的List，然后深度递归Import.BEFORE_PROFILE_ACTIVATION对应的List，最后返回他自己。**
-- **<font color=red>properties中保存了一组imports，为List\<ConfigDataLocation>类型，这组imports表示需要解析的资源路径或者资源名称，这些imports会被解析最终转换为Contributior的children。</font>这一组imports很重要**
 
 ~~~java
 class ConfigDataEnvironmentContributor implements Iterable<ConfigDataEnvironmentContributor> {
@@ -6592,4 +7050,60 @@ application.property对应的ConfigData包含一个PropertySource。
 ![image-20220113171457001](img/spring/image-20220113171457001.png)
 
 
+
+### 自定义配置解析
+
+如果想要指定自定义配置的解析,  比如我们我们想要加载zk中的配置, 或者将配置放在redis中, 
+
+那么我们要做的就是实现ConfigDataLocationResolver, ConfigDataResource, ConfigDataLoader, ConfigDataProperty这几个类
+
+
+
+这里可以推荐两个案例: 
+
+1. NacosConfigDataLocationResolver
+
+   只需要配置如下的代码, 既可以加载nacos中的配置到env中
+
+   ~~~yml
+   spring:
+     application:
+       name: demo1
+     config:
+       import:
+         - optional:nacos:local-gateway-server.yaml
+   server:
+     port: 8380
+   ~~~
+
+   
+
+2. ConfigTreeConfigDataLocationResolver
+
+   参考https://developer.aliyun.com/article/1462749
+
+   只需要在springboot中配置如下代码, 就会去/etc/app/config下加载对应的配置, 一般用来加载k8s的configmap
+
+   ~~~yml
+   spring:
+     config:
+       import:
+         - configtree:/etc/app/config/
+   ~~~
+
+   
+
+
+
+# Hook
+
+## Spring
+
+
+
+## SpringMvc
+
+
+
+## SpringBoot
 

@@ -1,0 +1,21 @@
+plugins {
+    // 不要引入java插件, 会报错
+    id("java-platform")
+}
+
+group = 'org.example'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+
+    constraints {
+        // 指定引来的版本
+        api("org.apache.commons:commons-lang3:3.12.0")
+        api("com.google.guava:guava:30.1.1-jre")
+        api("org.slf4j:slf4j-api:1.7.30")
+    }
+}

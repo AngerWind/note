@@ -86,9 +86,18 @@ export JAVA_OPTS="-Xms100m -Xmx2000m -Dcom.sun.management.jmxremote"
 flume的基本逻辑就是source-channel-sink
 
 - source端通过监控日志文件, 从网络接口中接收等方式生成event, 传递给channel。
+
 - channel可以理解为一个队列, 用于缓存event。
-- 在另外一个线程中, sink从channel中主动拉取数据， 并输出到hdfs， hbase，本地文件等地方。
-- event包含有头信息和信息体, 头信息是一个map结构, 包含一些关于event的属性. 信息体中包含event的具体的数据
+
+- 在另外一个线程中, **sink从channel中主动拉取数据**， 并输出到hdfs， hbase，本地文件等地方。
+
+- **event包含有头信息和信息体, 头信息是一个map结构, 包含一些关于event的属性. 信息体中包含event的具体的数据**
+
+  <img src="img/flume/image-20240722144012758.png" alt="image-20240722144012758" style="zoom:50%;" />
+
+- source发送给channel的event是一批次一批次的, 同时sink从channel中消费event也是一批次一批次的
+
+- channel是线程安全的, 可以同时处理多个source和sink
 
 一个flume任务被称为一个agent， agent的名称在单台机器上必须唯一。
 
@@ -101,10 +110,10 @@ flume的基本逻辑就是source-channel-sink
 > 详细执行步骤
 
 1. Source通过监控本地日志文件, 或者从网络接收等方式生成event, 并发送给ChannelProcessor
-2. ChannelProcessor将event发送给Interceptor拦截器链, 在这一步可以给event添加一些消息头或者做过滤, 脱敏
+2. ChannelProcessor将event发送给Interceptor拦截器链, 在这一步可以**给event添加一些消息头**或者做过滤, 脱敏
 3. ChannelProcessor将拦截器链返回的event发送给ChannelSelector, 返回该event需要发送的Channel的列表(因为一个source可以对应多个channel, 所以必须通过ChannelSelector来决定发送到哪些Channel上面)。随后将event发送给channel
 4. channel可以理解为一个队列, 队列中的event等待sink来拉取
-5. SinkProcessor运行在另外一个线程, 并管理着一个或者多个sink(多个sink组成一个sink group). SinkProcessor一直循环决定哪个sink在本次循环的时候可以从channel中拉取数据
+5. SinkProcessor运行在另外一个**线程**, 并管理着一个或者多个sink(多个sink组成一个sink group). SinkProcessor一直循环决定哪个sink在本次循环的时候可以从channel中拉取数据
 6. SinkProcessor选择的sink中channel中拉取event后， 发送到目的地（写入数据库， 写入hdfs等）
 
 ![image-20220622192133941](img/flume/image-20220622192133941.png)
@@ -152,7 +161,7 @@ a3.sources = r3
 a3.sinks = k3
 a3.channels = c3
 
-# Describe/configure the source
+# 指定source为spooldir
 a3.sources.r3.type = spooldir
 # 指定需要同步的文件夹
 a3.sources.r3.spoolDir = /opt/module/flume/upload
@@ -162,8 +171,9 @@ a3.sources.r3.fileHeader = true
 #忽略所有以.tmp 结尾的文件，不上传
 a3.sources.r3.ignorePattern = ([^ ]*\.tmp)
 
-# Describe the sink
+
 a3.sinks.k3.type = hdfs
+# 配置上传到hdfs上的路径, %Y%m%d/%H默认从event header中的timestamp中获取
 a3.sinks.k3.hdfs.path =
 hdfs://hadoop102:9820/flume/upload/%Y%m%d/%H
 #上传文件的前缀
@@ -187,10 +197,12 @@ a3.sinks.k3.hdfs.rollSize = 134217700
 #文件的滚动与 Event 数量无关
 a3.sinks.k3.hdfs.rollCount = 0
 
-# Use a channel which buffers events in memory
-a3.channels.c3.type = memory
-a3.channels.c3.capacity = 1000
-a3.channels.c3.transactionCapacity = 100
+# 使用内存作为event的缓存
+a1.channels.c1.type = memory
+# 最大缓存1000个event
+a1.channels.c1.capacity = 1000
+# 定义一批次最多接收100个event
+a1.channels.c1.transactionCapacity = 100
 
 # Bind the source and sink to the channel
 a3.sources.r3.channels = c3
@@ -217,6 +229,7 @@ a3.channels = c3
 a3.sources.r3.type = TAILDIR
 # 指定用于保存同步记录的文件
 a3.sources.r3.positionFile = /opt/module/flume/tail_dir.json
+# 指定需要同步的文件夹和文件
 a3.sources.r3.filegroups = f1 f2
 a3.sources.r3.filegroups.f1 = /opt/module/flume/files/.*file.*
 a3.sources.r3.filegroups.f2 = /opt/module/flume/files2/.*log.*
@@ -224,27 +237,32 @@ a3.sources.r3.filegroups.f2 = /opt/module/flume/files2/.*log.*
 
 # Describe the sink
 a3.sinks.k3.type = hdfs
+# 上传到hdfds的目录, 使用年月日-小时来分目录
 a3.sinks.k3.hdfs.path =
 hdfs://hadoop102:9820/flume/upload2/%Y%m%d/%H
-#上传文件的前缀
-a3.sinks.k3.hdfs.filePrefix = upload
-#是否按照时间滚动文件夹
+#上传后文件的前缀
+a3.sinks.k3.hdfs.filePrefix = upload-
+# 是否按照时间滚动文件夹, 需要开启这个功能上面的/%Y%m%d/%H才有效
 a3.sinks.k3.hdfs.round = true
-#多少时间单位创建一个新的文件夹
+# 多少时间单位创建一个新的文件夹
 a3.sinks.k3.hdfs.roundValue = 1
-#重新定义时间单位
+# 重新定义时间单位
 a3.sinks.k3.hdfs.roundUnit = hour
-#是否使用本地时间戳
+# 是否使用本地时间戳
 a3.sinks.k3.hdfs.useLocalTimeStamp = true
-#积攒多少个 Event 才 flush 到 HDFS 一次
+# 积攒多少个 Event 才 flush 到 HDFS 一次
 a3.sinks.k3.hdfs.batchSize = 100
-#设置文件类型，可支持压缩
+
+# 设置生成的hdfs文件的类型, DataStream表示采集到的日志是什么格式, 文件就是什么格式, 这种方式只是将采集到的内容做二进制传输
+# 还可以设置为SequenceFile, 表示生成SequenceFile文件
+# 还可以设置为CompreddedStream, 表示压缩流, 使用这种方式必须指定hdfs.codeC压缩解码器
 a3.sinks.k3.hdfs.fileType = DataStream
-#多久生成一个新的文件
-a3.sinks.k3.hdfs.rollInterval = 60
-#设置每个文件的滚动大小大概是 128M
+
+# 多久生成一个新的文件, 单位为秒, 即每个600秒生成一个新的文件
+a3.sinks.k3.hdfs.rollInterval = 600
+# 设置每个文件的滚动大小大概是 128M, 即文件大小到了128m生成一个新的文件, 两者是或的条件
 a3.sinks.k3.hdfs.rollSize = 134217700
-#文件的滚动与 Event 数量无关
+# 每个文件接收多少个event后, 生成一个新文件来接收, 设置为0表示不开启这个选项
 a3.sinks.k3.hdfs.rollCount = 0
 
 
@@ -274,7 +292,7 @@ hdfs sink能够配置的属性如下
 | :--------------------- | :----------- | :----------------------------------------------------------- |
 | **channel**            | –            |                                                              |
 | **type**               | –            | `hdfs`                                                       |
-| **hdfs.path**          | –            | 写入文件的hdfs路径                                           |
+| **hdfs.path**          | –            | 写入文件的hdfs路径, <font color=red>可以使用${xxx}来获取event header中的值作为路径的一部分, 这样做就可以进行路径划分了</font> |
 | hdfs.filePrefix        | FlumeData    | 文件前缀                                                     |
 | hdfs.fileSuffix        | –            | 文件后缀                                                     |
 | hdfs.inUsePrefix       | –            | 正在写入的文件的前缀                                         |
@@ -304,6 +322,16 @@ hdfs sink能够配置的属性如下
 | hdfs.retryInterval     | 180          | Time in seconds between consecutive attempts to close a file. Each close call costs multiple RPC round-trips to the Namenode, so setting this too low can cause a lot of load on the name node. If set to 0 or less, the sink will not attempt to close the file if the first attempt fails, and may leave the file open or with a ”.tmp” extension. |
 | serializer             | `TEXT`       | Other possible options include `avro_event` or the fully-qualified class name of an implementation of the `EventSerializer.Builder` interface. |
 | serializer.*           |              |                                                              |
+
+
+
+> Avro Sink
+
+
+
+
+
+
 
 
 
@@ -349,9 +377,19 @@ https://flume.apache.org/releases/content/1.10.0/FlumeUserGuide.html#kafka-chann
 
    ![image-20220726011057928](img/flume/image-20220726011057928.png)
 
+> MemoryChannel
 
 
-#### Sink的分类
+
+
+
+> FileChannel
+
+
+
+
+
+
 
 
 
@@ -359,19 +397,73 @@ https://flume.apache.org/releases/content/1.10.0/FlumeUserGuide.html#kafka-chann
 
 #### Sink和Source中的事务
 
+sink和source中的事务主要指的是, 
+
+- source发送给channel的event是一批次的
+- sink从channel中消费event也是一批次的
+
+这些批次要么发送/消费成功, 要么就失败, 而不会说发送/消费成功了半个批次
+
+![image-20240722150533476](img/flume/image-20240722150533476.png)
+
+**source中的事务**
+
+source在采集到event之后, 会将event保存在自己的内部一个叫putList的临时缓存区中
+
+等到满足一批次之后, 将event按照一批次一批次的发送给channel
+
+如果channel能够接收, 那么这一批次都会被接受, 如果channel因为内存满了等原因不能接受一批次的event, 那么这一批次event会一直放在putlist中, 直到能够发送给channel
+
+**比如 spooling directory source 为文件的每一行创建一个事件，一旦事务中所有的事件全部传递到 Channel 且提交成功，那么 Soucrce 就将该文件标记为完成。**
+
+同理，事务以类似的方式处理从 Channel 到 Sink 的传递过程，如果因为某种原因使得
+事件无法记录，那么事务将会回滚。且所有的事件都会保持到 Channel 中，等待重新传递。  
+
+
+
+**sink中的事务**
+
+同时sink在从channel中拉取数据的时候, 会将一个批次的event拉取到自己的缓存区中, 然后发送给具体的目的地
+
+如果sink发送成功了, 那么会将缓存区中的event删除, 如果sink发送失败, 那么会将缓存区中的数据一整个归还给channel
+
+
+
+**这种Sink会造成数据的重复, 比如sink已经发送数据到了目的地, 但是还没有收到响应就挂了**
 
 
 
 
-
-
-
-
-#### 一些Interceptor的使用
 
 
 
 #### 多个flume任务之间的拓扑结构
+
+1. 简单的串联
+
+   ![image-20240722152504908](img/flume/image-20240722152504908.png)
+
+2. 复制和多路复用
+
+   ![image-20240722152526273](img/flume/image-20240722152526273.png)
+
+   Flume 支持将事件流向一个或者多个目的地。
+
+   这种模式可以将相同数据复制到多个channel 中，或者将不同数据分发到不同的 channel 中， sink 可以选择传送到不同的目的地  
+
+3. 负载均衡和故障转移  
+
+   ![image-20240722153238265](img/flume/image-20240722153238265.png)
+
+   Flume支持使用将多个sink逻辑上分到一个sink组， sink组配合不同的SinkProcessor可以实现负载均衡和错误恢复的功能。  
+
+4. 聚合
+
+   ![image-20240722153306731](img/flume/image-20240722153306731.png)
+
+   这种模式是我们**最常见的，也非常实用**，日常 web 应用通常分布在上百个服务器，大者甚至上千个、上万个服务器。产生的日志，处理起来也非常麻烦。
+
+   用 flume 的这种组合方式能很好的解决这一问题， 每台服务器部署一个 flume 采集日志，传送到一个集中收集日志的flume，再由此 flume 上传到 hdfs、 hive、 hbase 等，进行日志分析。    
 
 
 
@@ -413,11 +505,15 @@ https://flume.apache.org/releases/content/1.10.0/FlumeUserGuide.html#flume-chann
    a1.sources = r1
    a1.channels = c1 c2 c3 c4
    a1.sources.r1.selector.type = multiplexing # 指定selector类型为MultiplexingChannelSelector
+   
+   # 头信息中的state我们可以使用自定义interceptor给他添加上
    a1.sources.r1.selector.header = state # 指定通过event头信息中的state来判断发送给哪个channel
    a1.sources.r1.selector.mapping.CZ = c1 # 如果state的值为CZ, 发送给c1
    a1.sources.r1.selector.mapping.US = c2 c3 # 如果state的值为US, 发送给c2和c3
    a1.sources.r1.selector.default = c4       # 如果是其他的话, 发送给c4
    ~~~
+
+   
 
 4. 自定义ChannelSelector
 
@@ -647,6 +743,149 @@ https://flume.apache.org/releases/content/1.10.0/FlumeUserGuide.html#flume-chann
 
 
 #### 自定义Sink
+
+Sink 不断地轮询 Channel 中的事件且批量地移除它们，并将这些事件批量写入到存储或索引系统、或者被发送另一个 Flume Agent。
+
+Sink 是完全事务性的。在从 Channel 批量删除数据之前，每个 Sink 用 Channel 启动一个事务。批量事件一旦成功写出到存储系统或下一个 Flume Agent， Sink 就利用 Channel 提交事务。事务一旦被提交，该 Channel 从自己的内部缓冲区删除事件。
+
+官方也提供了自定义 sink 的接口：https://flume.apache.org/FlumeDeveloperGuide.html#sink 
+
+根据官方说明自定义MySink 需要继承 AbstractSink 类并实现 Configurable 接口
+
+导入依赖
+
+~~~xml
+<dependency>
+<groupId>org.apache.flume</groupId>
+<artifactId>flume-ng-core</artifactId>
+<version>1.9.0</version>
+</dependency>
+~~~
+
+
+
+~~~java
+import org.apache.flume.*;
+import org.apache.flume.conf.Configurable;
+import org.apache.flume.sink.AbstractSink;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+// 主要功能是从配置文件中读取配置, 然后给channel中的event数据添加后缀
+// 并将数据写入到日志文件中
+public class MyLogSink extends AbstractSink implements Configurable {
+
+    // 创建 Logger 对象
+    private static final Logger LOG = LoggerFactory.getLogger(AbstractSink.class);
+
+    private String prefix;
+    private String suffix;
+
+    // 这个方法会被循环调用
+    @Override
+    public Status process() throws EventDeliveryException {
+        // 声明返回值状态信息
+        Status status;
+
+        // 获取当前 Sink 绑定的 Channel
+        Channel ch = getChannel();
+
+        // 获取事务
+        Transaction txn = ch.getTransaction();
+
+        // 声明事件
+        Event event;
+
+        // 开启事务
+        txn.begin();
+
+        // 读取 Channel 中的事件，直到读取到事件结束循环
+        while (true) {
+            event = ch.take();
+            if (event != null) {
+                break;
+            }
+        }
+
+        try {
+            // 处理事件（打印）
+            LOG.info(prefix + new String(event.getBody()) + suffix);
+
+            // 事务提交
+            txn.commit();
+            status = Status.READY;
+        } catch (Exception e) {
+            // 遇到异常，事务回滚
+            txn.rollback();
+            status = Status.BACKOFF;
+        } finally {
+            // 关闭事务
+            txn.close();
+        }
+
+        return status;
+    }
+
+    /**
+    
+    */
+    @Override
+    public void configure(Context context) {
+        // 读取配置文件内容，有默认值
+        prefix = context.getString("prefix", "hello:");
+
+        // 读取配置文件内容，无默认值
+        suffix = context.getString("suffix");
+    }
+}
+
+~~~
+
+将上述代码打包放到flume的lib目录下
+
+配置文件如下
+
+~~~properties
+# Name the components on this agent
+a1.sources = r1
+a1.sinks = k1
+a1.channels = c1
+# Describe/configure the source
+a1.sources.r1.type = netcat
+a1.sources.r1.bind = localhost
+a1.sources.r1.port = 44444
+# Describe the sink
+a1.sinks.k1.type = com.atguigu.MySink
+#a1.sinks.k1.prefix = atguigu:
+a1.sinks.k1.suffix = :atguigu
+# Use a channel which buffers events in memory
+a1.channels.c1.type = memory
+a1.channels.c1.capacity = 1000
+a1.channels.c1.transactionCapacity = 100
+# Bind the source and sink to the channel
+a1.sources.r1.channels = c1
+a1.sinks.k1.channel = c1
+~~~
+
+开启任务
+
+~~~shell
+[atguigu@hadoop102 flume]$ bin/flume-ng agent -c conf/ -f
+job/mysink.conf -n a1 -Dflume.root.logger=INFO,console
+[atguigu@hadoop102 ~]$ nc localhost 44444
+hello
+OK
+atguigu
+OK
+~~~
+
+
+
+
+
+
+
+
 
 
 

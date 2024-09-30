@@ -1270,15 +1270,137 @@ git config --global --unset http.proxy
 
 
 
+# git 子模块
+
+当你有一个git父项目时, 你想给自己的父项目下添加一个子项目, 但是这个子项目又是单独的git模块, 那么你就可以使用子模块这个功能
+
+## 添加子模块
+
+1. 给父项目添加一个git子模块
+
+   ~~~bash
+   git submodule add https://e.coding.net/staticindex/tenma/submoduletest.git
+   ~~~
+
+   使用该命令会在父项目下生成一个`.gitmodule`文件, 内容如下:
+
+   ~~~java
+   [submodule "submoduletest"]
+           path = submoduletest
+           url = https://e.coding.net/staticindex/tenma/submoduletest.git
+   ~~~
+
+   如果有多个子模块, 那么就会有多条记录
+
+   同时该命令还会clone子项目的`master`分支到父项目下
+
+   ![image-20240603140319436](img/Git/image-20240603140319436.png)
+
+   如果你想指定别的位置, 也可以使用
+
+   ~~~bash
+   git submodule add https://e.coding.net/staticindex/tenma/submoduletest.git ./other_path
+   ~~~
+
+2. 父项目不会追踪子项目的改动, 换句话说, 你在子项目中做的任何改动(修改, 提交)
+
+   在父项目中运行`git status`都不会显示出来
+
+   父项目只会追踪父项目中的改动
+   
+3. 默认情况下, 父项目会将子模块中的分支设置为`master`, 这样不管你在更新子模块时, 都是使用的master分支, 如果我们想要使用其他分支, 那么可以使用如下命令
+
+   ~~~bash
+   # -f .gitmodules的作用是将这个设置保存到.gitmodules中
+   # 这样其他人在使用子模块时, 默认使用的就是stable分支
+   
+   # 如果不加-f .gitmodules, 那么会将该配置保存在.git/config文件中
+   # 这样就只有我们本地使用的是stable分支, 其他人还是使用的master分支
+   git config -f .gitmodules submodule.submoduletest.branch stable
+   ~~~
+
+   
+
+## 克隆含有子模块的项目
+
+1. 对于一个含有子模块的项目, 如果你只是简单的使用`git clone`命令来克隆项目, 那么他只会把父项目的内容克隆下来
+
+   他不会把子模块也克隆下来, 如果我们想要连同子模块一起clone下来, 我们可以使用
+
+   ~~~bash
+   git clone --recurse-submodule https://github.com/chaconinc/MainProject
+   ~~~
+
+   
+
+2. 如果你已经clone了父项目, 但是发现还没有克隆子模块, 那么你可以使用
+   
+   ~~~bash
+   git submodule update --init --recursive
+   ~~~
+   
+   该命令会让git读取`.gitmodules`文件, 并拉取仓库
+   
+   
+
+## 从远程仓库更新子模块的提交
+
+1. 当子模块的远程仓库中有提交时, 那么我们可以进入到子模块中, 执行`git pull`, 该命令会更新子模块的内容
+
+2. 或者你可以在父项目中执行如下命令:
+
+   ~~~bash
+   git submodule update --remote # 更新所有子模块
+   git submodule update --remote DbConnector # 只更新DbConnector子模块
+   ~~~
+
+3. 当你在父项目中使用`git pull`命令时, 他会把父项目中的内容fetch下来, 然后merge
+   
+但是对于子模块, 他会把远程仓库中的commit fetch下来, 但是不会merge, 所以我们需要将命令替换为
+   
+   ~~~bash
+   git pull --recurse-submodules
+   ~~~
+   
+   如果你想要让git pull 默认就开启`--recurse-submodules`参数, 那么你可以
+   
+   ~~~bash
+   git config submodule.recurse true
+   ~~~
 
 
 
+## 发布子模块改动
+
+如果我们直接在父项目中使用`git push`, 那么他会push父项目中的内容到远程仓库
+
+如果我们在主项目中提交并推送但并不推送子模块上的改动，其他尝试检出我们修改的人会遇到麻烦， 因为他们无法得到依赖的子模块改动。那些改动只存在于我们本地的拷贝中。
+
+我们可以使用`git push`的`--recurse-submodules`参数, 将其设置为check, 那么如果子模块中有改动没有push, 父项目的push就会失败
+
+~~~bash
+git push --recurse-submodules=check
+~~~
+
+我们可以通过如下命令让他设置为默认行为
+
+~~~bash
+git config push.recurseSubmodules check
+~~~
 
 
 
+或者我们可以将`--recurse-submodules`参数设置为on-demand, 如果子模块中有改动没有push, 那么他会帮你push上去
 
+~~~bash
+git push --recurse-submodules=on-demand
+~~~
 
+我们可以通过如下命令让他设置为默认行为
 
+~~~bash
+git config push.recurseSubmodules on-demand
+~~~
 
 
 

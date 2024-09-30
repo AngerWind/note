@@ -1252,7 +1252,7 @@ SqlSession会将`sql语句`, `查询条件`和`结果`进行缓存, 下次执行
    </configuration>
    ~~~
    
-2. 在Mapper的xml文件中设置<cache/>标签, cache标签可以配置一些属性, 如下
+2. 在Mapper的xml文件中设置`<cache/>`标签(不配置这个标签不会开启缓存), cache标签可以配置一些属性, 如下
 
    - eviction属性：缓存回收策略
      LRU（Least Recently Used） – 最近最少使用的：移除最长时间不被使用的对象。

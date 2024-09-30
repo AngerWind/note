@@ -1,0 +1,117 @@
+rootProject.name = 'plugin-test'
+
+
+include 'layout11'
+include 'layout12'
+include 'layout11:layout21'
+include 'layout11:layout22'
+
+
+println "正在执行settings"
+
+
+gradle.settingsEvaluated(new Action<Settings>() {
+    @Override
+    void execute(Settings settings) {
+        // 1. 在执行完settings.gradle文件后执行
+        println "settingsEvaluated"
+    }
+})
+
+gradle.projectsLoaded (new Action<Gradle>() {
+    @Override
+    void execute(Gradle gradle) {
+        // 2. 在创建完所有模块的Project对象, 即初始化阶段完毕后执行
+        println "projectsLoaded"
+    }
+})
+
+
+gradle.addProjectEvaluationListener(new ProjectEvaluationListener() {
+
+    @Override
+    void beforeEvaluate(Project project) {
+        // 3. 在配置阶段, 执行各个Project的build.gradle之前执行
+        println "${project.name} Project beforeEvaluate"
+    }
+
+    @Override
+    void afterEvaluate(Project project, ProjectState projectState) {
+        // 5. 在执行完各个Project的build.gradle文件之后执行
+        println "${project.name} Project afterEvaluate"
+    }
+});
+gradle.beforeProject(new Action<Project>() {
+    @Override
+    void execute(Project project) {
+        // 4. 在配置阶段, 执行各个Project的build.gradle之前执行
+        println "${project.name} beforeProject..."
+
+    }
+})
+
+gradle.afterProject(new Action<Project>() {
+    @Override
+    void execute(Project project) {
+        // 6. 在执行完各个Project的build.gradle文件之后执行
+        println "${project.name} afterProject..."
+    }
+})
+
+
+def rootProjectName = rootProject.getName()
+gradle.projectsEvaluated(new Action<Gradle>() {
+    @Override
+    void execute(Gradle gradle) {
+        // 7. 在配置阶段完成, 所有项目的 build.gradle 执行完毕后执行
+        println "${rootProjectName} projectsEvaluated..."
+    }
+})
+
+gradle.taskGraph.whenReady(new Action<TaskExecutionGraph>() {
+    @Override
+    void execute(TaskExecutionGraph taskExecutionGraph) {
+        // 8. 配置阶段阶段, 解析完所有的Task的依赖关系之后执行
+        // 可以在这里决定哪些Task需要执行, 跳过哪些Task
+        println "${rootProjectName} taskGraph whenReady..."
+    }
+})
+
+gradle.taskGraph.addTaskExecutionGraphListener (new TaskExecutionGraphListener() {
+
+    @Override
+    void graphPopulated(TaskExecutionGraph graph) {
+        // 9. 在配置阶段, 在构建完完整的任务执行图(DAG)后执行
+        // 此时不能再修改任务执行图了
+        println "${rootProjectName} graphPopulated..."
+    }
+})
+
+gradle.taskGraph.beforeTask(new Action<Task>() {
+    @Override
+    void execute(Task task) {
+        // 10. 在执行阶段, 执行Task之前执行
+        println "this is the task ${task.name} of the project ${task.getProject().name} beforeTask.."
+    }
+})
+
+gradle.taskGraph.afterTask(new Action<Task>() {
+    @Override
+    void execute(Task task) {
+        // 11. 在执行阶段, 执行Task之后执行
+        println "this is the task ${task.name} of the project ${task.getProject().name} afterTask.."
+    }
+})
+
+gradle.buildFinished(new Action<BuildResult>() {
+    @Override
+    void execute(BuildResult buildResult) {
+        // 12. 在执行阶段, 当所有需要执行的Task都执行完毕之后执行
+        println "${rootProjectName} buildFinished..."
+    }
+})
+include 'layout12:layout21'
+findProject(':layout12:layout21')?.name = 'layout21'
+include 'layout12:layout22'
+findProject(':layout12:layout22')?.name = 'layout22'
+

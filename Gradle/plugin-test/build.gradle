@@ -1,0 +1,74 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.3.3'
+    id 'io.spring.dependency-management' version '1.1.6'
+
+    // 用于打印task的依赖书
+    // 用法: ./gradlew ${taskName} taskTree
+    // 比如查看build的依赖树, 可以使用./gradlew build taskTree
+    id "com.dorongold.task-tree" version "4.0.0"
+
+
+    id('my-plugin')
+    id('GreetingPlugin') // todo 无法使用包名
+
+    id 'com.tiger.binary.groovy'
+    id 'com.tiger.binary.java'
+
+    id 'my-plugin-with-config'
+    id 'com.tiger.binary.groovy.config'
+}
+
+
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+
+configure( config ) { // 注意不要添加引号
+    firstName = "li"
+    lastName = "si"
+    address = ['beijin', 'chaoyang']
+}
+
+groovyPlugin {
+    firstName = "li"
+    lastName = "si"
+    address = ['beijin', 'chaoyang']
+}
+
+environments {
+    dev {
+        url = 'http://localhost:8080'
+    }
+
+    staging {
+        url = 'http://staging.enterprise.com'
+    }
+
+    production {
+        url = 'http://prod.enterprise.com'
+    }
+}
+
+

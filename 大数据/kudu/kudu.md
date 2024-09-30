@@ -96,7 +96,7 @@ kudu有特定的列类型, 不想nosql都是byte, 好处是对类型进行特有
 
 一张table 会分成若干个 tablet，每个 tablet 包括 MetaData 元信息及若千个RowSet。
 
-RowSet 包含一个MemRowSet 及若干个DiskRowSet，DiskRowSet 中包含一个BloomFile、Ad hoc Index、BaseData、DeltaMem 及若干个RedoFile和UndoFile。
+RowSet 包含一个MemRowSet 及若干个DiskRowSet，DiskRowSet 中包含一个BloomFile、Adhoc Index、BaseData、DeltaMem 及若干个RedoFile和UndoFile。
 
 MemRowSet: 用于新数据 insert 及已在 MemRowSet 中的数据的更新，一个MemRowSet 写满后会将数据刷到磁盘形成若干个 DiskRowSet。默认是 1G 或者或者120S。
 
@@ -104,7 +104,7 @@ DiskRowSet:用于老数据的变更后台定期对 DiskRowSet 做 compaction，�
 
 BloomFile:根据一个DiskRowSet 中的 key 生成一个 bloom filter，用于快速模糊定位某个 key 是否在 DiskRowSet 中
 
-Ad hocIndex:是主键的索引，用于定位 key 在 DiskRowSet 中的具体哪个偏移位置
+AdhocIndex:是主键的索引，用于定位 key 在 DiskRowSet 中的具体哪个偏移位置
 
 BaseData 是 MemRowSet flush 下来的数据，按列存储，按主键有序。
 
@@ -225,7 +225,7 @@ PARTITION BY HASH PARTITIONS 16
 STORED AS KUDU
 TBLPROPERTIES (
 'kudu.master_addresses' = 'node1:7051,node2:7051,node3:7051',
-'kudu .table_name' = 'my_first_table'
+'kudu.table_name' = 'my_first_table'
 );
 ~~~
 

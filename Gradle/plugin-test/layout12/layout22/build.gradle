@@ -1,0 +1,16 @@
+plugins {
+    id("java-library")
+}
+
+group = 'org.example'
+version = '0.0.1-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+
+dependencies {
+    implementation(platform(project(":layout12:layout21")))
+    implementation("org.apache.commons:commons-lang3")
+}

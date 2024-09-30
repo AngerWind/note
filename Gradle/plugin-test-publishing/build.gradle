@@ -1,0 +1,71 @@
+plugins {
+    id 'groovy'
+    // 根据需要添加特定语言的支持
+
+    // 使用groovy开发插件必须
+    id 'groovy-gradle-plugin'
+    // 用于帮助开发 Java 插件，会自动应用 Java Library 插件
+    // 并在 dependencies 中添加 implementation gradleApi()。
+    id 'java-gradle-plugin'
+    // 使用kotlin开发插件需要, 由于这个插件不是gradle自带的插件, 所以必须指定版本, 同时版本需要与gradle适配
+    id "org.gradle.kotlin.kotlin-dsl" version "5.1.1"
+
+    id 'maven-publish' // 用于发布jar包到maven仓库中
+}
+
+group = 'org.example'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.apache.groovy:groovy:4.0.14'
+    testImplementation platform('org.junit:junit-bom:5.9.1')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+
+    implementation gradleApi() //必须
+    implementation localGroovy() //必须
+}
+
+publishing {
+    // 指定需要发布的maven仓库
+    repositories {
+        maven {
+            name = "localRepo"
+            // 发布到当前项目根目录下的/build/repo/文件夹下
+            url = layout.buildDirectory.dir("repo")
+        }
+        // 发布到网络上
+        maven {
+            name = "nexus"
+            // 用户口令
+            credentials {
+                username 'your-username'
+                password 'your-password'
+            }
+            def releasesRepoUrl = "https://www.your-domain.com/repository/maven-releases/" // release仓库地址
+            def snapshotsRepoUrl = "https://www.your-domain.com/repository/maven-snapshots/" // snapshots仓库地址
+            // 根据版本信息动态判断发布到snapshots还是release仓库
+            url = version.endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
+        }
+    }
+    publications {    // 配置发布的产出包，一个项目也有可能有多个产出，但大部分时候只有一个
+
+        // 指定一个产出包, myJar为名字
+        myJar(MavenPublication) {
+            // 指定gav
+            groupId = "com.tiger"
+            artifactId = "demo1"
+            version = "1.0-SNAPSHOT"
+
+            // 指定为jar包
+            from components.java
+        }
+    }
+}
+
+test {
+    useJUnitPlatform()
+}

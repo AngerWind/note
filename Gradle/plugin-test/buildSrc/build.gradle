@@ -1,0 +1,28 @@
+plugins {
+    // 使用groovy开发插件必须
+    id 'groovy-gradle-plugin'
+    // 用于帮助开发 Java 插件，会自动应用 Java Library 插件
+    // 并在 dependencies 中添加 implementation gradleApi()。
+    id 'java-gradle-plugin'
+    // 使用kotlin开发插件需要, 由于这个插件不是gradle自带的插件, 所以必须指定版本, 同时版本需要与gradle适配
+    // id "org.gradle.kotlin.kotlin-dsl" version "5.1.1"
+}
+
+gradlePlugin {
+    plugins {
+        groovy { // 随便起名字
+            id = 'com.tiger.binary.groovy' // 插件的id, 可以随便起
+            implementationClass = 'com.tiger.binary.GroovyPlugin' // 指定插件的实现类, 不需要文件后缀
+        }
+        'groovy.config' { // 随便起名字
+            id = 'com.tiger.binary.groovy.config' // 插件的id, 可以随便起
+            implementationClass = 'com.tiger.binary.GroovyPluginWithConfig' // 指定插件的实现类, 不需要文件后缀
+        }
+        java { // 随便起名字
+            id = 'com.tiger.binary.java' // 插件的id, 可以随便起
+            implementationClass = 'com.tiger.binary.JavaPlugin' // 指定插件的实现类, 不需要文件后缀
+        }
+
+    }
+}
+

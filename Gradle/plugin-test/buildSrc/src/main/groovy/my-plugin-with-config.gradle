@@ -1,0 +1,109 @@
+import groovy.transform.ToString
+import groovy.transform.TupleConstructor
+
+
+@ToString
+@TupleConstructor
+class Address {
+    String city
+    String street
+}
+
+@ToString
+class Config {
+    String firstName
+    String lastName
+    Address address
+}
+// extensions是project属性, 类似于一个Map, 所有插件创建的配置都放在extensions中
+// 为当前插件创建一个配置项, 并指定他的名字
+def config = project.extensions.create("config", Config)
+// 设置配置项的默认值
+config.firstName = "zhang"
+config.lastName = 'san'
+config.address = ["hanzhou", "xixi"]
+
+
+class SiteInfo {
+    String url
+    String website
+}
+class Config2 {
+    SiteInfo siteInfo = new SiteInfo()
+
+    // 使用dsl的方式来配置
+    def siteInfo(Action<? super SiteInfo> action) {
+        action.execute(siteInfo)
+    }
+}
+def config2 = project.extensions.create("config2", Config2)
+// 设置配置项的默认值
+config2.siteInfo {
+    url = "findUser"
+    website = "www.baidu.com"
+}
+
+// class ServerEnvironment {
+//
+//     // 必须要有一个public final的name属性
+//     public final String name
+//     String url
+//
+//     // 必须要有一个接受name的构造函数, 并且添加Inject注解
+//     @javax.inject.Inject
+//     public ServerEnvironment(String name) {
+//         this.name = name;
+//     }
+//
+//     // 必须要有一个getName方法
+//     String getName() {
+//         return name;
+//     }
+// }
+
+abstract class ServerEnvironment {
+    private final String name;
+    String url
+
+    @javax.inject.Inject
+    public ServerEnvironment(String name) {
+        this.name = name;
+    }
+
+    String getName() {
+        return name;
+    }
+}
+
+
+NamedDomainObjectContainer<ServerEnvironment> serverEnvironmentContainer =
+        project.getObjects().domainObjectContainer(ServerEnvironment.class, name -> objects.newInstance(ServerEnvironment.class, name));
+project.getExtensions().add("environments", serverEnvironmentContainer);
+
+serverEnvironmentContainer.configureEach(serverEnvironment -> {
+
+
+    println(serverEnvironment.getName()) // 这里只能获取到name
+    println( serverEnvironment.url) // 不能获取到url, url为null
+
+
+    String env = serverEnvironment.getName();
+    String capitalizedServerEnv = env.substring(0, 1).toUpperCase() + env.substring(1);
+    String taskName = "deployTo" + capitalizedServerEnv;
+    project.getTasks().register(taskName){
+        doLast {
+            // 在task执行的时候可以获取到name和url
+            print("get user env: ${serverEnvironment.getName()}, ${serverEnvironment.url}")
+        }
+    }
+});
+
+
+tasks.register("printConfig1") {
+    doLast {
+        // 这里可以获取到用户设置的配置的值
+        println("config: ${config}")
+        println("config: ${project.extensions.findByType(Config)}")
+        println("config: ${project.extensions.findByName("config")}")
+    }
+}

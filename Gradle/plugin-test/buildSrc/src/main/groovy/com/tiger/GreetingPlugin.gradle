@@ -1,0 +1,6 @@
+
+tasks.register("greeting") {
+    doLast {
+        println("Hello from the convention GreetingPlugin")
+    }
+}

@@ -860,7 +860,8 @@ todo
 
 5. 插入意向锁
 
-   插入意向锁是间隙锁的一种, 在插入一行记录的时候, 
+   - 插入意向锁是在插入一行记录操作之前设置的一种间隙锁，这个锁释放了一种插入方式的信号，亦即多个事务在相同的索引间隙插入时如果不是插入间隙中相同的位置就不需要互相等待。
+   - 假设有索引值4、7，几个不同的事务准备插入5、6，每个锁都在获得插入行的独占锁之前用插入意向锁各自锁住了4、7之间的间隙，但是不阻塞对方因为插入行不冲突。
 
 6. 自增锁(AUTO-INC)
 
@@ -933,9 +934,20 @@ select * from performance_schema.data_locks dl join information_schema.INNODB_TR
 
    
 
-4. 其实不管是记录锁, 间隙锁还是临键锁, 都是为了保证数据的读一致性和事务的隔离.  innodb会根据数据的不同而采用不同的锁的组合方式来保证上面两个特效.
+4. 插入意向锁(Insert Intention)
+
+   - 插入意向锁是在插入一行记录操作之前设置的一种间隙锁，这个锁释放了一种插入方式的信号，亦即多个事务在相同的索引间隙插入时如果不是插入间隙中相同的位置就不需要互相等待。
+   - 假设有索引值4、7，几个不同的事务准备插入5、6，每个锁都在获得插入行的独占锁之前用插入意向锁各自锁住了4、7之间的间隙，但是不阻塞对方因为插入行不冲突。
+
+   
+
+5. 其实不管是记录锁, 间隙锁还是临键锁, 都是为了保证数据的读一致性和事务的隔离.  innodb会根据数据的不同而采用不同的锁的组合方式来保证上面两个特效.
 
    下面是一些语句使用的锁的分析
+
+   更多的sql分析可以查看https://juejin.cn/post/7075508551354941454#heading-8
+
+   
 
    - 在**唯一索引**上进行**等值查询**时, 如果**没有查询到数据**时, 将对该数据**后面的第一个存在的数据的索引项**添加间隙锁, 锁住**该索引项**与其**前面的索引项中间这段间隙**
 
@@ -998,162 +1010,695 @@ select * from performance_schema.data_locks dl join information_schema.INNODB_TR
 
 
 
-### Innodb查看事务与锁
+### Innodb查看事务
 
 https://www.cnblogs.com/yuanfy008/p/15169030.html
 
-> 查看事务情况
+#### information_schema.innodb_trx
 
-在innodb中, 在information_schema.innodb_trx表中记录了所有**正在执行**的事务
+在innodb中, 在`information_schema.innodb_trx`表中记录了所有**正在执行**的事务
 
-表中字段解释如下
+表中字段解释如下:
 
-~~~shell
- # 事务ID
-  `trx_id` varchar(18) NOT NULL DEFAULT '',  
-  
-  # 事务状态， 允许值是 RUNNING，LOCK WAIT， ROLLING BACK，和 COMMITTING。
-  `trx_state` varchar(13) NOT NULL DEFAULT '', 
-  
-  # 事务开始时间
-  `trx_started` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
-  
-  # 事务当前等待的锁的ID，如果TRX_STATE是LOCK WAIT；否则NULL。
-  `trx_requested_lock_id` varchar(105) DEFAULT NULL, 
-  
-   # 事务开始等待锁的时间
-  `trx_wait_started` datetime DEFAULT NULL,
-  
-  # 事务权重， 反映（但不一定是准确计数）更改的行数和事务锁定的行数。为了解决死锁， InnoDB选择权重最小的事务作为“受害者”进行回滚。无论更改和锁定行的数量如何，更改非事务表的事务都被认为比其他事务更重。
-  `trx_weight` bigint(21) unsigned NOT NULL DEFAULT '0', 
-  
-  # MySQL 线程 ID。 这个id很重要，如果发现某个事务一直在等待无法结束的话，可以通过这个ID kill掉。
-  `trx_mysql_thread_id` bigint(21) unsigned NOT NULL DEFAULT '0', 
-  
-  # 事务正在执行的 SQL 语句。
-  `trx_query` varchar(1024) DEFAULT NULL,
-  
-  # 交易的当前操作，如果有的话；否则 NULL。
-  `trx_operation_state` varchar(64) DEFAULT NULL,
-  
-  # InnoDB处理此事务的当前 SQL 语句时使用 的表数。
-  `trx_tables_in_use` bigint(21) unsigned NOT NULL DEFAULT '0',
-  
-  # InnoDB当前 SQL 语句具有行锁 的表数。（因为这些是行锁，而不是表锁，尽管某些行被锁定，但通常仍可以由多个事务读取和写入表。）
-  `trx_tables_locked` bigint(21) unsigned NOT NULL DEFAULT '0',
-  
-  # 事务保留的锁数。
-  `trx_lock_structs` bigint(21) unsigned NOT NULL DEFAULT '0',
-  
-  # 此事务的锁结构在内存中占用的总大小。
-  `trx_lock_memory_bytes` bigint(21) unsigned NOT NULL DEFAULT '0',
-  
-  # 此事务锁定的大致数量或行数。该值可能包括物理上存在但对事务不可见的删除标记行。
-  `trx_rows_locked` bigint(21) unsigned NOT NULL DEFAULT '0',
-  
-  # 此事务中修改和插入的行数。
-  `trx_rows_modified` bigint(21) unsigned NOT NULL DEFAULT '0',
-  `trx_concurrency_tickets` bigint(21) unsigned NOT NULL DEFAULT '0',
-  
-  # 当前事务的隔离级别。
-  `trx_isolation_level` varchar(16) NOT NULL DEFAULT '',
-  `trx_unique_checks` int(1) NOT NULL DEFAULT '0',
-  `trx_foreign_key_checks` int(1) NOT NULL DEFAULT '0',
-  `trx_last_foreign_key_error` varchar(256) DEFAULT NULL,
-  `trx_adaptive_hash_latched` int(1) NOT NULL DEFAULT '0',
-  `trx_adaptive_hash_timeout` bigint(21) unsigned NOT NULL DEFAULT '0',
-  `trx_is_read_only` int(1) NOT NULL DEFAULT '0',
-  `trx_autocommit_non_locking` int(1) NOT NULL DEFAULT '0'
-~~~
+- trx_id:  事务id
+
+- trx_state: 事务的状态, RUNNING，LOCK WAIT， ROLLING BACK，和 COMMITTING。
+
+- trx_requested_lock_id: 事务当前等待的锁的ID，如果TRX_STATE是LOCK WAIT；否则NULL。
+
+- trx_wait_started: 事务开始等待锁的时间
+
+- trx_weight: 事务权重， 反映（但不一定是准确计数）更改的行数和事务锁定的行数。
+
+  为了解决死锁， InnoDB选择权重最小的事务作为“受害者”进行回滚。无论更改和锁定行的数量如何，更改非事务表的事务都被认为比其他事务更重。
+
+- trx_mysql_thread_id: 线程的process id , 不是mysql线程id!!!!
+
+  这个id很重要，如果发现某个事务一直在等待无法结束的话，可以通过这个ID kill掉。
+
+- trx_query: 事务正在执行的 SQL 语句。
+
+  这里的sql显示的是实时的, 执行完成就会被设置为null
+
+- trx_operation_state: 事务的操作状态，通常显示事务在某个操作中的进展情况。
+
+- trx_tables_in_use:  事务当前正在使用的表的数量
+
+- trx_tables_locked: 事务当前锁定的表的数量。
+
+- trx_lock_structs: 事务当前持有的锁的数量。
+
+- trx_lock_memory_bytes: 事务持有的锁在内存中占用的总大小
+
+- trx_rows_locked: 事务锁定的行的数量。
+
+- trx_rows_modified此事务中修改的行数
+
+- trx_concurrency_tickets: 此事务中插入的行数
+
+- trx_isolation_level: 当前事务的隔离级别。
+
+- trx_unique_checks
+
+- trx_foreign_key_checks
+
+- trx_last_foreign_key_error
+
+- trx_adaptive_hash_latched
+
+- trx_adaptive_hash_timeout
+
+- trx_is_read_only
+
+- trx_autocommit_non_locking
 
 其中有几个特别重要的字段
 
-~~~shell
-TRX_ID                  事务ID
-trx_state				事务的状态, running表示正在运行, lock wait表示正在等待其他事务释放锁
-TRX_REQUESTED_LOCK_ID   事务当前正在等待的锁的ID。 如果当前事务阻塞就可以看出之前的锁
-TRX_MYSQL_THREAD_ID     MySQL 线程 ID
+- TRX_ID                  事务ID
+- trx_state			   事务的状态, running表示正在运行, lock wait表示正在等待其他事务释放锁
+- TRX_REQUESTED_LOCK_ID   事务当前正在等待的锁的ID。 如果当前事务阻塞就可以看出之前的锁
+- TRX_MYSQL_THREAD_ID     process id, 经常用于连表查询
+- trx_query               **当前事务正在执行的sql, 显示的sql是实时的, 执行完了就会被设置为null**
+
+
+
+#### information_schema.PROCESSLIST
+
+这张表记录了所有会话正在干嘛
+
+
+
+https://blog.csdn.net/zgdwxp/article/details/98595277
+
+~~~sql
+select * from information_schema.PROCESSLIST ;
 ~~~
 
-查看所有的事务, 与当前连接正在进行的事务
+![image-20240622121819960](img/mysql高级/image-20240622121819960.png)
 
-~~~~sql
+ID:  即process id, 会话id,  很重要, **可以用来连表查询**
+
+USER: 当前会话id的用户
+
+HOST: 创建连接的服务器
+
+DB: 该连接执行SQL的数据库。有些连接创建时可能未指定数据库，因此该项可能为空。
+
+COMMAND:  不是命令的意思, 而是状态,   **该项值常见的有Sleep(休眠)、Query(查询)、Connect(连接)**
+
+TIME:  当前状态持续的时间,  一般状态变化非常快、在每个状态持续时间很短，如果持续多秒，说明就出现了问题。**所以这个设定，让时间成为判断SQL是否正常的关键要素**
+
+STATE:  https://learn.blog.csdn.net/article/details/98624463
+
+INFO: 正在执行的完整SQL语句, 这个是实时的sql, sql执行完成就会被设置为null
+
+
+
+#### performance_schema.threads
+
+这张表记录了mysql所有的线程正在做什么, 其中就包含了processlist表中的所有信息
+
+~~~sql
+select * from performance_schema.threads
+~~~
+
+![image-20240622123242697](img/mysql高级/image-20240622123242697.png)
+
+![image-20240622123254420](img/mysql高级/image-20240622123254420.png)
+
+![image-20240622123307985](img/mysql高级/image-20240622123307985.png)
+
+- thread_id: 线程ID
+- name:  线程的名称
+- type 线程类型，分为BACKGROUND(后台线程)和FOREGROUND(用户线程)，我们要关注的是用户线程
+- processlist_id:  用户会话ID，只有用户线程才有
+- processlist_user: 会话用户名，只有用户线程才有
+- processlist_host:  会话主机地址(IP)，只有用户线程才有
+- processlist_db:  会话当前操作的数据库, 可能为null, 即没有指定数据库
+- processlist_command: 当前线程的状态,  和processlist表中的command是一个意思
+- processlist_time: 当前线程的状态的持续时间, 和processlsit表中的state是一样的
+- processlist_state: 当前线程正在干嘛, 例如，`Sending data`, `Locked`, `Writing to net` 等。与 `INFORMATION_SCHEMA.PROCESSLIST` 表中的 `STATE` 字段一致。
+- processlist_info:  上一次执行的sql语句, 
+- parent_thread_id: 父线程的id
+- role: 当前线程的角色, 如 `applier`, `worker`, `event_scheduler` 等。
+- instrumented: 指示该线程是否被性能模式跟踪和监控, true/false
+- history: 是否保存线程的历史性能数据, true/false
+- connection_type: 线程的连接类型, 例如 `TCP/IP`, `Unix socket` 等。
+- thread_os_id:  操作系统分配给该线程的唯一id
+
+
+
+
+
+#### performance_schema.events_statements_current
+
+记录了mysql用户线程上一条, 或者当前正在执行的sql语句的性能分析
+
+在mysql中, 每个连接都有一个专门的用户线程负责
+
+~~~sql
+select * from performance_schema.events_statements_current
+~~~
+
+
+
+![image-20240622140052926](img/mysql高级/image-20240622140052926.png)
+
+![image-20240622140109983](img/mysql高级/image-20240622140109983.png)
+
+![image-20240622140122580](img/mysql高级/image-20240622140122580.png)
+
+![image-20240622140143889](img/mysql高级/image-20240622140143889.png)
+
+![image-20240622140204844](img/mysql高级/image-20240622140204844.png)
+
+![image-20240622140224858](img/mysql高级/image-20240622140224858.png)
+
+下面是关键字段的分析:
+
+- **thread_id:  线程id**
+- event_id: 事件的唯一标识符
+- end_event_id: 语句时间结束时的时间id
+- event_name: 事件名称, 通常以 `statement/` 开头，后跟具体的 SQL 语句类型，例如 `statement/sql/select`，`statement/sql/insert` 等。
+- source: 触发此事件的源代码,   触发此事件的源代码位置，通常表示文件名和行号。这对开发和调试非常有用。
+- timer_start: 语句执行开始的时间戳，单位为皮秒
+- timer_end: 语句结束时的时间戳, 单位为皮秒
+- timer_wait: 语句总的执行时间
+- lock_time: 语句等待锁的时间
+- **sql_text:  正在执行的sql的文本**
+- digest: sql的摘要
+- digest_text: sql的标准化文本,  类似于 `SQL_TEXT`，但去除了具体的常量和格式化信息
+- current_schema: 当前正在使用的数据库
+- object_name: sql语句操作的对象名称, 例如表名或视图名。如果没有特定对象，此字段为 `NULL`。
+
+
+
+#### performance_schema.events_statements_history
+
+这张表记录了每个用户线程最后N个执行的sql的性能分析
+
+在mysql中, 每个连接都有一个专门的用户线程负责, 这个连接可能会先后执行多个事务
+
+所以你可以在这张表看到多个事务的sql
+
+~~~sql
+select * from PERFORMANCE_SCHEMA.events_statements_history;
+~~~
+
+这张表的字段结构与`performance_schema.events_statements_history`
+
+
+
+
+
+
+
+
+
+#### 查看长事务
+
+https://www.cnblogs.com/mysqljs/p/11552646.html
+
+需要注意的是, 上面介绍的表中
+
+ `information_schema.innodb_trx`的`trx_query`显示的sql是实时的, 执行完就会被置位null
+
+`information_schema.processlist`的`info`显示的sql也是实时的, 执行完就会被设置为null
+
+`performance_schema.threads`中的`processlist_info`显示的sql, 是当前正在执行的, 或者上一次执行的. 在sql执行完之后, 不会被设置为null
+
+`performance_schema.events_state_current`中的`sql_text`显示的也是当前正在执行的, 或者上一次执行的. 在sql执行完之后, 不会被设置为null
+
+
+
+
+
+根据上面表的解析, 我们可以先从information_schema.INNODB_TRX表中查出正在执行的事务, 并计算其运行时间进行排序
+
+~~~sql
+select t.*,to_seconds(now())-to_seconds(t.trx_started) spend_time from INFORMATION_SCHEMA.INNODB_TRX t order by spend_time desc
+~~~
+
+在这个查询中, 我们特别要注意看`trx_query`字段, 看长事务到底在执行什么sql, 但是如果这个事务刚刚好没有正在执行sql, 那么他就是null, 所以我们还可以通过`performance_schema.event_state_current`或者`performance_schema.threads`这两张表来查看上一次执行或者当前正在执行的sql是什么
+
+~~~sql
+select now(),(UNIX_TIMESTAMP(now()) - UNIX_TIMESTAMP(trx.trx_started)) as spend_sec, trx.*, pl.*, cur.event_name, cur.sql_text
+from information_schema.innodb_trx trx 
+inner join information_schema.PROCESSLIST pl on trx.TRX_MYSQL_THREAD_ID=pl.id 
+inner join performance_schema.threads t ON pl.id = t.PROCESSLIST_ID
+inner join performance_schema.events_statements_current cur ON t.THREAD_ID = cur.THREAD_ID;
+~~~
+
+
+
+或者我们也可以查看执行这个事务的用户线程, 执行sql的历史记录
+
+~~~sql
+SELECT ps.id 'PROCESS ID', ps.USER, ps.HOST, esh.EVENT_ID, trx.trx_started, esh.event_name 'EVENT NAME', esh.sql_text 'SQL', ps.time 
+FROM PERFORMANCE_SCHEMA.events_statements_history esh
+JOIN PERFORMANCE_SCHEMA.threads th ON esh.thread_id = th.thread_id
+JOIN information_schema.PROCESSLIST ps ON ps.id = th.processlist_id
+LEFT JOIN information_schema.innodb_trx trx ON trx.trx_mysql_thread_id = ps.id
+WHERE
+trx.trx_id IS NOT NULL
+AND ps.USER != 'SYSTEM_USER'
+ORDER BY esh.EVENT_ID;
+~~~
+
+根据这个用户线程, 执行过的所有sql, 就可以查看到到底是哪个代码在执行的事务了, 从而定位到问题代码
+
+同时我们就可以判定该事务是否可以杀掉，以免影响其他事务造成等待现象。
+
+
+
+### Innodb查看锁
+
+在mysql5.x, 所有的锁的情况都会记录在`information_schema.innodb_locks`中, 锁等待的情况记录在`information_schema.data_lock_waits`中
+
+在mysql5.x时, 可以参考这篇文章https://www.cnblogs.com/mysqljs/p/11552646.html
+
+
+
+在mysql8.x, 所有的锁的情况记录在`performance_schema.data_locks`,  锁等待的情况记录在`performance_schema.data_lock_waits`中
+
+下面是`data_locks`字段的解释
+
+- ENGINE: 持有或请求锁的存储引擎
+- ENGINE_LOCK_ID: 锁的id, `information_schema.INNODB_TRX`的`trx_requested_lock_id`字段 就来源于这
+- ENGINE_TRANSACTION_ID: 持有锁的事务的id, 来源于`information_schema.INNODB_TRX`的`TRX_ID`字段
+- THREAD_ID 创建锁的会话的线程 ID, 来源于`performance_schema.threads`
+- EVENT_ID: 产生锁的sql的event id, 来源于`performance_schema.event_state_history`
+- OBJECT_SCHEMA: 锁的数据库
+- OBJECT_NAME: 锁的表名
+- PARTITION_NAME: 分区, innodb可以忽略
+- SUBPARTITION_NAME: 子分区, innodb可以忽略
+- INDEX_NAME: 锁定索引的名称
+- OBJECT_INSTANCE_BEGIN: 主要用于内部调试
+- LOCK_TYPE: 锁的类型, 对于Innodb, 有RECORD行级锁和 TABLE表级锁。
+- LOCK_MODE: 锁的具体实现, 对于innodb, 有如下值:
+  1. 当为行锁时, [X]表示排他临键锁, [X,GAP]表示排他间隙锁, [X,REC_NOT_GAP]表示排他记录锁
+  2. 当为行锁时, [S]表示共享临键锁, [S,GAP]表示共享间隙锁, [S,REC_NOT_GAP]表示共享记录锁
+  3. 当为表锁时, [IX]表示意向排他锁, [IS]表示意向共享锁   (在读取一行时要先获取IS锁, 在修改,删除一行时要先获取IX锁)
+  4. [AUTO_INC]表示自增锁
+  5. UNKNOWN, 其他
+- LOCK_STATUS: 锁的状态, 对于Innodb, 有GRANTED（当前锁已锁定）和 WAITING（当前锁正在等待其他锁释放）
+- LOCK_DATA: 锁是加在哪个数据上
+
+
+
+下面是`data_lock_waits`的字段解释
+
+- engine:  使用的数据库引擎
+- requesting_engine_lock_id:  当前请求锁的锁id
+- requesting_engine_transaction_id:  请求锁的事务id, 来源于`information_schema.innodb_trx`
+- requesting_thread_id:   正在等待锁的mysql 线程 id, 来源于`information_schema.threads`
+- request_event_id:  等待锁的sql, 产生的event id, 来源于`performance_schema.events_state_current`
+- requesting_object_instance_begin: 等待锁对象的内存地址, 主要用于调试
+- blocking_engine_lock_id: 持有锁的锁id
+- blocking_engine_transaction_id: 持有锁的事务id, 来源于`information_schema.innodb_trx`
+- blocking_thread_id: 持有锁的线程id, 来源于`information_schema.threads`
+- block_even_id: : 持有锁的sql, 产生的event id, 来源于`performance_schema.events_state_current`
+- blocking_object_instance_begin: 持有锁对象的内存地址, 主要用于调试
+
+
+
+下面我们来看一个案例, 我们有如下数据
+
+| id   | created_at                    | updated_at                    | deleted_at | name     | age  | birthday                      |
+| ---- | ----------------------------- | ----------------------------- | ---------- | -------- | ---- | ----------------------------- |
+| 1    | 2022-11-15 14:18:23.576000000 | 2022-11-15 14:18:23.576000000 |            | zhangsna | 199  | 2022-11-15 14:18:23.529000000 |
+| 4    | 2022-11-15 14:26:57.265000000 | 2022-11-15 14:26:57.265000000 |            | zhangsna | 199  |                               |
+| 8    | 2022-11-15 14:56:29.925000000 | 2022-11-15 14:56:29.925000000 |            | zhangsna | 100  |
+
+现在我们开启事务, 并执行如下sql
+
+~~~mysql
 begin;
-select * from class c;
-select * from information_schema.INNODB_TRX;
--- connection_id()表示当前连接的mysql线程, 即通过线程号查找当前连接正在执行的事务
-select * from information_schema.INNODB_TRX where TRX_MYSQL_THREAD_ID =  connection_id();
-commit;
-~~~~
-
-
-
-> 查看锁的情况
-
-在mysql5.x, 所有的锁的情况都会记录在information_schema.innodb_locks中, 锁等待的情况记录在information_schema.data_lock_waits中
-
-在mysql8.x, 所有的锁的情况记录在performance_schema.data_locks,  锁等待的情况记录在performance_schema.data_lock_waits中
-
-下面是data_locks字段的解释
-
-~~~shell
-# 持有或请求锁的存储引擎。
-  `ENGINE` varchar(32) NOT NULL,
-  
-  # 存储引擎持有或请求的锁的 ID。( ENGINE_LOCK_ID, ENGINE) 值的元组是唯一的。
-  # information_schema.INNODB_TRX.trx_requested_lock_id 就来源于这
-  `ENGINE_LOCK_ID` varchar(128) NOT NULL,
-  
-  # 请求锁定的事务的存储引擎内部 ID 
-  # 来源information_schema.INNODB_TRX.TRX_ID
-  `ENGINE_TRANSACTION_ID` bigint(20) unsigned DEFAULT NULL,
-  
-  # 创建锁的会话的线程 ID
-  `THREAD_ID` bigint(20) unsigned DEFAULT NULL,
-  
-  `EVENT_ID` bigint(20) unsigned DEFAULT NULL,
-  `OBJECT_SCHEMA` varchar(64) DEFAULT NULL,
-  `OBJECT_NAME` varchar(64) DEFAULT NULL,
-  `PARTITION_NAME` varchar(64) DEFAULT NULL,
-  `SUBPARTITION_NAME` varchar(64) DEFAULT NULL,
-  
-  # 锁定索引的名称
-  `INDEX_NAME` varchar(64) DEFAULT NULL,
-  `OBJECT_INSTANCE_BEGIN` bigint(20) unsigned NOT NULL,
-  
-  # 锁的类型。该值取决于存储引擎。对于 InnoDB，允许的值为 RECORD行级锁和 TABLE表级锁。
-  `LOCK_TYPE` varchar(32) NOT NULL,
-  
-  # 如何请求锁定。
-  # 该值取决于存储引擎。为 InnoDB，允许值是 S[,GAP]，X[,GAP]， IS[,GAP]，IX[,GAP]， AUTO_INC，和 UNKNOWN。AUTO_INC和UNKNOWN 指示间隙锁定以外的锁定模式 （如果存在）
-  `LOCK_MODE` varchar(32) NOT NULL,
-  
-  # 锁定请求的状态。
-  # 该值取决于存储引擎。对于 InnoDB，允许的值为 GRANTED（锁定已持有）和 WAITING（正在等待锁定）。
-  `LOCK_STATUS` varchar(32) NOT NULL,
-  `LOCK_DATA` varchar(8192) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
+select * from test.users where id = 7 for update;
 ~~~
 
-上面需要特别注意的字段是
+此时mysql会在id为8的数据上添加一个间隙锁, 我们使用另外一个mysql客户端 来看看`data_locks`表
 
-~~~shell
-ENGINE_LOCK_ID  					锁的id
-ENGINE_TRANSACTION_ID				持有锁的事务id, 记录在information_schema.innodb_trx中
-INDEX_NAME							该锁锁住的索引的名称
-LOCK_TYPE							record表示行锁, table表示表锁
-LOCK_MODE							锁的模式.  
-									当为行锁时, [X]表示排他临键锁, [X,GAP]表示排他间隙锁, [X,REC_NOT_GAP]表示排他记录锁
-									当为行锁时, [S]表示共享临键锁, [S,GAP]表示共享间隙锁, [S,REC_NOT_GAP]表示共享记录锁
-									当为表锁时, [IX]表示意向排他锁, [IS]表示意向共享锁, [AUTO_INC]表示自增锁
-LOCK_DATA							当前锁锁住的索引项的值
+~~~mysql
+select * from performance_schema.data_locks;
 ~~~
 
-查看当前事务所持有的锁
+结果如下:
 
-~~~~sql
--- connection_id()表示当前mysql连接的线程id, 通过线程id查询事务id, 然后查询持有的表
-select * from performance_schema.data_locks dl join information_schema.INNODB_TRX it on dl.ENGINE_TRANSACTION_ID = it.trx_id where it.trx_mysql_thread_id = connection_id();
-~~~~
+| ENGINE | ENGINE_LOCK_ID                      | ENGINE_TRANSACTION_ID | THREAD_ID | EVENT_ID | OBJECT_SCHEMA | OBJECT_NAME | PARTITION_NAME | SUBPARTITION_NAME | INDEX_NAME | OBJECT_INSTANCE_BEGIN | LOCK_TYPE | LOCK_MODE | LOCK_STATUS | LOCK_DATA |
+| ------ | ----------------------------------- | --------------------- | --------- | -------- | ------------- | ----------- | -------------- | ----------------- | ---------- | --------------------- | --------- | --------- | ----------- | --------- |
+| INNODB | 2642898727856:1942:2642865333720    | 1637540               | 512       | 29       | test          | users       |                |                   |            | 2642865333720         | TABLE     | IX        | GRANTED     |           |
+| INNODB | 2642898727856:875:4:7:2642865330936 | 1637540               | 512       | 29       | test          | users       |                |                   | PRIMARY    | 2642865330936         | RECORD    | X,GAP     | GRANTED     | 8         |
+
+我们可以看到, 上面的sql对表test添加了一个表级别的IX意向排他锁,  还添加了一个行级别的排他间隙锁, 锁定的数据是8, 使用的主键索引, 两个锁的状态都是已获取的状态
+
+同时还可以看到, 只有这两个锁的事务id为1637540, mysql用户线程的id为512, event_id为29
+
+我们根据事务id到`information_schema.innodb_trx`中查询
+
+~~~sql
+select * from information_schema.INNODB_TRX it where trx_id = 1637540;
+~~~
+
+结果如下:
+
+| trx_id  | trx_state | trx_started         | trx_requested_lock_id | trx_wait_started | trx_weight | trx_mysql_thread_id | trx_query | trx_operation_state | trx_tables_in_use | trx_tables_locked | trx_lock_structs | trx_lock_memory_bytes | trx_rows_locked | trx_rows_modified | trx_concurrency_tickets | trx_isolation_level | trx_unique_checks | trx_foreign_key_checks | trx_last_foreign_key_error | trx_adaptive_hash_latched | trx_adaptive_hash_timeout | trx_is_read_only | trx_autocommit_non_locking | trx_schedule_weight |
+| ------- | --------- | ------------------- | --------------------- | ---------------- | ---------- | ------------------- | --------- | ------------------- | ----------------- | ----------------- | ---------------- | --------------------- | --------------- | ----------------- | ----------------------- | ------------------- | ----------------- | ---------------------- | -------------------------- | ------------------------- | ------------------------- | ---------------- | -------------------------- | ------------------- |
+| 1637540 | RUNNING   | 2024-06-23 21:35:19 |                       |                  | 2          | 71                  |           |                     | 0                 | 1                 | 2                | 1136                  | 1               | 0                 | 0                       | REPEATABLE READ     | 1                 | 1                      |                            | 0                         | 0                         | 0                | 0                          |                     |
+
+我们可以看到, 当前事务的processlist_id为71, trx_tables_locked表示持有1个表锁, trx_lock_structs表示持有2个锁, trx_rows_locked表示锁定了1行
+
+我们在根据`processlist_id`在`performance_schema.threads`中查询
+
+```sql
+select * from performance_schema.threads where processlist_id = 71;
+```
+
+结果如下:
+
+| THREAD_ID | NAME                      | TYPE       | PROCESSLIST_ID | PROCESSLIST_USER | PROCESSLIST_HOST | PROCESSLIST_DB | PROCESSLIST_COMMAND | PROCESSLIST_TIME | PROCESSLIST_STATE | PROCESSLIST_INFO                                 | PARENT_THREAD_ID | ROLE | INSTRUMENTED | HISTORY | CONNECTION_TYPE | THREAD_OS_ID | RESOURCE_GROUP |
+| --------- | ------------------------- | ---------- | -------------- | ---------------- | ---------------- | -------------- | ------------------- | ---------------- | ----------------- | ------------------------------------------------ | ---------------- | ---- | ------------ | ------- | --------------- | ------------ | -------------- |
+| 512       | thread/sql/one_connection | FOREGROUND | 71             | root             | localhost        | test           | Sleep               | 2105             |                   | select * from test.users where id = 7 for update |                  |      | YES          | YES     | TCP/IP          | 34844        | USR_default    |
+
+我们可以看到, 这个用户线程的user为root,  上一次执行的sql为`select * from test.users where id = 7 for update`
+
+我们再让看看
+
+现在我们启动另外一个mysql客户端, 开启事务, 并执行如下sql
+
+~~~sql
+begin;
+insert into test.users (id, name, age) values (6, 'zhangsan', 19);
+~~~
+
+应为我们的上一个sql生成了一个间隙锁, 这个间隙锁锁住了567这几个数据, 所以这个事务会一直等待锁
+
+我们查看表data_locks看看
+
+~~~sql
+select * from performance_schema.data_locks;
+~~~
+
+结果如下:
+
+| ENGINE | ENGINE_LOCK_ID                      | ENGINE_TRANSACTION_ID | THREAD_ID | EVENT_ID | OBJECT_SCHEMA | OBJECT_NAME | PARTITION_NAME | SUBPARTITION_NAME | INDEX_NAME | OBJECT_INSTANCE_BEGIN | LOCK_TYPE | LOCK_MODE              | LOCK_STATUS | LOCK_DATA |
+| ------ | ----------------------------------- | --------------------- | --------- | -------- | ------------- | ----------- | -------------- | ----------------- | ---------- | --------------------- | --------- | ---------------------- | ----------- | --------- |
+| INNODB | 2642898729504:1942:2642865347208    | 1637541               | 513       | 17       | test          | users       |                |                   |            | 2642865347208         | TABLE     | IX                     | GRANTED     |           |
+| INNODB | 2642898729504:875:4:7:2642865340312 | 1637541               | 513       | 17       | test          | users       |                |                   | PRIMARY    | 2642865340312         | RECORD    | X,GAP,INSERT_INTENTION | WAITING     | 8         |
+| INNODB | 2642898727856:1942:2642865333720    | 1637540               | 512       | 29       | test          | users       |                |                   |            | 2642865333720         | TABLE     | IX                     | GRANTED     |           |
+| INNODB | 2642898727856:875:4:7:2642865330936 | 1637540               | 512       | 29       | test          | users       |                |                   | PRIMARY    | 2642865330936         | RECORD    | X,GAP                  | GRANTED     | 8         |
+
+可以看到, 我们的sql和上一个sql类似, 都是添加了一个表级别的IX锁, 还有一个行级别的间隙锁
+
+同时lock_status的状态为waiting, 说明了当前这个锁正在等待别的锁
+
+我们查看data_lock_waits来看看
+
+~~~sql
+select * from performance_schema.data_lock_waits where REQUESTING_ENGINE_LOCK_ID = '2642898729504:875:4:7:2642865340312'
+~~~
+
+结果如下: 
+
+| ENGINE | REQUESTING_ENGINE_LOCK_ID           | REQUESTING_ENGINE_TRANSACTION_ID | REQUESTING_THREAD_ID | REQUESTING_EVENT_ID | REQUESTING_OBJECT_INSTANCE_BEGIN | BLOCKING_ENGINE_LOCK_ID             | BLOCKING_ENGINE_TRANSACTION_ID | BLOCKING_THREAD_ID | BLOCKING_EVENT_ID | BLOCKING_OBJECT_INSTANCE_BEGIN |
+| ------ | ----------------------------------- | -------------------------------- | -------------------- | ------------------- | -------------------------------- | ----------------------------------- | ------------------------------ | ------------------ | ----------------- | ------------------------------ |
+| INNODB | 2642898729504:875:4:7:2642865340312 | 1637541                          | 513                  | 20                  | 2642865341344                    | 2642898727856:875:4:7:2642865330936 | 1637540                        | 512                | 29                | 2642865330936                  |
+
+我们可以看到, 这个锁正在等待id为`2642898727856:875:4:7:2642865330936`的锁, 这个锁被事务id为`1637540`的事务持有, 并且这个锁被线程id 为 `512`的mysql用户线程持有
+
+此时我们可以通过` PERFORMANCE_SCHEMA.events_statements_history`来看看这个线程id 为512的线程到底执行了哪些sql
+
+~~~sql
+select * from PERFORMANCE_SCHEMA.events_statements_history where id = 512;
+~~~
+
+| THREAD_ID | EVENT_ID | END_EVENT_ID | EVENT_NAME           | SOURCE                          | TIMER_START        | TIMER_END          | TIMER_WAIT | LOCK_TIME | SQL_TEXT                                         | DIGEST                                                       | DIGEST_TEXT                                              | CURRENT_SCHEMA | OBJECT_TYPE | OBJECT_SCHEMA | OBJECT_NAME | OBJECT_INSTANCE_BEGIN | MYSQL_ERRNO | RETURNED_SQLSTATE | MESSAGE_TEXT | ERRORS | WARNINGS | ROWS_AFFECTED | ROWS_SENT | ROWS_EXAMINED | CREATED_TMP_DISK_TABLES | CREATED_TMP_TABLES | SELECT_FULL_JOIN | SELECT_FULL_RANGE_JOIN | SELECT_RANGE | SELECT_RANGE_CHECK | SELECT_SCAN | SORT_MERGE_PASSES | SORT_RANGE | SORT_ROWS | SORT_SCAN | NO_INDEX_USED | NO_GOOD_INDEX_USED | NESTING_EVENT_ID | NESTING_EVENT_TYPE | NESTING_EVENT_LEVEL | STATEMENT_ID |
+| --------- | -------- | ------------ | -------------------- | ------------------------------- | ------------------ | ------------------ | ---------- | --------- | ------------------------------------------------ | ------------------------------------------------------------ | -------------------------------------------------------- | -------------- | ----------- | ------------- | ----------- | --------------------- | ----------- | ----------------- | ------------ | ------ | -------- | ------------- | --------- | ------------- | ----------------------- | ------------------ | ---------------- | ---------------------- | ------------ | ------------------ | ----------- | ----------------- | ---------- | --------- | --------- | ------------- | ------------------ | ---------------- | ------------------ | ------------------- | ------------ |
+| 512       | 24       | 24           | statement/sql/delete | init_net_server_extension.cc:95 | 971088612895100000 | 971088613837900000 | 942800000  | 638000000 | delete from test.users where id = 6              | 4b244ceb3cb88ccc885587e594e3074ab12f911b667c793a397cc287cdfb4747 | DELETE FROM `test` . `users` WHERE `id` = ?              | test           |             |               |             |                       | 0           | 00000             |              | 0      | 0        | 1             | 0         | 1             | 0                       | 0                  | 0                | 0                      | 0            | 0                  | 0           | 0                 | 0          | 0         | 0         | 0             | 0                  | 11               | TRANSACTION        | 0                   | 1904         |
+| 512       | 25       | 25           | statement/sql/commit | init_net_server_extension.cc:95 | 981919357410200000 | 981919361571400000 | 4161200000 | 0         | commit                                           | f2b9be5f0f32ca7507e4ddf133cd2fad0993a1c26fde9caa6f067b1af2b7603c | COMMIT                                                   | test           |             |               |             |                       | 0           | 00000             |              | 0      | 0        | 0             | 0         | 0             | 0                       | 0                  | 0                | 0                      | 0            | 0                  | 0           | 0                 | 0          | 0         | 0         | 0             | 0                  | 11               | TRANSACTION        | 0                   | 1927         |
+| 512       | 26       | 27           | statement/sql/begin  | init_net_server_extension.cc:95 | 981934693801400000 | 981934693991300000 | 189900000  | 0         | begin                                            | 55fa5810fbb2760e86d578526176c1497b134d4ef3dd0863dd78b1c5e819848c | BEGIN                                                    | test           |             |               |             |                       | 0           | 00000             |              | 0      | 0        | 0             | 0         | 0             | 0                       | 0                  | 0                | 0                      | 0            | 0                  | 0           | 0                 | 0          | 0         | 0         | 0             | 0                  |                  |                    | 0                   | 1931         |
+| 512       | 28       | 28           | statement/sql/select | init_net_server_extension.cc:95 | 981941373268500000 | 981941373607700000 | 339200000  | 128000000 | select * from test.users where id = 7 for update | 48724a252bf6ab648faa89a35e898af655607bb8961cac2a74063d6ea5e9d811 | SELECT * FROM `test` . `users` WHERE `id` = ? FOR UPDATE | test           |             |               |             |                       | 0           |                   |              | 0      | 0        | 0             | 0         | 0             | 0                       | 0                  | 0                | 0                      | 0            | 0                  | 0           | 0                 | 0          | 0         | 0         | 0             | 0                  | 27               | TRANSACTION        | 0                   | 1932         |
+
+
+
+### MySQL 死锁分析
+
+我们先创建如下表结构:
+
+~~~sql
+-- id是自增主键，name是非唯一索引，balance普通字段
+CREATE TABLE `account` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(255) DEFAULT NULL,
+  `balance` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_name` (`name`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8;
+insert into account values (1, 'Eason', 100);
+insert into account values (2, 'Wei', 100);
+~~~
+
+![image-20240624234831541](img/mysql高级/image-20240624234831541.png)
+
+1. 我们先使用事务1执行如下sql
+
+   ~~~sql
+   begin;
+   update account set balance = 1000 where name = 'Wei';
+   ~~~
+
+   我们使用如下sql来查看加锁情况
+
+   ~~~sql
+   select * from performance.data_locks;
+   ~~~
+
+   结果如下:
+
+   | ENGINE | ENGINE_LOCK_ID                      | ENGINE_TRANSACTION_ID | THREAD_ID | EVENT_ID | OBJECT_SCHEMA | OBJECT_NAME | PARTITION_NAME | SUBPARTITION_NAME | INDEX_NAME | OBJECT_INSTANCE_BEGIN | LOCK_TYPE | LOCK_MODE     | LOCK_STATUS | LOCK_DATA              |
+   | ------ | ----------------------------------- | --------------------- | --------- | -------- | ------------- | ----------- | -------------- | ----------------- | ---------- | --------------------- | --------- | ------------- | ----------- | ---------------------- |
+   | INNODB | 2642898727032:2037:2642865083448    | 1637576               | 519       | 115      | test          | account     |                |                   |            | 2642865083448         | TABLE     | IX            | GRANTED     |                        |
+   | INNODB | 2642898727032:970:5:1:2642865326984 | 1637576               | 519       | 115      | test          | account     |                |                   | idx_name   | 2642865326984         | RECORD    | X             | GRANTED     | supremum pseudo-record |
+   | INNODB | 2642898727032:970:5:3:2642865326984 | 1637576               | 519       | 115      | test          | account     |                |                   | idx_name   | 2642865326984         | RECORD    | X             | GRANTED     | 'Wei', 2               |
+   | INNODB | 2642898727032:970:4:3:2642865327328 | 1637576               | 519       | 115      | test          | account     |                |                   | PRIMARY    | 2642865327328         | RECORD    | X,REC_NOT_GAP | GRANTED     | 2                      |
+
+   我们可以看到, 首先这个sql添加了一个IX的表锁, 这个是执行修改语句前都需要获取到的一个锁
+
+   然后应为我们的name是一个非唯一索引, 所以需要再`Wei`和正无穷上添加一个next key lock
+
+   同时为了保证`name = Wei`的这个数据不被修改, 还需要给这个数据在主键索引上添加一个记录锁
+
+   如果看不懂这个可以先查看https://juejin.cn/post/7075508551354941454#heading-8查看锁的添加规则
+
+   ![image-20240624191557161](img/mysql高级/image-20240624191557161.png)
+
+2. 第二步我们使用事务2来执行如下sql
+
+   ~~~sql
+   begin;
+   update account set balance = 1000 where name = 'Eason';
+   ~~~
+
+   我们同样使用sql来查看加锁情况
+
+   ~~~sql
+   -- connection_id()获取的是当前事务的processlist id
+   -- 然后从innodb_trx中获取对应processlist id的事务id
+   -- 然后根据事务id 从data_locks表中获取当前事务持有的锁
+   select locks.* from information_schema.innodb_trx trx 
+   join performance_schema.data_locks locks on locks.ENGINE_TRANSACTION_ID = trx.trx_id 
+   where trx.trx_mysql_thread_id = connection_id();
+   ~~~
+
+   结果如下: 
+
+   | ENGINE | ENGINE_LOCK_ID                      | ENGINE_TRANSACTION_ID | THREAD_ID | EVENT_ID | OBJECT_SCHEMA | OBJECT_NAME | PARTITION_NAME | SUBPARTITION_NAME | INDEX_NAME | OBJECT_INSTANCE_BEGIN | LOCK_TYPE | LOCK_MODE     | LOCK_STATUS | LOCK_DATA  |
+   | ------ | ----------------------------------- | --------------------- | --------- | -------- | ------------- | ----------- | -------------- | ----------------- | ---------- | --------------------- | --------- | ------------- | ----------- | ---------- |
+   | INNODB | 2642898726208:2037:2642865082712    | 1637577               | 518       | 171      | test          | account     |                |                   |            | 2642865082712         | TABLE     | IX            | GRANTED     |            |
+   | INNODB | 2642898726208:970:5:2:2642865323032 | 1637577               | 518       | 171      | test          | account     |                |                   | idx_name   | 2642865323032         | RECORD    | X             | GRANTED     | 'Eason', 1 |
+   | INNODB | 2642898726208:970:4:2:2642865323376 | 1637577               | 518       | 171      | test          | account     |                |                   | PRIMARY    | 2642865323376         | RECORD    | X,REC_NOT_GAP | GRANTED     | 1          |
+   | INNODB | 2642898726208:970:5:3:2642865323720 | 1637577               | 518       | 171      | test          | account     |                |                   | idx_name   | 2642865323720         | RECORD    | X,GAP         | GRANTED     | 'Wei', 2   |
+
+   可以看到上面sql也给表account添加了一个IX锁, 
+
+   然后在索引name上, 给`name = Eason`的记录添加了一个next-key lock, 并且在`name = Wei`的记录上添加了一个间隙锁
+
+   最后为了保证记录`name = Eason`不被其他事务修改, 还需要添加在主键索引上添加一个记录锁
+
+   ![image-20240624232936016](img/mysql高级/image-20240624232936016.png)
+
+3. 我们再通过事务1执行如下sql
+
+   ~~~sql
+   insert into account values (null, 'Jay', 100);
+   ~~~
+
+   此时我们会发现这个sql堵塞了, 应为事务2持有了`Eason~Wei`之间的间隙锁, 所以事务1需要等待事务2释放间隙锁.
+
+   我们通过sql来查看锁的情况
+
+   ~~~sql
+   select * from performance_schema.data_locks where ENGINE_TRANSACTION_ID = 1637564;
+   ~~~
+
+   | ENGINE | ENGINE_LOCK_ID                      | ENGINE_TRANSACTION_ID | THREAD_ID | EVENT_ID | OBJECT_SCHEMA | OBJECT_NAME | PARTITION_NAME | SUBPARTITION_NAME | INDEX_NAME | OBJECT_INSTANCE_BEGIN | LOCK_TYPE | LOCK_MODE              | LOCK_STATUS | LOCK_DATA              |
+   | ------ | ----------------------------------- | --------------------- | --------- | -------- | ------------- | ----------- | -------------- | ----------------- | ---------- | --------------------- | --------- | ---------------------- | ----------- | ---------------------- |
+   | INNODB | 2642898727032:2037:2642865083448    | 1637576               | 519       | 115      | test          | account     |                |                   |            | 2642865083448         | TABLE     | IX                     | GRANTED     |                        |
+   | INNODB | 2642898727032:970:5:1:2642865326984 | 1637576               | 519       | 115      | test          | account     |                |                   | idx_name   | 2642865326984         | RECORD    | X                      | GRANTED     | supremum pseudo-record |
+   | INNODB | 2642898727032:970:5:3:2642865326984 | 1637576               | 519       | 115      | test          | account     |                |                   | idx_name   | 2642865326984         | RECORD    | X                      | GRANTED     | 'Wei', 2               |
+   | INNODB | 2642898727032:970:4:3:2642865327328 | 1637576               | 519       | 115      | test          | account     |                |                   | PRIMARY    | 2642865327328         | RECORD    | X,REC_NOT_GAP          | GRANTED     | 2                      |
+   | INNODB | 2642898727032:970:5:3:2642865327672 | 1637576               | 519       | 119      | test          | account     |                |                   | idx_name   | 2642865327672         | RECORD    | X,GAP,INSERT_INTENTION | WAITING     | 'Wei', 2               |
+
+   发现我们的事务1多了一个锁, id为`  2642898727032:970:5:3:2642865327672`,  他是一个加在`Wei`上面的一个间隙锁, 同时还是一个插入意向锁, 他和普通的间隙锁还不一样, 普通的间隙锁是为了锁住一段区间, 防止别人插入数据
+
+   而插入意向锁锁住一段区间, 多个事务的插入意向锁可以锁住同一段区间, 只要他们插入的数据不同, 那么就不冲突
+
+   
+
+   可以看到我们这个时候的插入意向锁, 状态是WAITING, 表示他正在等待其他的锁释放
+
+   我们再通过sql来查看锁等待的情况
+
+   ~~~sql
+   select * from performance_schema.data_lock_waits where request_engine_transaction_id = 1637564;
+   ~~~
+
+   | ENGINE | REQUESTING_ENGINE_LOCK_ID           | REQUESTING_ENGINE_TRANSACTION_ID | REQUESTING_THREAD_ID | REQUESTING_EVENT_ID | REQUESTING_OBJECT_INSTANCE_BEGIN | BLOCKING_ENGINE_LOCK_ID             | BLOCKING_ENGINE_TRANSACTION_ID | BLOCKING_THREAD_ID | BLOCKING_EVENT_ID | BLOCKING_OBJECT_INSTANCE_BEGIN |
+   | ------ | ----------------------------------- | -------------------------------- | -------------------- | ------------------- | -------------------------------- | ----------------------------------- | ------------------------------ | ------------------ | ----------------- | ------------------------------ |
+   | INNODB | 2642898727032:970:5:3:2642865327672 | 1637576                          | 519                  | 119                 | 2642865327672                    | 2642898726208:970:5:3:2642865323720 | 1637577                        | 518                | 171               | 2642865323720                  |
+
+   可以看到, 此时我们id为`2642898727032:970:5:3:2642865327672`的插入意向锁, 正在等待id为`2642898726208:970:5:3:2642865323720`的, 而这个锁正是事务2添加在`Wei`上的间隙锁
+
+   
+
+4. 此时如果我们使用事务2来执行如下sql
+
+   ~~~sql
+   insert into account values (null, 'Yan', 100);
+   ~~~
+
+   此时会产生死锁, 因为如果要插入这个数据, 就要等待事务1添加在`Wei~正无穷`的next key lock释放
+
+   而此时事务1也在等待事务2释放锁,  这样就产生了死锁
+
+   mysql检测到此时产生了死锁, 他会通过检查事务的权重, 并选择权重较小的事务, 来让其回滚
+
+   我们可以通过查询`information_schema.innodb_trx`的`trx_weight`字段来查看事务的权重, sql如下
+
+   ~~~sql
+   select trx_id, trx_weight from information_schema.innodb_trx;
+   ~~~
+
+   | trx_id  | trx_state | trx_started         | trx_requested_lock_id               | trx_wait_started    | trx_weight | trx_mysql_thread_id | trx_query                                                    | trx_operation_state | trx_tables_in_use | trx_tables_locked | trx_lock_structs | trx_lock_memory_bytes | trx_rows_locked | trx_rows_modified | trx_concurrency_tickets | trx_isolation_level | trx_unique_checks | trx_foreign_key_checks | trx_last_foreign_key_error | trx_adaptive_hash_latched | trx_adaptive_hash_timeout | trx_is_read_only | trx_autocommit_non_locking | trx_schedule_weight |
+   | ------- | --------- | ------------------- | ----------------------------------- | ------------------- | ---------- | ------------------- | ------------------------------------------------------------ | ------------------- | ----------------- | ----------------- | ---------------- | --------------------- | --------------- | ----------------- | ----------------------- | ------------------- | ----------------- | ---------------------- | -------------------------- | ------------------------- | ------------------------- | ---------------- | -------------------------- | ------------------- |
+   | 1637577 | RUNNING   | 2024-06-25 00:00:55 |                                     |                     | 5          | 77                  |                                                              |                     | 0                 | 1                 | 4                | 1136                  | 3               | 1                 | 0                       | REPEATABLE READ     | 1                 | 1                      |                            | 0                         | 0                         | 0                | 0                          |                     |
+   | 1637576 | LOCK WAIT | 2024-06-25 00:00:21 | 2642898727032:970:5:3:2642865327672 | 2024-06-25 00:02:59 | 5          | 78                  | /* ApplicationName=DBeaver Enterprise 21.1.0 - SQLEditor <Script-9.sql> */ insert into account values(null, 'Jay', 100) | inserting           | 1                 | 1                 | 4                | 1136                  | 4               | 1                 | 0                       | REPEATABLE READ     | 1                 | 1                      |                            | 0                         | 0                         | 0                | 0                          | 1                   |
+
+   上面我们可以看到, 事务1的权重为5, 而事务2的权重为5, 而这个数据是我们执行insert语句前的数据, 所以执行insert语句时, 事务1的权重会比事务2的权重小, 所以mysql选择回滚事务1
+
+   ![image-20240625000607203](img/mysql高级/image-20240625000607203.png)
+
+   这样事务2的insert语句因为事务1的回滚, 锁释放就可以正常执行下去了
+
+   
+
+5. 此时我们可以使用如下sql, 来查看最近一次的死锁日志
+
+   ~~~sql
+   show engine innodb status
+   ~~~
+
+   结果如下,  我们只截取部分日志:
+
+   ~~~sql
+   ------------------------
+   LATEST DETECTED DEADLOCK
+   ------------------------
+   2024-06-25 00:05:35 0x2838
+   *** (1) TRANSACTION:
+   -- 产生死锁的事务1的id, 该事务已经活跃了314秒, 发生死锁时正在执行insert操作
+   TRANSACTION 1637576, ACTIVE 314 sec inserting
+   -- 正在使用一张表, 并且锁定了1张表
+   mysql tables in use 1, locked 1
+   -- 事务1持有4个锁结构, 占用堆内存1136字节, 4个行级锁, 1个undo log
+   LOCK WAIT 4 lock struct(s), heap size 1136, 4 row lock(s), undo log entries 1
+   -- 对应的mysql用户线程id为78, 操作系统线程id为34844, 连接信息为localhost 127.0.0.1 root
+   MySQL thread id 78, OS thread handle 34844, query id 2565 localhost 127.0.0.1 root update
+   -- 死锁时正在执行的sql
+   insert into account values(null, 'Jay', 100)
+   
+   -- 下面是具体的持有的锁信息
+   *** (1) HOLDS THE LOCK(S):
+   -- 在test.account的idx_name索引上持有一个X(临键锁), 事务id为1637576
+   RECORD LOCKS space id 970 page no 5 n bits 72 index idx_name of table `test`.`account` trx id 1637576 lock_mode X
+   -- 在supremum上添加了一个临键锁, 并且这条记录只有一个字段
+   Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
+    0: len 8; hex 73757072656d756d; asc supremum;;
+   -- 在[Wei,2]上添加了一个临键锁, 并且这条记录有两个字段
+   Record lock, heap no 3 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+    0: len 3; hex 576569; asc Wei;; -- 第一个字段, Wei
+    1: len 4; hex 80000002; asc     ;;  -- 第二个字段, 2, 这里是id
+   
+   -- 下面是事务1等待的锁的情况
+   *** (1) WAITING FOR THIS LOCK TO BE GRANTED:
+   -- 等待在表test.account上的索引idx_name的锁
+   -- 等待的事务ID为1637576
+   -- 等待的锁类型为lock_mode X locks gap before rec insert intention waiting, 间隙锁-插入意向锁
+   RECORD LOCKS space id 970 page no 5 n bits 72 index idx_name of table `test`.`account` trx id 1637576 lock_mode X locks gap before rec insert intention waiting
+   -- 锁添加的记录上有两个字段
+   Record lock, heap no 3 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+    0: len 3; hex 576569; asc Wei;; -- 第一个字段为Wei, name
+    1: len 4; hex 80000002; asc     ;; -- 第二个字段为2, id
+   
+   -- 下面是事务2的详情, 分析还是和事务1一样
+   *** (2) TRANSACTION:
+   TRANSACTION 1637577, ACTIVE 280 sec inserting
+   mysql tables in use 1, locked 1
+   LOCK WAIT 5 lock struct(s), heap size 1136, 4 row lock(s), undo log entries 2
+   MySQL thread id 77, OS thread handle 33076, query id 2586 localhost 127.0.0.1 root update
+   insert into account values (null, 'Yan', 100)
+   
+   -- 持有的锁
+   *** (2) HOLDS THE LOCK(S):
+   RECORD LOCKS space id 970 page no 5 n bits 72 index idx_name of table `test`.`account` trx id 1637577 lock_mode X locks gap before rec
+   Record lock, heap no 3 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
+    0: len 3; hex 576569; asc Wei;;
+    1: len 4; hex 80000002; asc     ;;
+   
+   --等待的锁
+   *** (2) WAITING FOR THIS LOCK TO BE GRANTED:
+   RECORD LOCKS space id 970 page no 5 n bits 72 index idx_name of table `test`.`account` trx id 1637577 lock_mode X insert intention waiting
+   Record lock, heap no 1 PHYSICAL RECORD: n_fields 1; compact format; info bits 0
+    0: len 8; hex 73757072656d756d; asc supremum;;
+   
+   -- 产生死锁之后, 回滚了事务1
+   *** WE ROLL BACK TRANSACTION (1)
+   ~~~
+
+   
+
+
+
+
+### Innodb杀死查询和事务
+
+格式:
+
+~~~sql
+kill [connection | query] processlist_id
+~~~
+
+指定你要杀死的processlist_id,  可以从`information_schema.innodb_trx`中获取要杀死的事务, 根据`trx_mysql_thread_id`这个字段从`information_schema.processlist`中查询出想要杀死的事务的id
+
+
+
+kill命令默认使用connection参数,  表示关闭指定processlist_id对应的连接
+
+如果指定query, 表示关闭该processlist_id对应连接正在执行的sql, 类似于按下ctr+c, 不会关闭连接, 如果这个连接正在执行事务, 那么也不会关闭事务
+
+(不确定java中是否会报错, 然后导致rollback)
+
+
 
 
 
