@@ -152,7 +152,6 @@ public class _02_AssertionsTest {
         });
     }
 }
-
 ~~~
 
 
@@ -308,7 +307,7 @@ public class NestUnitTest {
 
 
 
-### Junit5与其他断言库结合使用
+### Junit5与hamcrest断言库结合使用
 
 上面我们讲了, 在Junit5中自带一个Assertions类用来对我们的代码进行断言, 但是我们会发现这个自带的Assertions类的功能过于简单, 只能对是否相等, 是否抛出异常, 是否执行超时进行断言
 
@@ -1123,8 +1122,7 @@ import static org.hamcrest.Matchers.*;
 
 // @SpringBootTest // 将Spring与Junit进行集成
 // @AutoConfigureMockMvc注释告诉Spring 创建一个与应用程序上下文关联的MockMvc实例，以便它可以将请求传递给处理它们的Controller
-// @AutoConfigureMockMvc
-// @WebMvcTest结合了@SpringBootTest和@@AutoConfigureMockMvc的功能,
+// @WebMvcTest结合了@SpringBootTest和@AutoConfigureMockMvc的功能,
 // 默认情况下他会扫描所有的bean, 我们指定WidgetRestController.class, 那么他只会创建于WidgetRestController相关的bean, 可以加快测试
 @WebMvcTest(WidgetRestController.class)
 @AutoConfigureMybatis // mybatis配置mapper
@@ -1147,7 +1145,7 @@ class WidgetRestControllerTest {
         doReturn(Lists.newArrayList(widget1, widget2)).when(service).findAll();
 
         // 发送请求到Controller中, 并对返回的结果进行断言
-        mockMvc.perform(get("/rest/widgets"))
+        mockMvc.perform(get("/rest/widgets").param("xxx", "yyy").param("aa", "bb"))
                 // 断言返回的http code
                 .andExpect(status().isOk())
                 // 断言返回的context-type
@@ -1167,30 +1165,36 @@ class WidgetRestControllerTest {
                 .andExpect(jsonPath("$[1].description", is("Description 2")))
                 .andExpect(jsonPath("$[1].version", is(4)));
     }
+    
+	@Test
+    void testGetWidgetsSuccess2() throws Exception {
+        // 定义WidgetService的行为
+        Widget widget1 = new Widget(1L, "Widget Name", "Description", 1);
+        Widget widget2 = new Widget(2L, "Widget 2 Name", "Description 2", 4);
+        doReturn(Lists.newArrayList(widget1, widget2)).when(service).findAll();
 
-    @Test
-    @DisplayName("GET /rest/widget/1")
-    void testGetWidgetById() throws Exception {
-        // Set up our mocked service
-        Widget widget = new Widget(1L, "Widget Name", "Description", 1);
-        doReturn(Optional.of(widget)).when(service).findById(1L);
-
-        // 执行get请求, 并传入参数
-        mockMvc.perform(get("/rest/widget/{id}", 1L))
-                // Validate the response code and content type
+        // 发送请求到Controller中, 并对返回的结果进行断言
+        MockHttpServletResponse response = mockMvc.perform(get("/rest/widgets"))
+                // 断言返回的http code
                 .andExpect(status().isOk())
+                // 断言返回的context-type
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
 
-                // Validate headers
-                .andExpect(header().string(HttpHeaders.LOCATION, "/rest/widget/1"))
-                .andExpect(header().string(HttpHeaders.ETAG, "1"))
+                // 断言返回的http header
+                .andExpect(header().string(HttpHeaders.LOCATION, "/rest/widgets")).andReturn().getResponse();
 
-                // Validate the returned fields
-                .andExpect(jsonPath("$.id", is(1)))
-                .andExpect(jsonPath("$.name", is("Widget Name")))
-                .andExpect(jsonPath("$.description", is("Description")))
-                .andExpect(jsonPath("$.version", is(1)));
+        // 断言http状态
+        Assertions.assertThat(response.getStatus()).isEqualTo(HttpStatus.OK.value());
+
+        // 断言header
+        Assertions.assertThat(response.getHeader(HttpHeaders.LOCATION)).isEqualTo("/rest/widgets");
+        // 断言content-type
+        Assertions.assertThat(response.getContentType()).isEqualTo(MediaType.APPLICATION_JSON.toString());
+        // 断言返回的responsebody中的json
+        Assertions.assertThat(response.getContentAsString()).isEqualTo(asJsonString(Lists.newArrayList(widget1, widget2)));
+
     }
+
 
     @Test
     @DisplayName("GET /rest/widget/1 - Not Found")
@@ -1200,7 +1204,7 @@ class WidgetRestControllerTest {
 
         // Execute the GET request
         mockMvc.perform(get("/rest/widget/{id}", 1L))
-                // Validate the response code
+                // 断言code为404
                 .andExpect(status().isNotFound());
     }
 
@@ -1213,7 +1217,7 @@ class WidgetRestControllerTest {
         doReturn(widgetToReturn).when(service).save(any());
 
         // 执行post请求
-        mockMvc.perform(post("/rest/widget")
+        mockMvc.perform(put("/rest/widget/{id}", 1l)
                         .contentType(MediaType.APPLICATION_JSON)
                         // 指定request body
                         .content(asJsonString(widgetToPost)))
@@ -1233,73 +1237,6 @@ class WidgetRestControllerTest {
                 .andExpect(jsonPath("$.version", is(1)));
     }
 
-    @Test
-    @DisplayName("PUT /rest/widget/1")
-    void testUpdateWidget() throws Exception {
-        // Setup our mocked service
-        Widget widgetToPut = new Widget("New Widget", "This is my widget");
-        Widget widgetToReturnFindBy = new Widget(1L, "New Widget", "This is my widget", 2);
-        Widget widgetToReturnSave = new Widget(1L, "New Widget", "This is my widget", 3);
-        doReturn(Optional.of(widgetToReturnFindBy)).when(service).findById(1L);
-        doReturn(widgetToReturnSave).when(service).save(any());
-
-        // Execute the POST request
-        mockMvc.perform(put("/rest/widget/{id}", 1L)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .header(HttpHeaders.IF_MATCH, 2)
-                        .content(asJsonString(widgetToPut)))
-
-                // Validate the response code and content type
-                .andExpect(status().isOk())
-                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-
-                // Validate headers
-                .andExpect(header().string(HttpHeaders.LOCATION, "/rest/widget/1"))
-                .andExpect(header().string(HttpHeaders.ETAG, "3"))
-
-                // Validate the returned fields
-                .andExpect(jsonPath("$.id", is(1)))
-                .andExpect(jsonPath("$.name", is("New Widget")))
-                .andExpect(jsonPath("$.description", is("This is my widget")))
-                .andExpect(jsonPath("$.version", is(3)));
-    }
-
-    @Test
-    @DisplayName("PUT /rest/widget/1 - Conflict")
-    void testUpdateWidgetConflict() throws Exception {
-        // Setup our mocked service
-        Widget widgetToPut = new Widget("New Widget", "This is my widget", 1);
-        Widget widgetToReturn = new Widget(1L, "New Widget", "This is my widget", 2);
-        doReturn(Optional.of(widgetToReturn)).when(service).findById(1L);
-        doReturn(widgetToReturn).when(service).save(any());
-
-        // Execute the POST request
-        mockMvc.perform(put("/rest/widget/{id}", 1L)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .header(HttpHeaders.IF_MATCH, 3)
-                        .content(asJsonString(widgetToPut)))
-
-                // Validate the response code and content type
-                .andExpect(status().isConflict());
-    }
-
-    @Test
-    @DisplayName("PUT /rest/widget/1 - Not Found")
-    void testUpdateWidgetNotFound() throws Exception {
-        // Setup our mocked service
-        Widget widgetToPut = new Widget("New Widget", "This is my widget");
-        doReturn(Optional.empty()).when(service).findById(1L);
-
-        // Execute the POST request
-        mockMvc.perform(put("/rest/widget/{id}", 1L)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .header(HttpHeaders.IF_MATCH, 3)
-                        .content(asJsonString(widgetToPut)))
-
-                // Validate the response code and content type
-                .andExpect(status().isNotFound());
-    }
-
     static String asJsonString(final Object obj) {
         try {
             return new ObjectMapper().writeValueAsString(obj);
@@ -1316,18 +1253,7 @@ class WidgetRestControllerTest {
     @Test
     @DisplayName("PUT /rest/widget/1 - Not Found")
     void testUpdateWidgetNotFound(@MockBean WidgetService service) throws Exception {
-        // Setup our mocked service
-        Widget widgetToPut = new Widget("New Widget", "This is my widget");
-        doReturn(Optional.empty()).when(service).findById(1L);
-
-        // Execute the POST request
-        mockMvc.perform(put("/rest/widget/{id}", 1l)
-                .contentType(MediaType.APPLICATION_JSON)
-                .header(HttpHeaders.IF_MATCH, 3)
-                .content(asJsonString(widgetToPut)))
-
-                // Validate the response code and content type
-                .andExpect(status().isNotFound());
+		// 执行测试
     }
 ~~~
 
@@ -1364,9 +1290,51 @@ class WidgetRestControllerTest {
 
 
 
+#### 优化测试的速度
+
+上面的测试代码, 因为启动的时候, 都涉及到IOC容器的启用, 所以在执行的时候会比较慢, 如果你的bean的依赖关闭比较简单, 那么可以使用原生的mockito来进行mock
+
+~~~java
+/**
+   如下代码不涉及到IOC容器的启动
+*/
+@ExtendWith(MockitoExtension.class)
+public class Test1{
+    
+    private MockMvc mockMvc;
+    
+    @InjectMocks
+    private UserController userController;
+    
+    @Mock
+    private UserService userService;
+    
+    @BeforeEach
+    public void setUp() {
+        // 创建mock mvc
+        mockMvc = MockMvcBuilders.standaloneSetup(userController)
+            .defaultResponseCharacterEncoding(StandardCharsets.UTF_8)
+            .build();
+    }
+    
+    @Test
+    public void testSelectById() {
+        // mock userService的行为, 看看controller的反应
+    }
+}
+~~~
+
+
+
+
+
+
+
+
+
 #### 避免 ApplicationContext 复用
 
-Spring会针对每一个测试类生成一个ApplicationContext, 这样可以加快运行数据, 但是如果某些bean是有状态的, 那么多个测试方法可能会相互影响, 所有我们让每个测试方法执行完毕之后, 重新创建ApplicationContext
+**Spring会针对每一个测试类生成一个ApplicationContext**, 这样可以加快运行数据, 但是如果某些bean是有状态的, 那么多个测试方法可能会相互影响, 所有我们让每个测试方法执行完毕之后, 重新创建ApplicationContext
 
 `@DirtiesContext` 默认的 `classMode` 参数为`ClassMode.AFTER_CLASS` 该模式会在 整个测试类运行完毕后重新加载 Spring 测试上下文。
 
@@ -1427,6 +1395,20 @@ public class CacheIntegrationTest {
 https://mybatis.org/spring-boot-starter/mybatis-spring-boot-test-autoconfigure/zh/index.html
 
 https://segmentfault.com/a/1190000041177598
+
+
+
+针对mapper类的测试, 就两种方式:
+
+1. 针对select查询,  先通过sql准备数据, 然后调用我们需要测试的mapper方法, 看查询出来的结果和我们准备的数据是否相吻合
+
+2. **针对update和insert查询,  先调用mapper方法插入或者修改数据,  然后调用select方法查询数据**
+
+   **如果select出来的数据和是修改后的数据, 那么就是正确的**
+
+3. 对于delete查询, 我们先准备数据, 然后调用mapper的方法进行删除数据, 然后通过select方法查询数据, 如果delete成功, 那么应该查询不到数据
+
+
 
 在测试了Service和Controller后, 我们还需要对Mapper类进行测试, 为了测试Mapper类, 首先我们需要导入Mybatis的测试包
 
@@ -1575,329 +1557,300 @@ public class WidgetMapperWithEmbeddedDBTest {
 
 
 
+#### mock RestTemplate
+
+https://www.baeldung.com/spring-mock-rest-template
+
+首先, 想要mock RestTemplate有两种办法, 
+
+一种是使用mockito, 然后和其他的mock bean一样进行mock
+
+
+
+另外一种是在spring环境中, 创建一个*MockRestServiceServer* , 他会使用*MockClientHttpRequestFactory*来拦截http请求, 当匹配到特点的请求后, 就返回我们预先设定的结果
+
+
+
+使用mockito来mock的代码如下
+
+~~~java
+@Service
+public class EmployeeService {
+    
+    @Autowired
+    private RestTemplate restTemplate;
+
+    public Employee getEmployeeWithGetForEntity(String id) {
+	ResponseEntity resp = 
+          restTemplate.getForEntity("http://localhost:8080/employee/" + id, Employee.class);
+        
+	return resp.getStatusCode() == HttpStatus.OK ? resp.getBody() : null;
+    }
+}
+
+@ExtendWith(MockitoExtension.class)
+public class EmployeeServiceTest {
+
+    @Mock
+    private RestTemplate restTemplate;
+
+    @InjectMocks
+    private EmployeeService empService = new EmployeeService();
+
+    @Test
+    public void givenMockingIsDoneByMockito_whenGetForEntityIsCalled_thenReturnMockedObject() {
+        Employee emp = new Employee(“E001”, "Eric Simmons");
+        // 指定预期的行为
+        Mockito
+          .when(restTemplate.getForEntity(
+            "http://localhost:8080/employee/E001", Employee.class))
+          .thenReturn(new ResponseEntity(emp, HttpStatus.OK));
+
+        Employee employee = empService.getEmployeeWithGetForEntity(id);
+        Assertions.assertEquals(emp, employee);
+    }
+    
+    @Test
+    public void givenMockingIsDoneByMockito_whenExchangeIsCalled_thenReturnMockedObject(){
+        Employee emp = new Employee("E001", "Eric Simmons");
+        Mockito.when(restTemplate.exchange("http://localhost:8080/employee/E001",
+            HttpMethod.GET,
+            null,
+            Employee.class)
+        ).thenReturn(new ResponseEntity(emp, HttpStatus.OK));
+        Employee employee = empService.getEmployeeWithRestTemplateExchange("E001");
+        assertEquals(emp, employee);
+    }
+}
+~~~
+
+
+
+使用Spring中的*MockRestServiceServer* 来mock的代码如下:
+
+~~~java
+@ExtendWith(SpringExtension.class)
+@SpringBootTest(classes = SpringTestConfig.class)
+public class EmployeeServiceMockRestServiceServerUnitTest {
+
+    @Autowired
+    private EmployeeService empService;
+    @Autowired
+    private RestTemplate restTemplate;
+
+    private MockRestServiceServer mockServer;
+    private ObjectMapper mapper = new ObjectMapper();
+
+    @BeforeEach
+    public void init() {
+        // 创建MockRestServiceServer来拦截http请求
+        mockServer = MockRestServiceServer.createServer(restTemplate);
+    }
+    
+    @Test 
+    public void givenMockingIsDoneByMockRestServiceServer_whenGetIsCalled_thenReturnsMockedObject()() {   
+        Employee emp = new Employee("E001", "Eric Simmons");
+        // 拦截GET http://localhost:8080/employee/E001一次
+        // 返回一个emp的json字段
+        mockServer.expect(ExpectedCount.once(), 
+          requestTo(new URI("http://localhost:8080/employee/E001")))
+          .andExpect(method(HttpMethod.GET))
+          .andRespond(withStatus(HttpStatus.OK)
+          .contentType(MediaType.APPLICATION_JSON)
+          .body(mapper.writeValueAsString(emp))
+        );                                   
+                       
+        Employee employee = empService.getEmployeeWithGetForEntity(id);
+        mockServer.verify();
+        Assertions.assertEquals(emp, employee);                                                        
+    }
+}
+@Test
+public void givenMockingIsDoneByMockRestServiceServer_whenExchangeIsCalled_thenReturnMockedObject() throws Exception {
+    Employee emp = new Employee("E001", "Eric Simmons");
+
+    mockServer.expect(ExpectedCount.once(), requestTo(new URI("http://localhost:8080/employee/E001")))
+      .andExpect(method(HttpMethod.GET))
+      .andRespond(withStatus(HttpStatus.OK)
+        .contentType(MediaType.APPLICATION_JSON)
+        .body(mapper.writeValueAsString(emp)));
+
+    Employee employee = empService.getEmployeeWithRestTemplateExchange("E001");
+    mockServer.verify();
+    Assertions.assertEquals(emp, employee);
+}
+~~~
+
+
+
+
+
 
 
 # Mockito
 
-## 基础篇
 
-### 入门
 
-https://www.baeldung.com/mockito-annotations
+## Mock和Spy对象
 
-#### 启用Mockito
+当我们测试一个类的时候,  我们可能想要测试当他依赖的对象正常时/异常时,  我们测试的类会有怎么样的反应, 那么此时我们就可以创建一个mock/spy对象来模拟依赖
 
-在junit中启用Mockito, 有三种方式:
+
+
+### 创建Spy和Mock对象
+
+有以下几种创建mock和spy对象的方式:
+
+1. 通过Mockito的静态方法创建
+
+   ~~~java
+   @Test
+   public void test() {
+       List<?> mockList = Mockito.mock(List.class); // 通过class来创建一个mock对象
+       assert Mockito.mockingDetails(mockList).isMock(); // 判断是否为mock对象
+   
+       List<?> spyList = Mockito.spy(AbstractList.class); // 通过class来创建一个spy对象
+       assert Mockito.mockingDetails(spyList).isSpy(); // 判断是否为spy对象
+       assert Mockito.mockingDetails(spyList).isMock(); // 判断是否为mock对象
+   
+       List<?> spied = Mockito.spy(new ArrayList<>()); // 通过一个对象来创建一个spy对象
+       assert Mockito.mockingDetails(spyList).isSpy(); // 判断是否为spy对象
+       assert Mockito.mockingDetails(spyList).isMock(); // 判断是否为mock对象
+   }
+   ~~~
+
+2. 通过注解来创建
+
+   ~~~java
+   // 在junit5中启用mockito, 这样就可以使用各种注解了
+   @ExtendWith(MockitoExtension.class)
+   public class _02_by_MockitoExtension {
+   
+       // 通过class来创建一个mock对象
+       // 等效于List<?> mockList = Mockito.mock(List.class);
+       @Mock
+       List<?> mockList;
+   
+       // 通过class来创建一个spy对象
+       // 等效于List<?> spyList = Mockito.spy(AbstractList.class);
+       @Spy
+       List<?> spyList;
+   
+       // 通过一个对象来创建一个spy对象
+       // 等效于List<?> spied = Mockito.spy(new ArrayList<>());
+       // !!!! 需要注意的是, 此时的spied不是刚刚new出来的, Mockito会对刚刚new出来的list进行代理, 所以spied是代理对象
+       @Spy
+       List<?> spied = new ArrayList<>();
+   
+       @Test
+       public void test() {
+           assert Mockito.mockingDetails(mockList).isMock(); // 判断是否为mock对象
+   
+           assert Mockito.mockingDetails(spyList).isSpy(); // 判断是否为spy对象
+           assert Mockito.mockingDetails(spyList).isMock(); // 判断是否为mock对象
+   
+           assert Mockito.mockingDetails(spyList).isSpy(); // 判断是否为spy对象
+           assert Mockito.mockingDetails(spyList).isMock(); // 判断是否为mock对象
+       }
+   }
+   ~~~
+
+3. 通过注解创建
+
+   ~~~java
+   public class _03_by_MockitoAnnotations {
+   
+       // 通过class来创建一个mock对象
+       // 等效于List<?> mockList = Mockito.mock(List.class);
+       @Mock
+       List<?> mockList;
+   
+       // 通过class来创建一个spy对象
+       // 等效于List<?> spyList = Mockito.spy(AbstractList.class);
+       @Spy
+       List<?> spyList;
+   
+       // 通过一个对象来创建一个spy对象
+       // 等效于List<?> spied = Mockito.spy(new ArrayList<>());
+       // !!!! 需要注意的是, 此时的spied不是刚刚new出来的, Mockito会对刚刚new出来的list进行代理, 所以spied是代理对象
+       @Spy
+       List<?> spied = new ArrayList<>();
+   
+       @BeforeEach
+       public void init() {
+           // 在junit5中启用mockito, 这样就可以使用各种注解了
+           MockitoAnnotations.openMocks(this);
+       }
+   
+       @Test
+       public void test() {
+           // ...
+       }
+   }
+   ~~~
+
+### 注意点
+
+- spy是一种特使的mock对象,  所以在判断spy对象是不是mock对象的时候, 返回true
+
+- **mock和spy都可以用在接口, 抽象类, final类, 正常类上面**
+
+  如果spy碰到了抽象方法, 那么会和mock对象一样返回一个默认值
+
+
+
+### Mock和Spy对象的区别
+
+1. 在调用mock代理对象的时候, 默认情况下他不会执行真实的方法, 而是直接返回返回类型的默认值
+
+   - 基础类型(0, false, 0d)
+   - 引用类型: null,  包括String也是返回null
+   - Optional类型:  Optional.empty()
+   - Stream类型: Stream.empty()
+   - 集合类型: 空集合
+   
+   而在调用spy对象的时候, 他会执行真实的方法, 返回真实的返回值
+   
+2. @spy使用的真实的对象实例，调用的都是真实的方法，所以通过这种方式进行测试，在进行sonar覆盖率统计时统计出来是有覆盖率；
+@mock出来的对象可能已经发生了变化，调用的方法都不是真实的，在进行sonar覆盖率统计时统计出来的Calculator类覆盖率为0.00%。
+
+
+
+   ### 通过class和对象创建spy对象的区别
+
+一般情况下, 我们都是通过对象创建spy对象时,  对spy对象的调用都会转而调用这个对象的真实方法
+
+当我们想要模拟一下抽象类, 或者接口的时候, 我们可以通过class来创建spy对象, 因为抽象类和接口无法被实例化
+
+对于抽象方法,  spy对象会像mock对象一样, 直接返回一个返回类型的默认值
+
+   
+
+### 判断是否为mock和spy对象
+
+要想判断一个对象是否为mock和spy对象, 可以使用
 
 ~~~java
-// 方式1
-@ExtendWith(MockitoExtension.class)
-public class MockitoAnnotationUnitTest {
-    ...
-}
-
-// 方式2
-public class MockitoAnnotationUnitTest {
-    @BeforeEach
-	public void init() {
-    	MockitoAnnotations.openMocks(this);
-	}
-}
-// 方式3
-public class MockitoAnnotationsInitWithMockitoJUnitRuleUnitTest {
-    @Rule
-    public MockitoRule initRule = MockitoJUnit.rule();
-
-    ...
-}
-~~~
-
-
-
-#### 创建mock对象
-
-在Mockito中, 有三种方式来创建mock对象
-
-~~~java
-// 方式1
 @Test
 public void whenNotUseMockAnnotation_thenCorrect() {
-    // 通过mock方法来创建一个mock对象
+    // 创建mock和spy对象
     List mockList = Mockito.mock(ArrayList.class);
-    
-    mockList.add("one");
-    Mockito.verify(mockList).add("one");
-    assertEquals(0, mockList.size());
-
-    Mockito.when(mockList.size()).thenReturn(100);
-    assertEquals(100, mockList.size());
-}
-
-// 方式2, 自动注入一个mock对象
-@Mock
-List<String> mockedList;
-@Test
-public void whenUseMockAnnotation_thenMockIsInjected() {
-    mockedList.add("one");
-    Mockito.verify(mockedList).add("one");
-    assertEquals(0, mockedList.size());
-
-    Mockito.when(mockedList.size()).thenReturn(100);
-    assertEquals(100, mockedList.size());
-}
-~~~
-
-
-
-#### 创建spy对象
-
-创建spy对象
-
-~~~java
-// 方式1
-@Test
-public void whenNotUseSpyAnnotation_thenCorrect() {
-    // 通过spy方法创建一个spy对象
     List<String> spyList = Mockito.spy(new ArrayList<String>());
     
-    spyList.add("one");
-    spyList.add("two");
-
-    Mockito.verify(spyList).add("one");
-    Mockito.verify(spyList).add("two");
-
-    assertEquals(2, spyList.size());
-
-    Mockito.doReturn(100).when(spyList).size();
-    assertEquals(100, spyList.size());
-}
-
-// 方式2, 通过注解自动注入一个spy对象
-@Spy
-List<String> spiedList = new ArrayList<String>();
-@Test
-public void whenUseSpyAnnotation_thenSpyIsInjectedCorrectly() {
-    // !!!注意, 此时的spiedList不是刚刚new出来的, Mockito会对刚刚new出来的list进行代理
-    // 所以这里是代理对象
-    
-    spiedList.add("one");
-    spiedList.add("two");
-
-    Mockito.verify(spiedList).add("one");
-    Mockito.verify(spiedList).add("two");
-
-    assertEquals(2, spiedList.size());
-
-    Mockito.doReturn(100).when(spiedList).size();
-    assertEquals(100, spiedList.size());
+    // 判断是否为mock对象
+    assert Mockito.mockingDetails(mockList).isMock() == true;
+    // 判断是否为spy对象
+    assert Mockito.mockingDetails(spyList).isSpy() == true;
+    // spy对象是一种特殊的mock对象, 所以这里为true
+    assert Mockito.mockingDetails(spyList).isMock() == true;
 }
 ~~~
 
 
 
-#### spy和mock的区别
+### 创建mock和spy对象的原理
 
-相同点:
-
-1. 我们都可以api来定义spy和mock在接受到指定参数时的返回值/异常
-
-不同点:
-
-1. mock对象是Mockito通过反射创建一个对象, 然后进行代理
-
-   spy对象是要我们手动创建一个对象, 然后Mockito对他进行代理
-
-2. 在调用mock代理对象的时候, 默认情况下他不会执行真实的方法, 而是返回返回类型的默认值(0, false, null), 除非我们通过doReturn或when来定义行为
-
-   在调用spy代理独享的时候, 默认情况下他会执行真实的方法, 除非通过doReturn来定义行为
-
-3. mock可以通过doReturn或when来定义行为, 而spy只能通过doReturn来定义行为, 因为when有歧义
-
-4. @spy使用的真实的对象实例，调用的都是真实的方法，所以通过这种方式进行测试，在进行sonar覆盖率统计时统计出来是有覆盖率；
-   @mock出来的对象可能已经发生了变化，调用的方法都不是真实的，在进行sonar覆盖率统计时统计出来的Calculator类覆盖率为0.00%。
-
-#### 创建参数捕获器
-
-在某些场景中，不光要对方法的返回值和调用进行验证，同时需要验证一系列交互后所传入方法的参数。那么我们可以用参数捕获器来捕获传入方法的参数进行验证，看它是否符合我们的要求。 
-
-有两种方式来创建参数捕获器
-
-~~~java
-// 方式1
-@Test
-public void whenNotUseCaptorAnnotation_thenCorrect() {
-    List mockList = Mockito.mock(List.class);
-    // 通过forClass来创建一个对应类型的参数捕获器
-    ArgumentCaptor<String> arg = ArgumentCaptor.forClass(String.class);
-}
-
-// 方式2
-@Mock
-List mockedList;
-@Captor 
-ArgumentCaptor argCaptor;
-~~~
-
-参数捕获器的使用
-
-~~~java
-@Test  
-public void argumentCaptorTest() {  
-    List mock = mock(List.class);  
-    List mock2 = mock(List.class);  
-    mock.add("John");  
-    mock2.add("Brian");  
-    mock2.add("Jim");  
-    
-    // 创建对应参数类型的捕获器
-    // 如果方法有多个参数都要捕获验证，那就需要创建多个ArgumentCaptor对象处理。
-    ArgumentCaptor argument = ArgumentCaptor.forClass(String.class);  
-    
-    // 在verify方法的参数中调用argument.capture()方法来捕获输入的参数，之后argument变量中就保存了参数值
-    verify(mock).add(argument.capture());  
-    // 获取捕获的参数
-    assertEquals("John", argument.getValue());  
-    
-    // 当某个对象进行了多次调用后，如mock2对象，这时调用argument.getValue()获取到的是最后一次调用的参数。如果要获取所有的参数值可以调用argument.getAllValues()，它将返回参数值的List。
-    verify(mock2, times(2)).add(argument.capture());  
-    assertEquals("Jim", argument.getValue());  
-    assertArrayEquals(new Object[]{"Brian","Jim"},argument.getAllValues().toArray());  
-}  
-~~~
-
-
-
-
-
-#### @InjectMocks
-
-我们可以使用@InjectMocks注解来创建一个我们需要测试的对象
-
-InjectMocks对象是一个真实的对象, 不会像mock和spy对象一样进行代理
-
-同时Mockito还会尽可能的将其他mock和spy对象通过构造函数参数, setter的形式通过类型匹配注入到InjectMocks对象中
-
-~~~java
-@ExtendWith(MockitoExtension.class)
-public class Demo1Test {
-
-    public static class MyDictionaryAndList {
-        public Map<String, String> wordMap;
-        public List<String> list;
-
-        public MyDictionaryAndList() {
-            wordMap = new HashMap<String, String>();
-            list = new ArrayList<String>();
-        }
-        public void add(final String word, final String meaning) {
-            System.out.println("add");
-            wordMap.put(word, meaning);
-        }
-        public String getMeaning(final String word) {
-            System.out.println("getMeaning");
-            return wordMap.get(word);
-        }
-
-        public void addListElement(final String word) {
-            System.out.println("addListElement");
-            list.add(word);
-        }
-
-        public String getListElement(final int index) {
-            System.out.println("getElement");
-            return list.get(index);
-        }
-    }
-
-    List<String> arrayList = new ArrayList<String>();
-
-    @Mock
-    Map<String, String> map;
-
-    @Spy
-    List<String> list = arrayList;
-
-    @InjectMocks
-    MyDictionaryAndList myDictionaryAndList;
-
-    @Test
-    public void test(){
-		// Mockito会将spy和mock注入到InjectMocks对象中
-        System.out.println(map == myDictionaryAndList.wordMap); // true
-        System.out.println(list == myDictionaryAndList.list); // true
-
-        // spy对象不是原来的那个arrayList, Mockito会对赋值的那个arrayList进行代理, 所以这里的list是代理后的arrayList
-        System.out.println(list == arrayList); // false
-
-        // 因为map是mock对象, 不会真正的执行, 而是返回返回类型的默认值
-        myDictionaryAndList.add("hello", "world");
-        System.out.println(myDictionaryAndList.getMeaning("hello") == null); // true
-
-        // spy对象会真正的执行真实方法
-        myDictionaryAndList.addListElement("hello");
-        System.out.println(myDictionaryAndList.getListElement(0)); // hello
-    }
-}
-~~~
-
-
-
-
-
-
-
-### BDD风格的测试方法
-
-https://www.baeldung.com/bdd-mockito
-
-BDD 术语由[Dan North 于 2006 年](https://dannorth.net/introducing-bdd/)首次创造。BDD 鼓励使用自然的、人类可读的语言编写测试，重点关注应用程序的行为。
-它定义了一种结构清晰的测试编写方式，分为三个部分（Arrange、Act、Assert）：
-
-- 给定一些前提条件（Arrange）
-
-- 当一个动作发生时（Act）
-
-- 然后验证输出（Assert）
-
-Mockito 库提供了BDDMockito类，该类引入了 BDD 友好的 API。这个 API 允许我们采用更加 BDD 友好的方法，使用`Give()`安排测试并使用`then()`进行断言。
-
-
-
-~~~java
-// 传统api
-when(phoneBookRepository.contains(momContactName))
-  .thenReturn(false); // 使用when定义行为
-phoneBookService.register(momContactName, momPhoneNumber); // 调用方法
-verify(phoneBookRepository) // 使用verify进行验证
-  .insert(momContactName, momPhoneNumber);
-
-// BDD风格
-given(phoneBookRepository.contains(momContactName))
-  .willReturn(false); // 使用given定义行为
-phoneBookService.register(momContactName, momPhoneNumber); // 调用方法
-then(phoneBookRepository) // 使用then进行验证
-  .should()
-  .insert(momContactName, momPhoneNumber);
-~~~
-
-
-
-BDDMockito允许我们在定义对象的行为的时候, 返回固定的或动态的值。它还允许我们抛出异常
-
-~~~java
-given(phoneBookRepository.contains(momContactName))
-  .willReturn(false); // 返回固定的值
-
-given(phoneBookRepository.getPhoneNumberByContactName(momContactName))
-  .will((InvocationOnMock invocation) -> // 返回动态计算的值
-    invocation.getArgument(0).equals(momContactName) 
-      ? momPhoneNumber 
-      : null);
-
-willThrow(new RuntimeException()) // 抛出异常
-  .given(phoneBookRepository)
-  .insert(any(String.class), eq(tooLongPhoneNumber));
-~~~
+通过bytebuddy在运行时创建代理
 
 
 
@@ -1989,119 +1942,869 @@ public class MyList extends AbstractList<String> {
    assertThat(added).isFalse(); // MockSettings中的Answer发挥作用
    ~~~
 
-   
 
-### 参数匹配
 
-https://www.baeldung.com/mockito-argument-matchers
 
-在定义mock/spy对象的预期行为的时候
+## @InjectMocks
 
-我们可以`参数匹配器`来定义方法接受到什么参数的时候, 他的预期行为是什么
+我们可以使用@InjectMocks注解来创建一个我们需要测试的对象
+
+**InjectMocks对象是一个真实的对象, 不会像mock和spy对象一样进行代理**
+
+同时Mockito还会尽可能的将其他mock和spy对象通过构造函数参数, setter, 或者反射的形式通过类型匹配注入到InjectMocks对象中
 
 ~~~java
-doReturn("Flower").when(flowerService).analyze("poppy"); // 匹配参数 poppy
-when(flowerService.analyze(anyString())).thenReturn("Flower"); // 匹配任何字符串
+@ExtendWith(MockitoExtension.class)
+public class Demo1Test {
 
-// 如果mock方法有多个参数, 那么所有的参数都要使用参数匹配器
-when(flowerService.isABigFlower("poppy", anyInt())).thenReturn(true); // 报错
-when(flowerService.isABigFlower(eq("poppy"), anyInt())).thenReturn(true); // 正确写法
+    public static class MyDictionaryAndList {
+        public Map<String, String> wordMap;
+        public List<String> list;
+
+        public MyDictionaryAndList() {
+            wordMap = new HashMap<String, String>();
+            list = new ArrayList<String>();
+        }
+        public void add(final String word, final String meaning) {
+            System.out.println("add");
+            wordMap.put(word, meaning);
+        }
+        public String getMeaning(final String word) {
+            System.out.println("getMeaning");
+            return wordMap.get(word);
+        }
+
+        public void addListElement(final String word) {
+            System.out.println("addListElement");
+            list.add(word);
+        }
+
+        public String getListElement(final int index) {
+            System.out.println("getElement");
+            return list.get(index);
+        }
+    }
+
+    List<String> arrayList = new ArrayList<String>();
+
+    @Mock
+    Map<String, String> map;
+
+    @Spy
+    List<String> list = arrayList;
+
+    @InjectMocks
+    @Spy // 这里这个@Spy可以不用加, 但是通常情况下, 我们会mock MyDictionaryAndList的其他方法, 如果不加我们就不能进行mock, 所以还是加上比较好
+    MyDictionaryAndList myDictionaryAndList;
+
+    @Test
+    public void test(){
+		// Mockito会将spy和mock注入到InjectMocks对象中
+        System.out.println(map == myDictionaryAndList.wordMap); // true
+        System.out.println(list == myDictionaryAndList.list); // true
+
+        // spy对象不是原来的那个arrayList, Mockito会对赋值的那个arrayList进行代理, 所以这里的list是代理后的arrayList
+        System.out.println(list == arrayList); // false
+
+        // 因为map是mock对象, 不会真正的执行, 而是返回返回类型的默认值
+        myDictionaryAndList.add("hello", "world");
+        System.out.println(myDictionaryAndList.getMeaning("hello") == null); // true
+
+        // spy对象会真正的执行真实方法
+        myDictionaryAndList.addListElement("hello");
+        System.out.println(myDictionaryAndList.getListElement(0)); // hello
+    }
+}
 ~~~
 
-也可以用在verify中,  用来验证mock对象的调用的参数
+
+
+
+
+## 指定mock和spy对象的行为
 
 ~~~java
-// 验证analyze被调用一次, 并且参数是y结尾, 或者poppy
-verify(flowerService).analyze(or(eq("poppy"), endsWith("y")));
+public class _02_ArgumentMatcher {
+
+    @Mock
+    OrderService orderService;
+
+    /**
+     * 使用doXXX, 可以用来指定mock和spy对象的行为
+     */
+    @Test
+    public void test() {
+        // 当调用orderService的createOrder方法, 并且参数是new Order("hello", "world")的时候, 返回true
+        Mockito.doReturn(true).when(orderService).createOrder(new Order("hello", "world"));
+
+        // doNothing一般针对返回值为void的方法, 当调用orderService.save()并且参数是new Order()的时候, 不做任何事情
+        Mockito.doNothing().when(orderService).save(new Order());
+
+        // 当调用orderService.createOrder方法的时候, 并且参数是new Order()的时候, 抛出一个RuntimeException异常
+        Mockito.doThrow(RuntimeException.class).when(orderService).createOrder(new Order());
+        // 当调用orderService.createOrder()并且参数是new Order("1", "1")的时候, 抛出一个IllegalArgumentException("msg")异常
+        Mockito.doThrow(new IllegalArgumentException("msg")).when(orderService).createOrder(new Order("1", "1"));
+
+        // 当调用orderService.createOrder(), 并且参数是new Order("2", "2")时, 转而调用真实的方法
+        Mockito.doCallRealMethod().when(orderService).createOrder(new Order("2", "2"));
+
+        // 当调用orderService..createOrder(new Order("3", "3"))时, 通过Answer接口来动态的设置返回值
+        Mockito.doAnswer(invocation -> {
+            // 获取参数
+            Order argument = invocation.getArgument(1, Order.class);
+            if (argument.getFields1().equals("1")) {
+                return false;
+            }
+            // 调用真实的方法
+            return invocation.callRealMethod();
+        }).when(orderService).createOrder(new Order("3", "3"));
+    }
+    
+    
+    /**
+     * 使用when().then(), 只能指定mock对象的行为, spy对象使用这种方式有歧义
+     */
+    @Test
+    public void test1() {
+        Mockito.when(orderService.createOrder(new Order("hello", "world"))).thenReturn(true);
+        Mockito.when(orderService.createOrder(new Order())).thenThrow(RuntimeException.class);
+        Mockito.when(orderService.createOrder(new Order("1", "1"))).thenThrow(new IllegalArgumentException("msg"));
+        Mockito.when(orderService.createOrder(new Order("2", "2"))).thenCallRealMethod();
+        Answer<?> answer = (invocation) -> {
+            // 获取参数
+            Order argument = invocation.getArgument(1, Order.class);
+            if (argument.getFields1().equals("1")) {
+                return false;
+            }
+            // 调用真实的方法
+            return invocation.callRealMethod();
+        };
+        Mockito.when(orderService.createOrder(new Order("2", "2"))).thenAnswer(answer); // thenAnswer和then是一样的
+        Mockito.when(orderService.createOrder(new Order("3", "3"))).then(answer);
+
+        // when().then()不能作用于void方法, 碰上void方法使用doXXX().when()吧
+        // Mockito.when(orderService.save(new Order())).thenCallRealMethod();
+    }
+
+    /**
+     * when().then()可以进行链式调用, 引来指定多次调用时的行为
+     */
+    @Test
+    public void test2() {
+        Mockito.when(orderService.createOrder(new Order("hello", "world")))
+                .thenReturn(true) // 第一次调用时返回true
+                .thenReturn(false) // 第二次调用时返回false
+                .thenThrow(RuntimeException.class); // 第三次调用时抛出异常
+    }
+
+}
 ~~~
 
 
 
-使用匹配器有两个需要注意的点:
+## 参数匹配
 
-1. 参数匹配器只能用在定义行为,  或者用在verify
-2. 参数匹配器只能用来匹配参数, 不能用来匹配返回值
+上面我们在定义mock/spy的行为的时候, 我们使用的都是直接指定参数的方式, 即当传入特定参数的时候, 返回特定的值
 
+如果我们想要一次性匹配多个参数, 或者根据情况来匹配参数的时候应该怎么办呢?
 
-
-**自定义参数匹配器**
-
-创建我们自己的\*匹配器使\*我们能够为给定场景选择最佳方法，并生成干净且可维护的高质量测试。
-
-例如，我们可以有一个传递消息的*MessageController* 。它将接收*MessageDTO* ，并从中创建*Message*传递到*MessageService*中
+此时我们可以使用`ArgumentMatcher`这个类, 他提供了很多方法来匹配参数
 
 ~~~java
-MessageDTO messageDTO = new MessageDTO();
-messageDTO.setFrom("me");
-messageDTO.setTo("you");
-messageDTO.setText("Hello, you!");
+public class _02_ArgumentMatcher {
 
-messageController.createMessage(messageDTO);
-// deliverMessage是messageService的方法, 不是Mockito的方法
-verify(messageService, times(1)).deliverMessage(any(Message.class));
+    @Mock
+    OrderService orderService;
+
+    /**
+     * 使用doXXX, 可以用来指定mock和spy对象的行为
+     */
+    @Test
+    public void test() {
+        // 直接指定参数
+        Mockito.doReturn(true).when(orderService).deleteOrder(new Order("hello", "world"), true);
+
+        // any用来匹配任何对象实例
+        // anyString(), anyInt(), anyByte(), anyChar(), anyDouble(), anyFloat(), anyBoolean(), anyShort(), anyLong()
+        // anyCollection(), anyIterable(), anyList(), anyMap(), anySet()
+        // any(Order.class) 匹配任意Order类型的对象
+        // any() 匹配任意值
+        Mockito.doReturn(true).when(orderService).deleteOrder(ArgumentMatchers.any(Order.class), ArgumentMatchers.anyBoolean());
+
+        // isA(): 匹配当前类及其子类
+        // eq(): 匹配相等的值
+        // same(): 匹配相同的地址
+        // refEq(): 使用反射来比较所有的属性是否相同, 可以排除指定的属性
+        Mockito.doReturn(true).when(orderService).deleteOrder(ArgumentMatchers.isA(Order.class), ArgumentMatchers.eq(false));
+
+        // startsWith(String prefix), endsWith(String suffix), contains(String substring), matchers(String regex), matchers(Pattern pattern): 匹配特定的字符串
+
+
+        // isNull和isNull(Class T), isNotNull()和isNotNull(Class T), notNull()和notNull(Class T): 匹配null和非null值, isNotNull和notNull两个意思一样, 带类型的主要用于防止方法重载
+        // nullable(Class t): 用于匹配特定类型的值, 或者null
+
+
+        // xxxThat(): 自定义是否匹配
+        Mockito.doReturn(true).when(orderService).deleteOrder(ArgumentMatchers.argThat(new ArgumentMatcher<Order>() {
+            @Override
+            public boolean matches(Order argument) {
+                return false;
+            }
+        }), ArgumentMatchers.booleanThat(new ArgumentMatcher<Boolean>() {
+            @Override
+            public boolean matches(Boolean argument) {
+                return false;
+            }
+        }));
+
+
+        // or(): 或
+        // and(): 与
+        // not(): 非
+        // cmpEq(): 通过类型自身的compareTo方法来比较
+        // geq: 大于等于
+        // gt: 大于
+        // leq: 小于等于
+        // le小于
+        // aryEq: 比较数值是否相等
+        Mockito.doReturn(true).when(orderService).deleteOrder(AdditionalMatchers.or(new Order("1", "1"), new Order("2", "2")), ArgumentMatchers.eq(false));
+        Mockito.doReturn(true).when(orderService).deleteOrder(AdditionalMatchers.not(new Order()), ArgumentMatchers.eq(false));
+    }
+    
+}
 ~~~
 
-但是如果我们使用any的话, 那么Message和MessageDTO中的数据可能有所不同, 所以我们可以实现一个自定义的参数匹配器
+
+
+## 校验
+
+当我们执行了需要测试的方法之后, 我们还需要对调用的方法进行校验, 校验主要由一下几种:
+
+1. 校验返回值或者异常
+2. 校验依赖方法的调用
+
+
+
+### 校验返回值
+
+在校验返回值的时候, 我们可以使用Junit5自带的断言, 也可以使用其他第三方库进行断言, 比如hamcrest
 
 ~~~java
-public class MessageMatcher implements ArgumentMatcher<Message> {
+@ExtendWith(MockitoExtension.class)
+public class _03_VerifyResult {
 
-    private Message left;
+    @Mock
+    OrderService orderService;
 
-    // constructors
+    @Test
+    public void test() {
+        // 定义行为
+        Mockito.doReturn(new Order("1", "1")).when(orderService).getOrder("1");
+        Mockito.doThrow(RuntimeException.class).when(orderService).getOrder("2");
+
+        Order order = orderService.getOrder("1");
+
+        // 使用junit断言
+        Assertions.assertEquals("hello", order.getFields1());
+
+        // 使用hamcrest断言
+        MatcherAssert.assertThat(order.getFields1(), Matchers.equalTo("1"));
+
+        // 断言抛出异常
+        Assertions.assertThrows(RuntimeException.class, () -> {
+            orderService.getOrder("2");
+        });
+    }
+
+}
+~~~
+
+
+
+### 校验依赖对象的方法调用
+
+
+
+https://www.baeldung.com/mockito-verify
+
+假设我们有如下的一个mock类
+
+~~~java
+public class MyList extends AbstractList<String> {
 
     @Override
-    public boolean matches(Message right) {
-        // 我们传入的left是对Message的预期数据
-        // 接受到的right是调用deliverMessage的时候真实接受到的Message
-        // 然后判断我们预期接受到的Message和真实接受到的Message是否相同
-        return left.getFrom().equals(right.getFrom()) &&
-          left.getTo().equals(right.getTo()) &&
-          left.getText().equals(right.getText()) &&
-          right.getDate() != null &&
-          right.getId() != null;
+    public String get(final int index) {
+        return null;
+    }
+    
+    @Override
+    public int size() {
+        return 1;
+    }
+}
+~~~
+
+
+
+验证调用次数
+
+~~~java
+List<String> mockedList = mock(MyList.class);
+mockedList.size();
+
+verify(mockedList).size(); // size方法被调用1次
+verify(mockList, times(1)).size();
+verify(mockList, atLeastOnce()).size(); // 至少调用一次siez()
+verify(mockList, atMost(2)).size(); // 至多2次调用siez()
+verify(mockList, atLeast(1)).size(); // 至少1次调用size()
+
+verify(mockList, never()).clear(); // 从未调用过clear方法
+verify(mockedList, times(0)).size(); // 从未调用过size方法
+
+// 校验没有调用mockedList的任何方法
+verifyNoInteractions(mockedList);
+verifyZeroInteractions(mockedList);
+
+verify(mockedList, only()).size();  // 只调用过size方法
+~~~
+
+
+
+验证调用顺序
+
+~~~java
+// 我们可以跳过任何方法进行验证，但是要验证的方法必须以相同的顺序调用。
+// 验证单个 或者 多个mock bean之间方法的调用顺序
+InOrder inOrder = inOrder(mockList, mockMap);
+inOrder.verify(mockList).add("Pankaj");
+inOrder.verify(mockList, calls(1)).size();
+inOrder.verify(mockList).isEmpty();
+inOrder.verify(mockMap).isEmpty();
+
+verifyNoMoreInteractions(mockList); // 验证此时没有尚未验证的调用了, 常常用在测试方法的最后面, 如果还有没有验证的调用, 那么测试方法不会通过
+~~~
+
+
+
+验证调用的参数
+
+~~~java
+@ExtendWith(MockitoExtension.class)
+public class _04_VerifyCall {
+
+    @InjectMocks
+    OrderService orderService;
+
+    @Mock
+    OrderDao orderDao;
+
+    @Test
+    public void test() {
+
+        // 定义行为
+        Mockito.doReturn(new Order("1", "1")).when(orderDao).getOrder("1");
+        Mockito.doThrow(RuntimeException.class).when(orderDao).getOrder("2");
+
+        Order order = orderService.getOrder("1");
+
+        Assertions.assertThrows(RuntimeException.class, () -> {
+            orderService.getOrder("2");
+        });
+
+
+        /**
+         * 直接指定方法的调用参数来进行验证
+         */
+        // 验证orderDao.getOrder("2")是否被调用了一次
+        Mockito.verify(orderDao, Mockito.times(1)).getOrder("2");
+        // 验证orderDao.getOrder("1")是否被调用了一次
+        Mockito.verify(orderDao, Mockito.times(1)).getOrder("1");
+
+
+        /**
+         * 还可以使用ArgumentMatchers来指定调用的参数
+         */
+        // 校验getOrder()至少被调用了2次, 并且参数为"1"或者"2"
+        Mockito.verify(orderDao, Mockito.atLeast(2)).getOrder(AdditionalMatchers.or(ArgumentMatchers.eq("1"), ArgumentMatchers.eq("2")));
+        // 校验getOrder()被至多调用了2次, 并且参数为任何字符串
+        Mockito.verify(orderDao, Mockito.atMost(2)).getOrder(ArgumentMatchers.anyString());
+
+
+        /**
+         * 或者可以使用ArgumentCaptor来捕获参数, 然后对调用的参数进行校验
+         */
+        ArgumentCaptor<String> argumentCaptor = ArgumentCaptor.forClass(String.class);
+        // 验证getOrder被调用了2次, 并将调用的参数保存到argumentCaptor中
+        // 想要捕获多个参数, 需要创建多个ArgumentCaptor
+        // 如果getOrder被调用了多次, 那么会将所有参数都保存到ArgumentCaptor
+        Mockito.verify(orderDao, Mockito.times(2)).getOrder(argumentCaptor.capture());
+
+        // 获取每次调用时的参数,返回一个List, 然后获取第1, 2次调用时的参数, 进行校验
+        Assertions.assertEquals("1", argumentCaptor.getAllValues().get(0));
+        Assertions.assertEquals("2", argumentCaptor.getAllValues().get(1));
+
+        // 获取最后一次的调用
+        Assertions.assertEquals("2", argumentCaptor.getValue());
+    }
+
+}
+~~~
+
+
+
+
+
+
+
+## mock  静态方法
+
+https://www.baeldung.com/mockito-mock-static-methods
+
+~~~java
+@ExtendWith(MockitoExtension.class)
+public class _01_MockStaticMethod {
+
+    public static class StaticUtils {
+
+        private StaticUtils() {}
+
+        public static List<Integer> range(int start, int end) {
+            return IntStream.range(start, end)
+                    .boxed()
+                    .collect(Collectors.toList());
+        }
+
+        public static String name() {
+            return "Baeldung";
+        }
+    }
+
+    @Test
+    public void givenStaticMethodWithNoArgs_whenMocked_thenReturnsMockSuccessfully() {
+        assertThat(StaticUtils.name()).isEqualTo("Baeldung");
+
+        // utilities是threadlocal的, 并且必须在测试方法结尾被关闭
+        // 之后在try-catch中, 静态方法才是被代理的
+        // 在try-catch之外, 静态方法是正常调用的
+        try (MockedStatic<StaticUtils> utilities = Mockito.mockStatic(StaticUtils.class)) {
+            // 指定调用name的时候, 返回Eugen
+            utilities.when(StaticUtils::name).thenReturn("Eugen");
+            // 校验
+            assertThat(StaticUtils.name()).isEqualTo("Eugen");
+        }
+
+        assertThat(StaticUtils.name()).isEqualTo("Baeldung");
+
+    }
+
+    /**
+     * mock 有参数的静态方法
+     */
+    @Test
+    void givenStaticMethodWithArgs_whenMocked_thenReturnsMockSuccessfully() {
+        assertThat(StaticUtils.range(2, 6)).containsExactly(2, 3, 4, 5);
+
+        // 只有在try-catch内, mock才是有效的
+        try (MockedStatic<StaticUtils> utilities = Mockito.mockStatic(StaticUtils.class)) {
+            // 使用lambda来定义, 当调用range(2, 6)时, 返回[10, 11, 12]
+            utilities.when(() -> StaticUtils.range(2, 6))
+                    .thenReturn(Arrays.asList(10, 11, 12));
+
+            // 实际调用并验证
+            assertThat(StaticUtils.range(2, 6)).containsExactly(10, 11, 12);
+        }
+
+        assertThat(StaticUtils.range(2, 6)).containsExactly(2, 3, 4, 5);
+    }
+}
+~~~
+
+
+
+
+
+
+
+
+
+## mock 构造函数
+
+我们可以对一个class的构造函数进行mock, 这样通过构造函数来创建一个对象的时候, 不会真正的调用构造函数来创建对象, 而是直接返回一个mock后的对象,  我们可以定义这个mock后的对象的各种行为
+
+
+
+mock构造函数的场景通常是用在:   我们需要测试的函数, 他内部会new其他对象, 我们想要对new出来的对象进行mock, 然后看看我们测试的函数会怎么样的反应
+
+
+
+下面我们来看一个简单的mock构造函数的案例
+
+~~~java
+    public static class Fruit {
+        public String getName() { }
+        public String getColour() { return "Red"; }
+    }
+
+    @Test
+    public void test() {
+        try (MockedConstruction<Fruit> mocked = Mockito.mockConstruction(Fruit.class)) {
+            // 在这个范围内, Fruit的构造函数已经被mock了, 只要调用了Fruit的构造函数来创建对象,
+            // 就会直接返回一个mock的Fruit对象, 而不会调用真实的构造函数
+
+            Fruit fruit = new Fruit(); // 这会返回一个mock的Fruit对象
+
+            // 可以对mock的Fruit对象进行一些操作
+            Mockito.when(fruit.getName()).thenReturn("Banana");
+            Mockito.when(fruit.getColour()).thenReturn("Yellow");
+
+            // 验证mock的Fruit对象的方法是否被调用
+            Mockito.verify(fruit).getName();
+            Mockito.verify(fruit).getColour();
+
+            // 可以使用mocked.constructed()来获取所有mock的Fruit对象
+            List<Fruit> constructedFruits = mocked.constructed();
+            assertThat(constructedFruits.size()).isEqualTo(1);
+        }
+    }
+~~~
+
+
+
+
+
+上面说了, mock构造函数的一般场景是:  我们需要测试的函数, 他内部会new其他对象, 我们想要对new出来的对象进行mock, 然后看看我们测试的函数会怎么样的反应?  下面我们来看看这种情况
+
+~~~java
+    public static class CoffeeMachine {
+
+        private Grinder grinder;
+        private WaterTank tank;
+
+        public CoffeeMachine() {
+            this.grinder = new Grinder();
+            this.tank = new WaterTank();
+        }
+
+        public String makeCoffee() {
+            String type = this.tank.isEspresso() ? "Espresso" : "Americano";
+            return String.format("Finished making a delicious %s made with %s beans", type, this.grinder.getBeans());
+        }
+    }
+
+    public static class Grinder {
+
+        @Getter
+        @Setter
+        private String beans;
+
+        public Grinder() {
+            this.beans = "Guatemalan";
+        }
+    }
+
+    public static class WaterTank {
+
+        @Getter
+        @Setter
+        private int mils;
+
+        public WaterTank() {
+            this.mils = 25;
+        }
+
+        public boolean isEspresso() {
+            return getMils() < 50;
+        }
+    }
+
+    @Test
+    public void test() {
+        try (MockedConstruction<Grinder> mockedGrinder = Mockito.mockConstruction(Grinder.class);
+             MockedConstruction<WaterTank> mockedWaterTank = Mockito.mockConstruction(WaterTank.class)) {
+            // 在这个范围内, Grinder和WaterTank的构造函数已经被mock了, 只要调用了Grinder和WaterTank的构造函数来创建对象,
+            // 就会直接返回一个mock的Grinder和WaterTank对象, 而不会调用真实的构造函数
+
+            // 创建一个CoffeeMachine, 内部会调用WaterTank和Grinder的构造函数, 所以会创建他们的mock对象
+            CoffeeMachine machine = new CoffeeMachine();
+
+            WaterTank tank = mockedWaterTank.constructed().get(0); // 获取mock创建的的WaterTank对象
+            Grinder grinder = mockedGrinder.constructed().get(0); // 获取mock创建的Grinder对象
+
+            when(tank.isEspresso()).thenReturn(false); // 定义mock的WaterTank的行为
+            when(grinder.getBeans()).thenReturn("Peruvian"); // 定义mock的Grinder的行为
+
+            // 验证CoffeeMachine的行为
+            Assertions.assertEquals("Finished making a delicious Americano made with Peruvian beans", machine.makeCoffee());
+        }
+    }
+~~~
+
+
+
+上面我们mock的构造函数都是不带参数的, 那么当构造函数具有参数时, 我们应该怎么办呢, Mockito提供了一种机制可以让我们访问到传递够来的构造函数参数,  从而定制mock bean的行为
+
+~~~java
+// 向WaterTank添加一个新的构造函数
+public WaterTank(int mils) {
+    this.mils = mils;
+}
+
+// 向CoffeeMachine添加一个新的构造函数
+public CoffeeMachine(int mils) {
+    this.grinder = new Grinder();
+    this.tank = new WaterTank(mils);
+}
+
+@Test
+void givenMockedContructorWithArgument_whenCoffeeMade_thenMockDependencyReturned() {
+    try (MockedConstruction<WaterTank> mockTank = mockConstruction(WaterTank.class, 
+      (mock, context) -> {
+          // 这里我们可以获取到传入到构造函数中的参数
+          int mils = (int) context.arguments().get(0);
+          // 根据传递进来的参数, 来对行为进行定制
+          when(mock.getMils()).thenReturn(mils);
+      }); 
+      MockedConstruction<Grinder> mockGrinder = mockConstruction(Grinder.class)) {
+        // 创建CoffeeMachine, 内部会创建WaterTank
+          CoffeeMachine machine = new CoffeeMachine(100);
+
+        // 获取mock创建出来的WaterTank
+          Grinder grinder = mockGrinder.constructed().get(0);
+        // 定制行为
+          when(grinder.getBeans()).thenReturn("Kenyan");
+        
+        // 校验
+          assertEquals("Finished making a delicious Americano made with Kenyan beans", machine.makeCoffee());
+        }
+    }
+~~~
+
+
+
+通常情况下, 我们mock构造函数创建出来的mock对象,  他就是一个mock对象, 在调用他的方法的时候, 他不会调用真实的方法, 而是直接返回一个默认值,  如果我们想要他是一个spy对象呢? 即像一个正常的对象一样, 调用真实的方法, 我们可以像下面这样配置他
+
+~~~java
+@Test
+void givenMockedContructorWithNewDefaultAnswer_whenFruitCreated_thenRealMethodInvoked() {
+    // CALLS_REAL_METHODS表示在执行mock对象的方法的时候, 调用真实的方法, 而不是返回默认值
+    try (MockedConstruction<Fruit> mock = mockConstruction(Fruit.class, withSettings().defaultAnswer(Answers.CALLS_REAL_METHODS))) {
+
+        Fruit fruit = new Fruit();
+
+        assertEquals("Apple", fruit.getName());
+        assertEquals("Red", fruit.getColour());
     }
 }
 
-MessageDTO messageDTO = new MessageDTO();
-messageDTO.setFrom("me");
-messageDTO.setTo("you");
-messageDTO.setText("Hello, you!");
-
-messageController.createMessage(messageDTO);
-
-Message message = new Message();
-message.setFrom("me");
-message.setTo("you");
-message.setText("Hello, you!");
-
-// 使用argThat来设置自定义的参数匹配器
-verify(messageService, times(1)).deliverMessage(argThat(new MessageMatcher(message)));
 ~~~
 
 
 
-**参数捕获器(ArgumentCaptor)和参数匹配器(Argument Matcher)的区别**
+## mock Final类和Final方法
 
-我们知道, 参数捕获器可以用来收集mock对象被调用时的参数的值, 然后我们可以通过这个值与我们预期的值来判断
+mock final类和final没有什么特别之处, 只需要像普通的方法一样对待就行了
 
-而参数匹配器也是对mock对象被调用时的参数进行匹配, 验证
-
-那么他们有什么区别呢, 两者都可以完成验证
+唯一需要注意的就是低版本的mockito可能不支持mock final类和final方法
 
 
 
-**通常来说, ArgumentCaptor更适合用来对调用时的参数进行验证, 看看是否和我们的预期一致**
+## mock 私有字段
 
-**而ArgumentMatcher 更适合用来定义mock对象接受到特定参数的时候的行为**
+假设我们有如下这样一个类
+
+~~~java
+public class MockService {
+    private final Person person = new Person("John Doe");
+    
+    public String getName() {
+        return person.getName();
+    }
+}
+public class Person {
+    private final String name;
+    
+    public Person(String name) {
+        this.name = name;
+    }
+    
+    public String getName() {
+        return name;
+    }
+}
+~~~
+
+他有一个private final 属性, 我们想要mock他, 但是他说private final的, 同时也没有setter, 那么我们想要mock他, 就必须使用反射
+
+~~~java
+public class MockServiceUnitTest {
+    private Person mockedPerson;
+
+    @BeforeEach
+    public void setUp(){
+        mockedPerson = mock(Person.class);
+    }
+    
+    @Test
+void givenNameChangedWithReflection_whenGetName_thenReturnName() throws Exception {
+    Class<?> mockServiceClass = Class.forName("com.baeldung.mockprivate.MockService");
+    MockService mockService = (MockService) mockServiceClass.getDeclaredConstructor().newInstance();
+    Field field = mockServiceClass.getDeclaredField("person");
+    field.setAccessible(true);
+    field.set(mockService, mockedPerson);
+
+    when(mockedPerson.getName()).thenReturn("Jane Doe");
+
+    Assertions.assertEquals("Jane Doe", mockService.getName());
+}
+}
+~~~
+
+如果你使用的Junit5, 那么可以使用ReflectionUtils来进行反射
+
+~~~java
+@Test
+void givenNameChangedWithReflectionUtils_whenGetName_thenReturnName() throws Exception {
+    MockService mockService = new MockService();
+    Field field = ReflectionUtils
+      .findFields(MockService.class, f -> f.getName().equals("person"),
+        ReflectionUtils.HierarchyTraversalMode.TOP_DOWN)
+      .get(0);
+
+    field.setAccessible(true);
+    field.set(mockService, mockedPerson);
+
+    when(mockedPerson.getName()).thenReturn("Jane Doe");
+
+    Assertions.assertEquals("Jane Doe", mockService.getName());
+}
+~~~
+
+如果你与spring-test进行了集成, 那么你可以使用另一个工具类
+
+~~~java
+@Test
+void givenNameChangedWithReflectionTestUtils_whenGetName_thenReturnName() throws Exception {
+    MockService mockService = new MockService();
+
+    ReflectionTestUtils.setField(mockService, "person", mockedPerson);
+
+    when(mockedPerson.getName()).thenReturn("Jane Doe");
+    Assertions.assertEquals("Jane Doe", mockService.getName());
+}
+~~~
+
+
+
+## mock 私有方法
+
+https://www.baeldung.com/powermock-private-method
+
+单纯的使用mockito是没有办法mock私有方法的,  想要mock私有方法需要使用PowerMock
+
+他的底层是mockito, 并且对mockito进行了增强, 使其能够mock私有方法
+
+
+
+需要注意的是
+
+1. PowerMock最高支持junit4, 不支持junit5
+2. 他支持的mockito最高为3.12.4,  如果你使用了spring, 注意要降低mockito的版本, 因为spring使用的mockito太新了
+3. PowerMock的依赖和mockito-inline这个包不能共存
+
+
+
+1. 导入依赖
+
+   ~~~xml
+   <dependency>
+       <groupId>org.powermock</groupId>
+       <artifactId>powermock-module-junit4</artifactId>
+       <version>1.7.3</version>
+       <scope>test</scope>
+   </dependency>
+   <dependency>
+       <groupId>org.powermock</groupId>
+       <artifactId>powermock-api-mockito2</artifactId>
+       <version>2.0.9</version>
+       <scope>test</scope>
+   </dependency>
+   ~~~
+
+2. powermock的使用
+
+   ~~~java
+       public static class LuckyNumberGenerator {
+   
+           public int getLuckyNumber(String name) {
+               saveIntoDatabase(name);
+               if (name == null) {
+                   return getDefaultLuckyNumber();
+               }
+               return getComputedLuckyNumber(name.length());
+           }
+   
+           private int getDefaultLuckyNumber() {
+               return 0;
+           }
+   
+           private int getComputedLuckyNumber(int length) {
+               return 0;
+           }
+   
+           private void saveIntoDatabase(String name) { }
+   
+       }
+   
+   
+       /**
+        * 这个代码跑不起来, 有可能powermock的版本有问题
+        */
+       @Test
+       public void test() throws Exception {
+           LuckyNumberGenerator luckyNumberGenerator = new LuckyNumberGenerator();
+           LuckyNumberGenerator spy = PowerMockito.spy(luckyNumberGenerator);
+   
+           // 当调用saveIntoDatabase时, 不做任何操作
+           PowerMockito.doNothing().when(spy, "saveIntoDatabase", Mockito.anyString());
+           // 当调用getDefaultLuckyNumber时, 返回100
+           PowerMockito.when(spy, "getDefaultLuckyNumber").thenReturn(100);
+           // 当调用getComputedLuckyNumber时, 返回100
+           PowerMockito.when(spy, "getComputedLuckyNumber", Mockito.anyInt()).thenReturn(100);
+   
+           // 调用真实的方法
+           int luckyNumber = luckyNumberGenerator.getLuckyNumber("Tiger");
+   
+           // 校验
+           Assertions.assertEquals(100, luckyNumber);
+       }
+   ~~~
+
+   
 
 
 
 
 
+## 其他
+
+### UnnecessaryStubbingException
+
+https://www.baeldung.com/mockito-unnecessary-stubbing-exception
+
+简单来说, 如果我们定义了一个mock bean的多个预期的行为, 但是只我们测试的时候, 又没有调用到对应的方法, 那么就会出现这个异常
+
+~~~java
+@Test
+public void givenUnusedStub_whenInvokingGetThenThrowUnnecessaryStubbingException() {
+    
+    // 定义了add的行为, 但是又没有调用它, 会抛出异常
+    when(mockList.add("one")).thenReturn(true); 
+    when(mockList.get(anyInt())).thenReturn("hello");
+    assertEquals("List should contain hello", "hello", mockList.get(1));
+}
+~~~
 
 
-## 高级篇
 
 ### 延迟验证
 
@@ -2134,6 +2837,3 @@ public class LazyVerificationTest {
 但是开启了延迟验证的话, 所有的失败情况都会进行报告
 
 **通常来说还是挺有用的, 特别是对于大型项目, 不用一直改bug然后重复执行**
-
-
-

@@ -183,9 +183,15 @@ encoder 将日志事件转换为字节数组，同时将字节数组写入到一
 
 为什么会有这个改变？
 
-layout 将会在下一章节讨论，它只能将日志事件转换为成 string。而且，考虑到 layout 在日志事件写出时不能控制日志事件，不能将日志事件批量聚合。与之相反的是，encoder 不但可以完全控制字节写出时的格式，而且还可以控制这些字节什么时候被写出。
+layout 将会在下一章节讨论，它只能将日志事件转换为成 string。而且，考虑到 layout 在日志事件写出时不能控制日志事件，不能将**日志事件批量聚合**。与之相反的是，**encoder 不但可以完全控制字节写出时的格式，而且还可以控制这些字节什么时候被写出。**
+
+
 
 `PatternLayoutEncoder` 是目前真正唯一有用的 encoder。它仅仅包裹了一个 `PatternLayout` 就完成了大部分的工作。因此，除了不必要的复杂性，encoder 似乎不会有太多的用处。但是，我们希望一个全新的更加强大的 encoder 来改变这种印象。
+
+
+
+
 
 ## 参数化日志
 
@@ -226,6 +232,10 @@ logger.debug("Value {} was inserted between {} and {}.", paramArray);
 5. **如果以上都没有成功，logback 会通过 [BasicConfigurator](https://logback.qos.ch/xref/ch/qos/logback/classic/BasicConfigurator.html) 为自己进行配置，并且日志将会全部在控制台打印出来。**
 
 最后一步会添加给rootLogger添加一个ConsoleAppender, 并且使用PatternLayout来进行格式化.  rootLogger默认的level为debug
+
+
+
+
 
 ## 配置文件的语法
 
@@ -291,6 +301,7 @@ logback 的配置文件非常的灵活，不需要指定 DTD 或者 xml 文件�
 ```xml
 <configuration>
 	<appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <!-- 默认使用class="ch.qos.logback.classic.encoder.PatternLayoutEncoder"-->
 		<encoder>
 			<pattern>
 				%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n
@@ -366,6 +377,8 @@ ConsoleAppender 的名字为 *STDOUT*， *sample4.xml* 中唯一的 appender，�
 ```
 
 很明显，root logger 没有影响到其他的 logger，因为 `chapters.configuration.MyApp3` 与 `chapters.configuration.Foo` 类的日志级别为 INFO。即使在 java 代码中没有直接引用 *chapters.configuration* 这个 logger，但是它是存在，因为它在配置文件中声明了。
+
+
 
 #### 配置 appender
 
@@ -539,6 +552,8 @@ appender 的叠加性并不是为新用户设置的陷阱。它是 logback 非�
     </root>
 </configuration>
 ```
+
+
 
 #### 变量替换
 
@@ -964,6 +979,10 @@ L, line 调用记录的行号
 cn, contextName 自动以的contextName
 n, 换行
 ```
+
+
+
+
 
 ## logback配置文件模板
 

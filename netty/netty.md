@@ -2522,70 +2522,13 @@ public class TestEmbeddedChannel {
 
 
 
-
-
 ### 3.5 ByteBuf
+
+扩容, discardReadBytes来释放已读取的空间
 
 是对jdk中的ByteBuffer的封装, 可以动态扩容, 每次扩容翻倍
 
-#### 1）创建
-
-```java
-// 如果不传, 默认大小256
-ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer(10);
-log(buffer); //read index:0 write index:0 capacity:10
-
-// 如果是在handler中, 那么推荐使用如下的方式
-ByteBuf buffer = ctx.alloc();
-```
-
-上面代码创建了一个默认的 ByteBuf（池化基于**直接内存**的 ByteBuf），初始容量是 10
-
-
-
-#### 2）直接内存 vs 堆内存
-
-可以使用下面的代码来创建基于堆的 ByteBuf
-
-堆内存分配效率高, 因为已经通过jvm申请了,  但是读写效率一般, 在IO时需要多次拷贝
-
-```java
-ByteBuf buffer = ByteBufAllocator.DEFAULT.heapBuffer(10);
-```
-
-也可以使用下面的代码来创建基于**直接内存**的 ByteBuf
-
-直接内存创建和销毁的代价昂贵，但读写性能高, 因为底层是内核中的一块内存, 通过mmap的方式映射到了JVM内存上, 相当于使用了零拷贝技术, 在IO读写时可以少一次内存复制, 配合池化功能使用
-
-直接内存不受JVM垃圾管理, 需要即时的主动释放
-
-```java
-ByteBuf buffer = ByteBufAllocator.DEFAULT.directBuffer(10);
-ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer(10);
-```
-
-
-
-#### 3）池化 vs 非池化
-
-池化的最大意义在于可以重用 ByteBuf，优点有
-
-* 没有池化，则每次都得创建新的 ByteBuf 实例，这个操作对直接内存代价昂贵，就算是堆内存，也会增加 GC 压力
-* 有了池化，则可以重用池中 ByteBuf 实例，并且采用了与 jemalloc 类似的内存分配算法提升分配效率
-* 高并发时，池化功能更节约内存，减少内存溢出的可能
-
-池化功能是否开启，可以通过下面的系统环境变量来设置
-
-```java
--Dio.netty.allocator.type={unpooled|pooled}
-```
-
-* 4.1 之前，池化功能还不成熟，默认是非池化实现
-* 4.1 以后，默认启用池化，但是Android 平台不启用
-
-
-
-#### 4）结构
+#### 结构
 
 ByteBuf 由四部分组成
 
@@ -2597,13 +2540,252 @@ ByteBuf 由四部分组成
 
 ![](img/0010.png)
 
-#### 5）扩容
 
-创建一个容量为256字节的buffer
 
-```java
-ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer(10);
-```
+#### 分类
+
+ByteBuf从内存的角度看可以分为两类
+
+- 直接内存的ByteBuf
+
+  **直接内存的分配和回收速度慢一些,  但读写性能高, 因为底层是内核中的一块内存, 通过mmap的方式映射到了JVM内存上, 相当于使用了零拷贝技术, 在IO读写时可以少一次内存复制**
+
+- 堆内存的ByteBuf
+
+  **堆内存分配效率高, 因为已经通过jvm申请了,  但是在io读写的时候, 需要多进行一次拷贝**
+
+  **因为在io的时候, 要求内存地址不能变动, JVM的gc会整理对象到内存头部, 这会导致基于堆内存的ByteBuf的地址变动, 所以在io的时候要将堆内存中的数据拷贝到直接内存中, 然后在进行io**
+
+**经验表明, 如果ByteBuf是需要直接配合Channel进行读写的, 那么推荐使用直接内存, 如果是用于编解码等其他情况的话, 使用堆内存的ByteBuf好**
+
+
+
+从内存回收角度看, ByteBuf可以分为池化和非池化的
+
+- 池化的ByteBuf
+
+  可以循环利用, 提高内存的使用率, 较低了高负载导致的频繁gc
+
+- 非池化的ByteBuf
+
+  使用简单
+
+
+
+ByteBuf的主要继承结构如下
+
+![image-20241210220239697](img/netty/image-20241210220239697.png)
+
+具体的实现类有: 
+
+- PooledDirectByteBuf
+- PooledHeapByteBuf
+- UnpooledDirectByteBuf
+- UnpooledHeapByteBuf
+
+
+
+#### ByteBufAllocator
+
+ByteBufAllocator主要用于创建ByteBuf,  ByteBufAllocator的实现类有两种
+
+- PooledByteBufAllocator: 用于分配池化的ByteBuf
+- UnpooledByteBufAllocator: 用于分配非池化的ByteBuf
+
+ByteBufAllocator的api如下:
+
+| 方法名称                                           | 返回值说明       | 功能                                                         |
+| -------------------------------------------------- | ---------------- | ------------------------------------------------------------ |
+| buffer()                                           | ByteBuf          | 创建一个初始容量为256, 最大容量为Int最大值的ByteBuf, 根据`preferDirect`属性来决定是否是直接内存,  是否池化根据Allocator类型决定 |
+| buffer(int initialCapacity)                        | ByteBuf          | 同上, 只不过指定了初始容量                                   |
+| bufer(int initialCapacity,int maxCapacity)         | ByteBuf          | 同上, 只不过指定了初始容量和最大容量                         |
+| ioBufer(int initialCapacity,int maxCapacity)       | ByteBuf          | 创建一个直接内存的ByteBuf, 是否池化根据Allocator类型决定     |
+| heapBuffer(int initialCapacity, int maxCapacity)   | ByteBuf          | 创建一个对内存的ByteBuf, 是否池化根据Allocator类型决定       |
+| directBuffer(int initialCapacity, int maxCapacity) | ByteBuf          | 创建一个直接内存的ByteBuf, , 是否池化根据Allocator类型决定   |
+| compositeBuffer(int maxNumComponents)              | CompositeByteBuf | 分配一个最大容量为maxCapacity的CompositeByteBuf,内存类型由 ByteBufAllocator 的实现类决定 |
+| isDirectBuferPooled()                              | boolean          | 判断创建的直接内存是否是池化的                               |
+
+需要注意的是:
+
+- **创建的Buffer是否是池化的, 是根据Allocator的类型来决定了**
+
+- **在Allocator中有一个`preferDirect`属性,  他决定了`buffer()`方法创建的ByteBuf是否使用直接内存**
+
+  ~~~java
+  // 创建一个池化的, preferDirect为true的分配器
+  PooledByteBufAllocator pooledByteBufAllocator = new PooledByteBufAllocator(true);
+  ByteBuf buf = pooledByteBufAllocator.buffer(); // 创建一个池化的直接内存的ByteBuf
+  
+  // 创建一个非池化的, preferDirect为true的分配器
+  UnpooledByteBufAllocator unpooledByteBufAllocator = new UnpooledByteBufAllocator(true);
+  ByteBuf buf1 = pooledByteBufAllocator.buffer(); // 创建一个池化的直接内存的ByteBuf
+  ~~~
+
+- 同时`PooledByteBufAllocator, UnpooledByteBufAllocator, ByteBufAllocator `他们都有一个`static final DEFAULT`属性, 是对应类型的实例
+
+  ~~~java
+  // 池化的ByteBuf分配器  
+  PooledByteBufAllocator defaultPooledByteAllocator = PooledByteBufAllocator.DEFAULT;
+  // 非池化的ByteBuf分配器
+  UnpooledByteBufAllocator defaultUnpooledByteBufAllocator = UnpooledByteBufAllocator.DEFAULT;
+  
+  ByteBufAllocator defaultByteBufAllocator = ByteBufAllocator.DEFAULT;
+  ~~~
+
+  - PooledByteBufAllocator.DEFAULT用于分配池化的内存,  UnpooledByteBufAllocator.DEFAULT用于分配非池化的内存
+
+  - PooledByteBufAllocator.DEFAULT和UnpooledByteBufAllocator.DEFAULT中的`preferDirect`属性
+
+    在安卓平台强制等于false
+
+    在其他平台默认等于true,  可以通过`-Dio.netty.noPreferDirect={false | true}`来控制
+
+  - ByteBufAllocator.DEFAULT默认情况下
+
+    在安卓平台等效于`UnpooledByteBufAllocator.DEFAULT`
+
+    在非安卓平台等效于`PooledByteBufAllocator.DEFAULT`
+
+    也可以通过`-Dio.netty.allocator.type={unpooled | pooled | adaptive}`来控制
+
+
+
+#### 创建ByteBuf
+
+创建ByteBuf有三种方式:
+
+- 手动new一个Allocator,  然后通过他来创建ByteBuf
+
+  不推荐使用这种, 因为这种方式是自己创建了一个ByteBufAllocator, 与netty内部使用的不是同一个Allocator
+
+  会导致内存控制不当
+
+  ~~~java
+  // 创建一个池化的, preferDirect为true的分配器
+  PooledByteBufAllocator pooledByteBufAllocator = new PooledByteBufAllocator(true);
+  ByteBuf buf = pooledByteBufAllocator.buffer(); // 创建一个池化的直接内存的ByteBuf
+  
+  // 创建一个非池化的, preferDirect为true的分配器
+  UnpooledByteBufAllocator unpooledByteBufAllocator = new UnpooledByteBufAllocator(true);
+  ByteBuf buf1 = pooledByteBufAllocator.buffer(); // 创建一个池化的直接内存的ByteBuf
+  ~~~
+
+- 通过PooledByteBufAllocator.DEFAULT, UnpooledByteBufAllocator.DEFAULT, ByteBufAllocator.DEFAULT来创建
+
+  推荐使用这种, 因为默认情况下, netty在进行io的时候, 就是通过调用`ByteBufAllocator.DEFAULT.ioBuffer()`
+
+  使用同一个Allocator对象, 能够统一的管理内存
+
+  ~~~java
+          ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.ioBuffer(); // 池化的直接内存
+          ByteBuf byteBuf1 = UnpooledByteBufAllocator.DEFAULT.heapBuffer(10, 20); // 非池化的堆内存
+  
+          ByteBuf byteBuf2 = ByteBufAllocator.DEFAULT.ioBuffer(10, 20); // 池化的直接内存
+  ~~~
+
+- 如果是在handler中, 推荐使用ctx来创建
+
+  ~~~java
+  ByteBufAllocator byteBufAllocator = ctx.alloc;
+  byteBufAllocator.buffer();
+  ~~~
+
+
+
+#### 顺序读
+
+~~~java
+skipBytes(int length) // 跳过指定字节, 增加readerIndex
+
+boolean readBoolean() // 从readerIndex开始获取boolean值，readerIndex增加1
+byte readByte() // 从readerIndex开始获取字节值，readerlndex增加1
+byte readUnsignedByte() // 从readerIndex开始获取无符号字节值，readerlndex增加1
+short readShort() // 从readerlndex开始获取短整型值，readerIndex增加2 
+short readUnsignedShort() // 从readerIndex开始获取无符号短整型值，readerIndex增加2
+int readInt() // 从readerlndex开始获取整型值，readerlndex增加4
+int readUnsignedint() // 从readerlndex开始获取无符号整型值，readerIndex增加4
+char readChar() // 从readerIndex开始获取字符值，readerlndex增加2
+float readFloat()  // 从readerIndex开始获取浮点值，readerIndex增加4 
+double readDouble() // )从readerIndex开始获取双精度浮点值，readerlndex增加8
+long readLong() // 从readerIndex开始获取长整型值，readerIndex增加8
+
+/**
+	以下方法都返回this
+*/
+// 从当前buf中读取指定length的字节, 到新的ByteBuf中并返回, 如果src中可读字节小于length, 报错, 返回this
+ByteBuf readBytes(int length) 
+
+// 将src中的字节读取到dst中，直到dst中没有剩余的空间可写
+// 操作完成之后，当前ByteBuf的readcrlndex+=读取的字节数
+// 如果目标ByteBuf可写的字节数大于当前ByteBuf可读取的字节数，则抛出IndexOutOfBoundsException，操作失败
+ByteBuf readBytes(ByteBuf dst)
+
+// 读取length字节到dst中, 如果src中可读字节不够, 或者dst中的可写字节不够, 报错
+ByteBuf readBytes(ByteBuf dst, int length)
+// 读取length字节到dst的dstIndex下标中, 如果src中可读字节不够, 或者dst中的可写字节不够, 报错
+ByteBuf readBytes(ByteBufdst,int dstIndex, int length)
+// 将src中的字节读取到dst中, 读取的字节为dst.length, 如果可读字节不够, 报错
+ByteBuf readBytes(byte[] dst) 
+// 将src中的字节读取到dst中dstIndex的下标中, 长度为length, 如果可读字节不够, 报错
+ByteBuf readBytes(byte[] dst, int dstIndex, int length)
+// 将src中的字节读取到dst中, 直到dst的limit, 如果src中的可读字节不够, 报错
+ByteBuf readBytes(ByteBuffer dst) 
+// 读取length字节到out中, 如果src中可读字节不够, 报错 
+ByteBuf readBytes(OutputStream out, int length)
+~~~
+
+
+
+#### 顺序写
+
+顺序写操作可以调用`writeXXX`来完成, 并且他们返回的都是this, 可以进行链式调用
+
+~~~java
+writeBoolean(boolean value)
+writeByte(int value)
+writeShort(int value)
+writeInt(int value)
+writeLong(long value)
+writeChar(int value)
+writeBytes(ByteBuf src) // 将src中所有可读字节写入到dst中, 如果dst中可写字节不够, 报错
+writeBytes(ByteBuf src, int length) // 将src中length可读字节写入到dst中, 如果dst中可写字节不够, 报错
+writeBytes(ByteBuf src, int srcIndex,int length) // 读取src中srcIndex下标的length字节到dst中, 如果src可读字节不够, 或者dst中可写字节不够, 报错
+writeBytes(byte[] src) // 将src中的所有字节写到dst中, 如果dst可写字节不够, 报错
+writeBytes(byte[] src, int srcIndex, int length) // 读取length长度的src中srcIndex下标的字节到dst中, 如果src中可读字节, 或者dst中可写字节不够, 报错
+writeBytes(ByteBuffer src) // 将src中所有可读字节写入到dst中, 如果dst中可写字节不够, 报错
+writeBytes(InputStream in, int length) // 将in中length字节写入到dst中, 如果dst中可写字节不够, 报错
+writeZero(int length) // 写入length字节的0x00到dst中
+~~~
+
+
+
+
+
+#### 随机读写
+
+需要注意的是
+
+1. **随机写会覆盖原来的内容, 而不是后移**
+2. **随机写的时候, 无法扩容, 所以不要超过了缓冲区的界限**
+3. **随机读写不会导致ridx和widx的变动**
+
+随机读可以调用`getXXX`来完成
+
+<img src="img/netty/image-20241125223504014.png" alt="image-20241125223504014" style="zoom: 67%;" />
+
+随机写可以调用`setXXX`来完成, 常用的使用场景是在代码的最后用来设置消息的长度
+
+~~~java
+sendBuf.setInt(4, sendBuf.readableBytes());
+~~~
+
+
+
+<img src="img/netty/image-20241125223518487.png" alt="image-20241125223518487" style="zoom:67%;" />
+
+#### 扩容
+
+ByteBuf能够自动扩容, 当调用顺序写的时候, 如果需要的空间不够, 那么就会执行扩容
 
 扩容规则是
 
@@ -2613,66 +2795,169 @@ ByteBuf buffer = ByteBufAllocator.DEFAULT.buffer(10);
 
 
 
-#### 6）写入
+#### 复制操作
 
-方法列表，省略一些不重要的方法
-
-| 方法签名                                                     | 含义                   | 备注                                         |
-| ------------------------------------------------------------ | ---------------------- | -------------------------------------------- |
-| writeBoolean(boolean value)                                  | 写入 boolean 值        | true写入后为0x01, false写入后为0x00          |
-| writeByte(int value)                                         | 写入 byte 值           |                                              |
-| writeShort(int value)                                        | 写入 short 值          |                                              |
-| writeInt(int value)                                          | 写入 int 值            | 大端写入，假设写入0x0250，写入后 00 00 02 50 |
-| writeIntLE(int value)                                        | 写入 int 值            | 小端写入，假设写入0x0250，写入后 50 02 00 00 |
-| writeLong(long value)                                        | 写入 long 值           |                                              |
-| writeChar(int value)                                         | 写入 char 值           |                                              |
-| writeFloat(float value)                                      | 写入 float 值          |                                              |
-| writeDouble(double value)                                    | 写入 double 值         |                                              |
-| writeBytes(ByteBuf src)                                      | 写入 netty 的 ByteBuf  |                                              |
-| writeBytes(byte[] src)                                       | 写入 byte[]            |                                              |
-| writeBytes(ByteBuffer src)                                   | 写入 nio 的 ByteBuffer |                                              |
-| int writeCharSequence(CharSequence sequence, Charset charset) | 写入字符串             |                                              |
-
-> 注意
->
-> * 这些方法的未指明返回值的，其返回值都是 ByteBuf，意味着可以链式调用
-> * 网络传输，默认习惯是 大端写入
-
-
-
-#### 7）读取
-
-读取可以使用`buffer.readByte()`方法读取一个字节
-
-```java
-System.out.println(buffer.readByte());
-```
-
-读过的内容，就属于废弃部分了，再读只能读那些尚未读取的部分
-
-如果需要重复读取 int 整数 5，怎么办？
-
-可以在 read 前先做个标记 mark
-
-```java
-buffer.markReaderIndex();
-System.out.println(buffer.readInt());
-buffer.resetReaderIndex(); // 重置read index到mark位
-```
-
-还有种办法是采用 get 开头的一系列方法，这些方法不会改变 read index
-
-比如如下的`getBytes(i)` 
+##### copy
 
 ~~~java
-buffer.getBytes(i) // 不会修改read index
+// 复制当前ByteBuf指定的字节和长度, 不会当前ByteBuf的ridx和widx
+// 返回的ByteBuf的ridx=0, widx=length, capacity=length, maxCapacity=原来的maxCapacity
+// 两个ByteBuf在底层上不是同一块内存, 修改相互不影响
+copy(int index, int length)
+  
+// 等效于buf.copy(buf.readerIndex(), buf.readableBytes())
+// 返回的ByteBuf的ridx=0, widx=buf.readableBytes(), capacity=buf.readableBytes()
+copy() 
+~~~
+
+##### slice
+
+【零拷贝】的体现之一，对原始 ByteBuf 上进行切片
+
+- 切片后的 ByteBuf 维护独立的 read，write, capacity, max capacity 指针
+- **slice创建的bytebuf和原来的bytebuf共用一片内存地址, 修改会相互影响**
+- **<font color=red>slice只能随机写, 而不能顺序写, 同时也不能扩容</font>**
+- **<font color=red>对于retainedSlice()创建的ByteBuf, 使用完毕之后, 一定要记得release掉</font>**
+
+![](img/netty/0011.png)
+
+关于slice的操作有
+
+```java
+// 在原ByteBuf上建立slice, ridx=0, widx=length, capacity=length, maxCapacity=length
+ByteBuf.slice(int index, index length)
+    
+// 等效于buf.slice(buf.readerIndex(), buf.readableBytes())
+ByteBuf.slice()
+    
+// 等效于buf1 = buf.slice(); buf1.retain()
+// 所以在使用的时候, 要记得使用完毕之后需要调用buf1.release()来将引用计数器减1, 否则会导致内存泄露
+ByteBuf.retainedSlice()
+
+// 等效于buf1 = buf.slice(index, length); buf1.retain()
+// 所以在使用的时候, 要记得使用完毕之后需要调用buf1.release()来将引用计数器减1, 否则会导致内存泄露
+ByteBuf.retainedSlice(int index, int length)
+```
+
+
+
+下面是slice的使用案例
+
+```java
+ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.ioBuffer(21); // 池化的直接内存
+byteBuf.writeBytes("hello_world".getBytes(StandardCharsets.UTF_8));
+logBuffer(byteBuf); // ridx=0, widx=11, capacity=21, maxCapacity=Integer.MAX
+
+ByteBuf slice = byteBuf.slice(5, 15);
+logBuffer(slice); // ridx=0, widx=15, capacity=15, maxCapacity=15
+
+slice.setByte(0, 'A'); // 不能顺序写, 只能随机写, 因为widx=capacity
+logBuffer(slice);
+```
+
+
+
+
+
+##### duplicate
+
+【零拷贝】的体现之一，在原来的ByteBuf的内存上建立一个新的一模一样的ByteBuf
+
+- 因为使用的是同一块内存地址, 所有修改会相互影响
+- **创建出来的新的ByteBuf的ridx, widx, capacity, maxCapacity都和原来的相同**
+- **<font color=red>能够扩容, 能够顺序读写, 能够随机读写</font>**
+- **不管两个ByteBuf怎么扩容, 都使用的是同一批地址, 所以如果一个ByteBuf先扩容, 然后写数据, 另外一个ByteBuf后扩容, 那么扩容出来的空间实际上是有数据的**
+- **如果是使用retainedDuplicate创建出来的, 那么记得在用完的时候, 一定要release**
+
+![](img/0012.png)
+
+duplicate相关的api有如下这些
+
+~~~java
+// 等效于buf.duplicate(buf.readerIndex(), buf.readableBytes())
+ByteBuf.duplicate()
+    
+// 等效于buf1 = buf.duplicate(); buf1.retain()
+// 所以在使用的时候, 要记得使用完毕之后需要调用buf1.release()来将引用计数器减1, 否则会导致内存泄露
+ByteBuf.retainedDuplicate()
 ~~~
 
 
 
 
 
-#### 8）释放内存
+#### 查找操作
+
+~~~java
+// 从fromIndex到toIndex中查找value, 找不到返回-1
+indexOf(int fromIndex,int toIndex,byte value)
+// 同上, 起始位置为ridx, 结束位置为widx
+bytesBefore(byte value)
+// 同上, 起始位置为ridx, 结束位置为ridx+length
+bytesBefore(int length, byte value)
+// 同上, 起始位置为index, 结束位置为index+length
+bytesBefore(int index, int length, byte value)
+    
+// 遍历当前 ByteBuf的可读字节数组，与ByteBufProcessor 设置的查找条件进行对比。如果满足条件，则返回位置索引，否则返回-1。
+forEachByte(ByteBufProcessor processor)
+// 同上, 起始位置为index, 结束位置为index+length
+forEachByte(int index,int length,ByteBufProcessor processor)
+    
+
+forEachByteDesc(ByteBufProcessor processor) // 同上, 但是迭代的属性是从后到前
+forEachByteDesc(int index, int length, ByteBufProcessor processor)
+~~~
+
+
+
+
+
+#### 其他操作
+
+1. 释放已读空间
+
+   调用`discardReadBytes`会将ridx到widx这段可读字节复制到数组头部, 然后设置ridx和widx
+
+   频繁调用会导致内存数组频繁复制, 导致性能下降
+
+2. Clear操作
+
+   clear不会清空内存, 只会重置ridx和widx
+
+3. Mark和Reset
+
+   当对缓冲区读写时, 有时可能需要回滚读写操作, 那么就可以使用mark和reset
+
+   ByteBuf中提供了四个方法:
+
+   1. markReaderIndex: 保存ridx到markedReaderIndex中
+   2. resetReaderIndex: 将markedReaderIndex设置到ridx中
+   3. markWriterIndex: 将widx备份到 markedWriterlndex
+   4. resetWriterlndex:将markedWriterlndex设置到widx中
+
+
+
+#### 转换为ByteBuffer
+
+~~~~java
+// 在当前ByteBuf的可读缓冲区上建立一个ByteBuffer
+ByteBuffer nioBuffer()
+// 在当前ByteBuf的index到index+length上建立一个ByteBuffer
+ByteBuffer nioBuffer(int index, int length)
+~~~~
+
+
+
+#### 内存管理
+
+ByteBuf根据是否是否池化, 是否是直接内存可以分为四类
+
+- UnpooledHeapByteBuf
+- UnpooledDirectByteBuf
+- PooledHeapByteBuf
+- PooledDirectByteBuf
+
+对于UnpooledHeapByteBuf, 因为
 
 由于 Netty 中有堆外内存的 ByteBuf 实现，堆外内存最好是手动来释放，而不是等 GC 垃圾回收。
 
@@ -2722,60 +3007,9 @@ try {
 
 
 
-#### 9）slice
-
-【零拷贝】的体现之一，对原始 ByteBuf 进行切片成多个 ByteBuf，切片后的 ByteBuf 并没有发生内存复制，还是使用原始 ByteBuf 的内存，切片后的 ByteBuf 维护独立的 read，write, capacity, max capacity 指针
-
-![](img/0011.png)
-
-原始 ByteBuf 进行一些初始操作
-
-```java
-ByteBuf origin = ByteBufAllocator.DEFAULT.buffer(6);
-// 此时的状态01 02 03 04 00 00
-origin.writeBytes(new byte[]{1, 2, 3, 4});
-```
-
-这时调用 slice 进行切片，**无参 slice 是从原始 ByteBuf 的 read index 到 write index 之间的内容进行切片，切片后的 max capacity 被固定为这个区间的大小，因此不能追加 write**
-
-```java
-// origin不会被修改, 还可以继续使用, 这里返回的slice是一个新的buf, 他们共用一片内存, 但是标记不一样
-// slice的状态: 01 02 03 04
-ByteBuf slice = origin.slice(); 
-// slice.writeByte(5); 如果执行，会报 IndexOutOfBoundsException 异常
-```
-
-对原始buf的操作不会影响slice, 应为他们有独立的指针
-
-```java
-origin.readByte(); 
-// 执行read后的origin字节: 02 03 04 00 00
-// 对slice没有影响
-```
-
-但是对slice的操作会改变origin, 应为他们共用一片内存
-
-```java
-slice.setByte(2, 5); // 这会改变origin
-```
 
 
-
-#### 10）duplicate
-
-【零拷贝】的体现之一，就好比截取了原始 ByteBuf 所有内容，并且没有 max capacity 的限制，也是与原始 ByteBuf 使用同一块底层内存，只是读写指针是独立的
-
-![](img/0012.png)
-
-
-
-#### 11）copy
-
-会将底层内存数据进行深拷贝，因此无论读写，都与原始 ByteBuf 无关
-
-
-
-#### 12）CompositeByteBuf
+#### CompositeByteBuf
 
 【零拷贝】的体现之一，可以将多个 ByteBuf 合并为一个逻辑上的 ByteBuf，避免拷贝
 
@@ -2815,7 +3049,7 @@ CompositeByteBuf 是一个组合的 ByteBuf，它内部维护了一个 Component
 
 
 
-#### 13）Unpooled
+#### Unpooled
 
 Unpooled 是一个工具类，类如其名，提供了非池化的 ByteBuf 创建、组合、复制等操作
 
@@ -2838,13 +3072,206 @@ ByteBuf buf4 = Unpooled.wrappedBuffer(new byte[]{1, 2, 3}, new byte[]{4, 5, 6});
 System.out.println(buf4.getClass()); // 01 02 03 04 05 06
 ```
 
-#### 💡 ByteBuf 优势
 
-* 池化 - 可以重用池中 ByteBuf 实例，更节约内存，减少内存溢出的可能
-* 读写指针分离，不需要像 ByteBuffer 一样切换读写模式
-* 可以自动扩容
-* 支持链式调用，使用更流畅
-* 很多地方体现零拷贝，例如 slice、duplicate、CompositeByteBuf
+
+
+
+### netty的直接内存管理
+
+说到netty的内存管理, 我们先来看看ByteBuffer对内存的使用是怎么样的
+
+#### ByteBuffer
+
+ByteBuffer是JDK提供的, 可以用于对SocketChannel的读写
+
+ByteBuffer有两个具体的子类实现
+
+- HeapByteBuffer
+
+  可以通过如下方式创建
+
+  ~~~java
+          // 将堆内存写到channel中
+          ByteBuffer heapBuffer = ByteBuffer.allocate(10);
+          heapBuffer.put("hello".getBytes(StandardCharsets.UTF_8));
+          socketChannel.write(heapBuffer);
+          // 方式2, 使用的是堆内存
+          socketChannel.write(ByteBuffer.wrap("hello".getBytes(StandardCharsets.UTF_8)));
+  ~~~
+
+  **使用HeapByteBuffer的时候, 不需要考虑回收, 在gc的时候会自动回收**
+
+- DirectByteBuffer
+
+  可以通过如下方式创建
+
+  ~~~java
+          // 将直接内存写到channel中
+          ByteBuffer directBuffer = ByteBuffer.allocateDirect(10);
+          directBuffer.put("hello".getBytes(StandardCharsets.UTF_8));
+          socketChannel.write(directBuffer);
+  ~~~
+
+  **在使用DirectByteBuffer的时候, 不需要考虑回收, 在gc的时候会自动回收**
+
+  **同时推荐使用`ByteBuffer.allocateDirect()`来进行io读写, 使用直接内存可以减少一次io拷贝, 因为在socketChannel进行读写的时候, 要求内存地址不能变, 而gc的整理会造成HeapByteBuffer的内存地址变动, 所以使用HeapByteBuffer的时候, JVM底层会多一次内存拷贝**
+
+
+
+#### DirectByteBuffer为什么不需要手动释放
+
+首先在jvm中, 分配直接内存和是否直接内存是通过Unsafe中的如下函数来实现的:
+
+~~~java
+        // 获取Unsafe.theUnsafe属性, 他是一个Unsafe的单例对象
+		Field field = Unsafe.class.getDeclaredField("theUnsafe");
+        field.setAccessible(true); // Unsafe只有系统自带的类可以调用, 所有需要通过反射调用
+        Unsafe unsafe = (Unsafe) field.get(null); // 获取 Unsafe 实例
+
+        long address = unsafe.allocateMemory(1024 * 1024); // 分配直接内存
+        unsafe.freeMemory(address); // 释放直接内存
+~~~
+
+在通过`ByteBuffer.allocateDirect(10)`的时候, 会通过`unsafe.allocateMemory()`来分配直接内存
+
+同时还是调用`Cleaner.create(this, new Deallocator(base, size, cap));`来创建一个回调函数
+
+**这个Cleaner的作用是告诉JVM, 在this被gc的时候, 调用`Deallocator`的`run`方法, 在run方法中调用`unsafe.freeMemory()**`
+
+~~~java
+    // 省略部分代码...
+	public static ByteBuffer allocateDirect(int capacity) {
+        return new DirectByteBuffer(capacity);
+    }    
+	DirectByteBuffer(int cap) {                   // package-private
+        try {
+            // 通过unsafe来分配内存
+            base = unsafe.allocateMemory(size);
+        } catch (OutOfMemoryError x) {
+            Bits.unreserveMemory(size, cap);
+            throw x;
+        }
+        // 传入this, 告诉JVM, gc回收this的时候回调Deallocator的run()方法
+        cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
+    }
+    private static class Deallocator implements Runnable {
+        
+        private static Unsafe unsafe = Unsafe.getUnsafe();
+        public void run() {
+            if (address == 0) {
+                return;
+            }
+            unsafe.freeMemory(address); // 释放内存
+            address = 0;
+            Bits.unreserveMemory(size, capacity);
+        }
+    }
+~~~
+
+这样的话, 在使用DirectByteBuffer的时候, 就不需要手动释放内存了
+
+可以通过下面这个案例来测试
+
+- 在使用JVM的时候, 可以通过`-XX:MaxDirectMemorySize=100M -Xmx100M -Xms100M`来指定堆内存和直接内存的大小
+
+- 可以在VisualVM的插件中安装`VisualVM-BufferMonitor`来查看直接内存的使用量
+
+~~~java
+  public static void main(String[] args) {
+        int i = 0;
+        while (true) {
+            i++;
+            // 堆内存, gc自动管理
+            ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024);
+            // 内部有Cleaner管理, 在gc的时候会回收直接内存
+            ByteBuffer buffer1 = ByteBuffer.allocateDirect(1024 * 1024);
+            
+            if (i % 70 == 0) {
+                System.gc();
+            }
+        }
+    }
+~~~
+
+
+
+#### ByteBuf如何内存管理
+
+ByteBuf有四种具体的实现类:
+
+- UnpooledHeapByteBuf
+- UnpooledDirectByteBuf
+- PooledHeapByteBuf
+- PooledDirectByteBuf
+
+对于
+
+
+
+- 使用堆内存时, 不需要手动释放内存, gc会自动回收
+
+- 使用直接内存时, 有如下几种释放方式:
+
+  1. 等待gc, 在gc的时候也会自动回收内存
+
+  2. 通过Cleaner释放
+
+     ~~~java
+         public static void cleanDirectBuffer(ByteBuffer buffer) {
+             if (buffer.isDirect()) {
+                 try {
+                     Method cleanerMethod = buffer.getClass().getMethod("cleaner");
+                     cleanerMethod.setAccessible(true);
+                     Object cleaner = cleanerMethod.invoke(buffer);
+                     if (cleaner != null) {
+                         Method cleanMethod = cleaner.getClass().getMethod("clean");
+                         cleanMethod.invoke(cleaner);
+                     }
+                 } catch (Exception e) {
+                     throw new RuntimeException("Failed to clean up direct ByteBuffer", e);
+                 }
+             }
+         }
+     
+         public static void main(String[] args) {
+             ByteBuffer directBuffer = ByteBuffer.allocateDirect(1024);
+             cleanDirectBuffer(directBuffer);
+         }
+     ~~~
+
+  3. 通过netty的工具类来释放,  底层也是通过反射调用Cleaner来释放
+
+     ~~~java
+     public class DirectMemoryWithNetty {
+         public static void main(String[] args) {
+             ByteBuffer directBuffer = ByteBuffer.allocateDirect(1024);
+             PlatformDependent.freeDirectBuffer(directBuffer); // 释放直接内存
+         }
+     }
+     ~~~
+
+  4. 通过Unsafe来释放
+
+     ~~~java
+         private static Unsafe getUnsafe() throws Exception {
+             Field unsafeField = Unsafe.class.getDeclaredField("theUnsafe");
+             unsafeField.setAccessible(true);
+             return (Unsafe) unsafeField.get(null);
+         }
+     
+         public static void main(String[] args) throws Exception {
+             Unsafe unsafe = getUnsafe();
+             ByteBuffer buffer = ByteBuffer.allocateDirect(1024);
+     
+             // 获取 buffer 的地址
+             long address = ((sun.nio.ch.DirectBuffer) buffer).address();
+             unsafe.freeMemory(address); // 释放内存
+         }
+     ~~~
+
+     
+
+
 
 
 
@@ -3528,11 +3955,11 @@ public class HelloWorldClient {
 
 Netty中有两个用来处理分割符的解码器:
 
-1. LineBasedFrameDecoder
+1. `LineBasedFrameDecoder`
 
-   默认以 \n 或 \r\n 作为分隔符，需要指定一个消息的最大长度, 如果超出指定长度仍未出现分隔符，则抛出异常
+   默认以` \n `或` \r\n `作为分隔符，需要指定一个消息的最大长度, 如果超出指定长度仍未出现分隔符，则抛出异常
 
-2. DelimiterBasedFrameDecode
+2. `DelimiterBasedFrameDecode`
 
    在构造的时候, 不仅要指定最大长度, 还需要指定分割符
 
@@ -3546,7 +3973,7 @@ Netty中有两个用来处理分割符的解码器:
    ch.pipeline().addLast(new LineBasedFrameDecoder(1024));
    ~~~
 
-2. 客户端在每条消息之后, 加入 \\n分隔符
+2. 客户端在每条消息之后, 加入 `\n`分隔符
 
    ~~~java
    public class HelloWorldClient {
@@ -3693,35 +4120,43 @@ Netty中有两个用来处理分割符的解码器:
 
 他会将消息分为两部分: 
 
-1. 消息的length段, 记录了整个消息的长度(包括length段)
-2. 消息的数据段: 记录了消息本身
+1. header: 其中具有消息的各种各样的属性,  包括长度字段
+2. body: 记录了消息本身
 
 他有这几个属性:
 
 1. lengthFieldOffset:  指定长度字段在消息中的偏移量
+
 2. lengthFieldLength: 长度字段的占了几个字节
-3. lengthAdjustment: 数据本身到长度字段结尾的偏移量
+
+3. lengthAdjustment: 
+
+   这个属性是一个特别的字段,  在设置的时候, 有两种设置的方法:
+
+   1. 如果长度字段中填写的是body的长度,  那么lengthAdjustment表示的是**length字段结尾到body开头的间隔**
+   2. 如果长度字段中填写的是整个消息的长度, 那么lengthAdjustment表示的是**-(lengthFieldOffset + lengthFieldLenght)**
+
 4. initialBytesToStrip: 指定解析消息之时, 将头几个字节剥离出去, 之后的数据作为解析后的结果
+
 5. maxFrameLength: 指一个消息的最大长度, 如果这个Decoder读取到一个消息, 发现消息长度大于最大长度, 那么会报错
 
-比如有如下一个案例:
-
-  lengthFieldOffset   = 1 (= the length of HDR1)
-  lengthFieldLength   = 2
-  lengthAdjustment    = 1 (= the length of HDR2)
-  initialBytesToStrip = 3 (= the length of HDR1 + LEN)
-
-他表示的是: 长度字段在消息中的偏移量有1个字节, 并且长度字段占2个字节, 具体的消息到长度字段有1个字节
-
-消息经过LengthFieldBasedFrameDecoder处理后要把前面3个字节去掉
-
-  BEFORE DECODE (16 bytes)                       AFTER DECODE (13 bytes)
-  +------+--------+------+----------------+      +------+----------------+
-  | HDR1 | Length | HDR2 | Actual Content |----->| HDR2 | Actual Content |
-  | 0xCA | 0x000C | 0xFE | "HELLO, WORLD" |      | 0xFE | "HELLO, WORLD" |
-  +------+--------+------+----------------+      +------+----------------+
 
 
+比如我们自定义了如下一种协议:`magic number(2byte)  + length field(2byte) + version(2byte) + body`
+
+body是字符串`hello, world`, 占12字节, 那么有两种办法来构造`LengthFieldBasedFrameDecoder`对象
+
+1. lengthFieldOffset   = 2, lengthFieldLength   = 2, lengthAdjustment = 2,   initialBytesToStrip = 2, 那么对应的长度字段就应该填写消息体的长度,  即12
+2. lengthFieldOffset   = 2, lengthFieldLength   = 2, lengthAdjustment = -6,   initialBytesToStrip = 2, 那么对应的长度字段就应该填写整个消息的长度, 即18
+
+| magic number | length field | version | body         |
+| ------------ | ------------ | ------- | ------------ |
+| 转换前      |        |   |  |
+| 0xCABB       | 0x000C       | 0x0001  | HELLO, WORLD |
+| 0xCABB       | 0x0012       | 0x0001  | HELLO, WORLD |
+| 转换后 |  |  |  |
+|  | 0x000C | 0x0001 | HELLO, WORLD |
+|  | 0x0012 | 0x0001 | HELLO, WORLD |
 
 下面我们就使用他来处理黏包和半包
 
@@ -3729,7 +4164,7 @@ Netty中有两个用来处理分割符的解码器:
 
    ~~~java
    // maxFrameLength，lengthFieldOffset，lengthFieldLength，lengthAdjustment，initialBytesToStrip
-   ch.pipeline().addLast(new LengthFieldBasedFrameDecoder(1024, 0, 1, 0, 1));
+   ch.pipeline().addLast(new LengthFieldBasedFrameDecoder(65536, 0, 1, 0, 1));
    ~~~
 
 2. 客户端代码
@@ -4811,10 +5246,6 @@ public class QuitHandler extends ChannelInboundHandlerAdapter {
 
 ### 3.6 聊天室业务-空闲检测
 
-
-
-#### 连接假死
-
 原因
 
 * 网络设备出现故障，例如网卡，机房等，底层的 TCP 连接已经断开了，但应用程序没有感知到，仍然占用着资源。
@@ -4826,9 +5257,22 @@ public class QuitHandler extends ChannelInboundHandlerAdapter {
 * 假死的连接占用的资源不能自动释放
 * 向假死的连接发送数据，得到的反馈是发送超时
 
-服务器端解决
 
-* 怎么判断客户端连接是否假死呢？如果能收到客户端数据，说明没有假死。因此策略就可以定为，每隔一段时间就检查这段时间内是否接收到客户端数据，没有就可以判定为连接假死
+
+我们可以使用IdleStateHandler来解决这个问题, 他需要三个参数:
+
+1. readerIdleTime: 多久没有读取到消息就抛出一个IdleStateEvent
+2. writerIdleTime: 多久没有写消息, 就抛出一个IdleStateEvent
+3. allIdleTime: 多久没有读写消息, 就抛出一个IdleStateEvent
+4. unit: 时间单位
+
+在客户端, 如果我们在一个心跳包的时间内, 没有给服务器发送数据, 那么就通过IdleStateHandler来触发一个事件, 然后向服务器发送一个心跳包
+
+在服务器端, 如果服务器在3个心跳包的时间内, 没有接受到客户端的时间, 那么就关闭channel
+
+
+
+服务器端代码
 
 ```java
 // 用来判断是不是 读空闲时间过长，或 写空闲时间过长
@@ -5405,9 +5849,10 @@ new BootStrap().option(ChannelOption.SO_KEEPALIVE, true);
 
 1. 另一方应用程序还活着, 那么他会接受到探测段, 并回复, 那么发送方会重置定时器
 2. 如果另一方操作系统已经宕机了, 那么他不会接受到探测段, 发送方没有收到对其发出探测的响应，并且在75秒之后超时。发送方将总共发送10个这样的探测，每个探测75秒。如果没有收到一个响应，它就认为客户端主机已经关闭并终止连接。
-
 3. 另一方崩溃了, 但是已经重启了, 那么操作系统会接受到探测段并回复一个复位响应, 发送方在接受到后, 终止连接
 4. 如果接收端不可达,  那么与情况2类似
+
+
 
 
 
@@ -7003,7 +7448,15 @@ if (NettyUtils.useEpoll(serverConfig.isEpollEnable())) {
 
 ## 编码器和解码器
 
+netty中提供了两大类的编解码器:
 
+1. message to message
+
+   这类编解码器用于将一种message转换为另外一种message
+
+2. message to byte
+
+   这种编解码器, 用于将一种message转换为bytebuf, 然后写出到channel中
 
 ### MessageToMessage
 
@@ -7233,9 +7686,7 @@ public class MyByteToMessageCodec extends ByteToMessageCodec<Long> {
 }
 ~~~
 
-
-
-#### ReplayingDecoder
+### ReplayingDecoder
 
 ReplayingDecoder继承自ByteToMessageDecoder
 
@@ -7327,13 +7778,7 @@ public class MyReplayingDecoder extends ReplayingDecoder<State> {
 }
 ~~~
 
-
-
-
-
-
-
-### 高低水位
+## 高低水位
 
 在netty中, 我们调用`ctx.write()`或者`ctx.channel().write()`这两个方法, 可以将我们想要发送的消息写到channel中, 然后发送给对面.
 
@@ -7502,9 +7947,7 @@ public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exceptio
     }
 ~~~
 
-
-
-### 限流
+## 限流
 
 https://www.jianshu.com/p/bea1b4ea8402
 
@@ -7577,17 +8020,7 @@ public class ChannelTrafficShapingHandlerTest {
 }
 ~~~
 
-
-
-
-
-
-
-
-
-
-
-### LengthFieldPrepender
+## LengthFieldPrepender
 
 LengthFieldPrepender:将当前发送消息的二进制字节长度, 添加到缓冲区头部, 这样消息就有了固定长度, 长度存储在缓冲头中
 设定长度占4字节, 长度字段中的长度不包括长度字段本身
@@ -7612,11 +8045,23 @@ public class LengthFieldPrependerTest{
 }
 ~~~
 
+LengthFieldPrepender常常和LengthFieldBasedFrameDecoder搭配在一起使用, 一个给消息的头部加上消息的长度, 一个根据消息的长度来解码
+
+~~~java
+        pipeline.addLast("frameEncoder", new LengthFieldPrepender(2));
+        pipeline.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(65535,
+                0, 2, 0, 2));
+~~~
 
 
 
 
-### ChunkedWriteHandler
+
+
+
+
+
+## ChunkedWriteHandler
 
 https://cloud.tencent.com/developer/article/2289664
 

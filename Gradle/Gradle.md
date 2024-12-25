@@ -2637,6 +2637,167 @@ publishing {
 
 
 
+## Toolchains
+
+在Gradle构建项目的时候, 会使用javac作为编译器,  在测试和执行任务的时候, 会使用java命令来执行命令, 使用javadoc命令来生成文件
+
+**在默认情况下, Gradle会使用运行Gradle的JDK中的java, javac, javadoc来执行,  这些工具被成为toolchain**
+
+但是有时候我们可能需要运行Gradle使用一个jdk,  编译和执行任务使用另外一个jdk
+
+**Gradle支持在项目和task级别上定义使用的toolchains**
+
+~~~groovy
+// Gradle会自动检测本地安装的jdk和他们的版本
+// 如果自动检测不到特定的jdk, 那么也可以手动指定jdk的位置
+// 如果也没有指定, 那么gradle会在线下载对应的jdk版本到$gradle_user_home/jdk/中
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+~~~
+
+当然, 你也可以指定toolchains的供应商
+
+~~~groovy
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(11)
+        vendor = JvmVendorSpec.ORACLE // 指定toolchains的供应商
+        // vendor = JvmVendorSpec.matching("customString") // 通过字符串匹配来指定供应商
+    }
+}
+~~~
+
+对于task级别的toolchains, 只有3中类型的Task可以指定
+
+- 对于JavaCompile类型的task, 可以指定编译时使用的toolchians
+
+  ~~~groovy
+  // 指定所有JavaCompile类型的task的Compiler为jdk8
+  tasks.withType(JavaCompile).configureEach {
+      javaCompiler = javaToolchains.compilerFor {
+          languageVersion = JavaLanguageVersion.of(8)
+      }
+  }
+  ~~~
+
+- 对于JavaExec, Test类型的task, 可以指定执行代码时的toolchains
+
+  ~~~groovy
+  // 创建一个新的task, 名字为testsOn17, 任务类型为Test
+  task('testsOn17', type: Test) {
+      // 指定使用jdk17来执行测试代码
+      javaLauncher = javaToolchains.launcherFor {
+          languageVersion = JavaLanguageVersion.of(17)
+      }
+  }
+  ~~~
+
+- 对于Javadoc类型的task, 可以指定`javadoc`命令行的toolchains
+
+  ~~~groovy
+  // 定义一个新的task, 类型为Javadoc, 使用jdk17中的javadoc工具来生成文档
+  task('docOn17', type: Javadoc) {
+      javadocTool = javaToolchains.javadocToolFor {
+          languageVersion = JavaLanguageVersion.of(17)
+      }
+  }
+  ~~~
+
+  
+
+默认情况下, Gradle会自动检测本地所拥有的jdk, 看看有没有符合条件的, 以下是检测的位置
+
+- 特定操作系统上的一些特定的位置
+- 包管理器： [Asdf-vm](https://asdf-vm.com/#/) 、 [Jabba](https://github.com/shyiko/jabba) 、 [SDKMAN！](https://sdkman.io/)
+- [Maven Toolchain](https://maven.apache.org/guides/mini/guide-using-toolchains.html) specifications
+- [IntelliJ IDEA](https://www.jetbrains.com/help/idea/sdk.html#jdk-from-ide) installations
+
+你可以通过如下命令来显示自动检测到的所有toolchains
+
+~~~groovy
+./gradlew -q javaToolchains                               
+
+ + Options
+     | Auto-detection:     Enabled
+     | Auto-download:      Enabled
+
+ + BellSoft Liberica JDK 17.0.12+10-LTS
+     | Location:           E:\Gradle\gradle-user-home\jdks\bellsoft-17-amd64-windows.2
+     | Language Version:   17
+     | Vendor:             BellSoft Liberica
+     | Architecture:       amd64
+     | Is JDK:             true
+     | Detected by:        Auto-provisioned by Gradle
+
+ + Eclipse Temurin JDK 21.0.4+7-LTS
+     | Location:           E:\Gradle\gradle-user-home\jdks\eclipse_adoptium-21-amd64-windows.2
+     | Language Version:   21
+     | Vendor:             Eclipse Temurin
+     | Architecture:       amd64
+     | Is JDK:             true
+     | Detected by:        Auto-provisioned by Gradle
+
+ + Oracle JDK 1.8.0_251-b08
+     | Location:           E:\Java\jdk1.8.0_251
+     | Language Version:   8
+     | Vendor:             Oracle
+     | Architecture:       amd64
+     | Is JDK:             true
+     | Detected by:        Windows Registry
+
+ + Oracle JDK 11.0.7+8-LTS
+     | Location:           E:\Java\jdk-11.0.7
+     | Language Version:   11
+     | Vendor:             Oracle
+     | Architecture:       amd64
+     | Is JDK:             true
+     | Detected by:        Current JVM
+
+ + Oracle JDK 20.0.2+9-78
+     | Location:           E:\Java\jdk-20
+     | Language Version:   20
+     | Vendor:             Oracle
+     | Architecture:       amd64
+     | Is JDK:             true
+     | Detected by:        Windows Registry
+~~~
+
+如果有一些本地的jdk没有找到, 那么你也可以直接在gradle.properties文件中直接指定
+
+~~~properties
+# 从JDK8, JRE17这些指定的环境变量中读取位置
+org.gradle.java.installations.fromEnv=JDK8,JRE17 
+# 直接指定位置
+org.gradle.java.installations.paths=/custom/path/jdk1.8,/custom/path/jdk11
+~~~
+
+
+
+如果没有自动检测到符合版本的JDK, 也没有指定符合版本的JDK的位置, 那么Gradle会自动下载一个到`$gradle_user_home/jdks/`中, 并且后续的自动检测也会检测到他
+
+想要能够自动下载, 需要配置如下的插件在**settings.gradle文件的开始**,  之后他会在访问`https://api.foojay.io/disco/v3.0/`来获取符合条件的jdk
+
+~~~groovy
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+~~~
+
+如果有多个符合的JDK版本, 那么下载的优先级会根据如下规则来执行: https://docs.gradle.org/current/userguide/toolchains.html#sec:precedence
+
+
+
+
+
+
+
+
+
+
+
 ## Groovy和Java混合编译
 
 1. 创建一个java项目
@@ -2647,15 +2808,17 @@ publishing {
 
 3. 在`build.gradle`文件中添加插件, 这样gradle就支持编译groovy了
 
-   ~~~gradle
+   ~~~groovy
    plugins {
    	id "groovy"
    }
    ~~~
 
+   
+
 4. 添加groovy sdk,  用于编译groovy, 他可以是本机上的groovy, 也可以直接以maven依赖包的形式添加进来
 
-   ~~~gradle
+   ~~~groovy
    dependencies {
    	// 用以编译groovy, 使用maven依赖包
        implementation 'org.codehaus.groovy:groovy-all:3.0.11'

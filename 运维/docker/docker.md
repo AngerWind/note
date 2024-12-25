@@ -164,27 +164,63 @@ For more examples and ideas, visit:
 
 ### 镜像加速
 
-如果在使用过程中发现拉取 Docker 镜像十分缓慢，可以配置 Docker [国内镜像加速](https://docker_practice.gitee.io/install/mirror.html)。
-
-### 参考文档
+如果在使用过程中发现拉取 Docker 镜像十分缓慢，可以配置 Docker镜像加速
 
 - 修改/etc/docker/daemon.json
 
   ```json
   {
-    "registry-mirrors:[
-      "https://4q9ahtha.mirror.aliyuncs.com",
-      "http://hub-mirror.c.163.com",
-      " https://registry.docker-cn.com"
+      "registry-mirrors": [
+          "https://dockerproxy.cn"
       ]
   }
   
-  上述网站分别为阿里云, 163, docker官方中国区
+  因为不可抗因素, docker镜像变更很快, 所以具体可用的镜像要使用的时候具体修改
+  具体可用的加速镜像查看
+  https://xuanyuan.me/blog/archives/1154?from=tencent
   ```
 
-- 阿里云加速地址查询:https://cr.console.aliyun.com/cn-hangzhou/instances/mirrors, 每个人的加速地址都不一样
+  
 
-- [Docker 官方 Ubuntu 安装文档](https://docs.docker.com/install/linux/docker-ce/ubuntu/)
+
+
+
+## Deepin安装docker和docker-compose
+
+注意卸载docker旧包的时候Images, containers, volumes, 和networks 都保存在 `/var/lib/docker` 卸载的时候不会自动删除这块数据，如果你先删除他们则使用`rm` 来删除
+
+```text
+sudo rm -rf /var/lib/docker
+sudo rm -rf /var/lib/containerd
+```
+
+### 安装docker
+
+### 使用阿里云的自动安装脚本
+
+```text
+curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
+```
+
+**安装docker-compose**
+
+```bash
+# 从github下载最新的docker-compose 
+sudo wget -c -t 0 https://github.com/docker/compose/releases/download/2.19.1/docker-compose-`uname -s`-`uname -m` -O /usr/local/bin/docker-compose
+sudo chmod a+rx /usr/local/bin/docker-compose
+
+
+#给普通用户权限
+chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+```
+
+检查
+
+```text
+docker-compose -v
+```
+
+
 
 
 
@@ -536,6 +572,55 @@ service nginx start
 这样容器启动后就会立即自杀, 因为他觉得他没什么可做了
 
 所以, 最佳的解决方案是, 将你要运行的程序以前台进程的形式运行
+
+
+
+### docker容器内部调用主机上的服务
+
+1. Linux
+
+   Docker版本高于v20.10(2020年12月4日更新）
+   在启动docker时，加入如下语句
+
+   ```bash
+   --add-host=host.docker.internal:host-gateway
+   ```
+
+   而在container内，可以直接请求`host.docker.internal:PORT`，来获取宿主机上提供的各种服务
+   如果使用了Docker Compose，则应该将下面的句子加入container的声明中：
+
+   ```yaml
+   extra_hosts:
+   	- "host.docker.internal:host-gateway"
+   ```
+
+2. Mac和Windows:
+
+   Docker版本高于v18.03(2018年3月21日更新) 直接在container内使用`host.docker.internal:PORT`来访问宿主机服务即可
+
+   对于Mac上Docker版本低于上述版本的：
+
+   - Mac Docker版本v17.12到v18.02: 使用`docker.for.mac.host.internal`
+
+   - Mac Docker版本v17.06到v18.11: 使用`docker.for.mac.localhost`
+
+   - 对于更低版本的docker，只能使用老旧的方法了，这里不再多做赘述
+
+3. 测试:
+
+   ~~~bash
+   # 创建一个busybox的容器
+   docker run -d --name container1 busybox sleep 3600
+   # 进入busybox内部
+   docker exec -it container1 sh
+   
+   # 看容器内部能否调用主机上的mysql的端口
+   telnet host.docker.internal 3306 
+   ~~~
+
+   
+
+
 
 
 
@@ -1032,6 +1117,20 @@ CONTAINER ID IMAGE COMMAND CREATED
 
 **相反, ENTRYPOINT的作用不同, 如果你希望你的docker镜像只执行一个具体程序, 不希望用户在执行docker run的时候随意覆盖默认程序. 建议用ENTRYPOINT.**
 
+
+
+### docker 多阶段构建
+
+
+
+
+
+
+
+
+
+
+
 ## 数据卷
 
 #### docker volume create
@@ -1289,4 +1388,149 @@ services:
       
 volumes:  mysql_data:
 ```
+
+
+
+
+
+## Docker API
+
+docker api的作用是能够让我们通过程序来操作docker,  只要是使用命令行能够执行的, docker api都能够执行
+
+### 启用docker api
+
+1. windows上
+
+   ![image-20241106213034605](img/docker/image-20241106213034605.png)
+
+   ![image-20241106213122518](img/docker/image-20241106213122518.png)
+
+   ~~~yaml
+   {
+     "hosts": [
+       "tcp://0.0.0.0:2375"
+     ]
+   }
+   ~~~
+
+2. linux上
+
+   ~~~yaml
+   vim /etc/docker/daemon.json
+    
+   {
+     "hosts": [
+     	#tcp是为了其他客户端可以使用http连接上来
+     	"tcp://0.0.0.0:2375", 
+     	# unix的sock是为了让本机的应用和容器内的应用可以通过该文件连接docker, 而不需要网络, 更高效
+     	"unix:///var/run/docker.sock"
+     ]
+   }
+   ~~~
+
+3. 修改文件之后, 记得重启docker
+
+   ~~~bash
+   systemctl daemon-reload
+   systemctl restart docker
+   ~~~
+
+4. 测试
+
+   ~~~bash
+   # 查看docker的版本
+   [root@slaver2 /]# docker -H tcp://18.16.202.95:2375 version
+   # 查看docker 的 所有镜像
+   [root@slaver2 ~]# docker -H tcp://18.16.202.95:2375 images
+   ~~~
+
+docker api分为3部分:
+
+1. docker engine api
+
+   主要的作用是操作docker
+
+   https://docs.docker.com/reference/api/engine/
+
+2. docker hub api
+
+   https://docs.docker.com/reference/api/hub/latest/
+
+   主要的作用是用来访问docker hub
+
+3. Extensions Api
+
+同时这些api,  docker官方提供了go和python的库, 只需要调库就好了, 对于没有提供库的语音, 那么可以使用http来请求docker, 只需要设置好docker的地址就号了
+
+下面是通过go来启动一个docker容器的案例
+
+~~~go
+package main
+
+import (
+	"context"
+	"io"
+	"os"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
+)
+
+func main() {
+	ctx := context.Background()
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		panic(err)
+	}
+	defer cli.Close()
+
+	reader, err := cli.ImagePull(ctx, "docker.io/library/alpine", image.PullOptions{})
+	if err != nil {
+		panic(err)
+	}
+
+	defer reader.Close()
+	// cli.ImagePull is asynchronous.
+	// The reader needs to be read completely for the pull operation to complete.
+	// If stdout is not required, consider using io.Discard instead of os.Stdout.
+	io.Copy(os.Stdout, reader)
+
+	resp, err := cli.ContainerCreate(ctx, &container.Config{
+		Image: "alpine",
+		Cmd:   []string{"echo", "hello world"},
+		Tty:   false,
+	}, nil, nil, nil, "")
+	if err != nil {
+		panic(err)
+	}
+
+	if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		panic(err)
+	}
+
+	statusCh, errCh := cli.ContainerWait(ctx, resp.ID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			panic(err)
+		}
+	case <-statusCh:
+	}
+
+	out, err := cli.ContainerLogs(ctx, resp.ID, container.LogsOptions{ShowStdout: true})
+	if err != nil {
+		panic(err)
+	}
+
+	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
+}
+~~~
+
+更多案例和用法可以查看文档
+
+https://docs.docker.com/reference/api/engine/docker 
+
+https://docs.docker.com/reference/api/hub/latest/
 

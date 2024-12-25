@@ -1055,8 +1055,15 @@ print(list1[0])
 # 获取最后一个数据
 print(list1[-1])
 
+# 获取70, 80
+print(list1[-2:])
+
+# 获取60, 70
+print(list1[-3:-1]) # 左闭右开!!!!!
+
+
 # 第一第二个数据
-print(list1[0:2])  # ['小明', 18]
+print(list1[0:2])  
 
 # start=1,stop=6,step=2
 print(list1[1:6:2])
@@ -1304,7 +1311,6 @@ print(person_info)  # [['张三', '19', '功能测试'], ['李四', '20', '自�
 # person_info[0].pop(1)
 person_info[0].remove('19')
 print(person_info)  # [['张三', '功能测试'], ['李四', '20', '自动化测试', '男']]
-
 ```
 
  
@@ -1531,6 +1537,44 @@ print(my_dict.get('like')[1])  # 喝酒
   ~~~
 
   
+
+### 对容器进行for循环
+
+~~~python
+# 迭代字符串
+for charactor in "hello, world":
+    print(charactor)
+
+for index, charactor in enumerate("hello, world"):
+    print(index, charactor)
+
+# 迭代list
+for value in [10, 20, 30, 40, 50]:
+    print(value)
+for index, valaue in enumerate([10, 20, 30, 40, 50]):
+    print(index, valaue)
+
+# 迭代dict
+dict = {"aa": "bb", "1": "2"}
+for key, value in dict.items(): print(key, value) # 迭代key,value
+
+for index, (key, value) in enumerate(dict.items()): # 迭代index, key, value
+    print(index, key, value)
+
+for index, key in enumerate(dict.keys()):  # 迭代index, key
+    print(index, key)
+
+for index, value in enumerate(dict.values()):  # 迭代index, value
+    print(index, value)
+
+# 迭代tuple
+
+for element in (10, 20, 30, 40):
+    print(element)
+
+for index, element in enumerate((10, 20, 30, 40)):
+    print(f"Index: {index}, Element: {element}")
+~~~
 
 
 
@@ -2038,35 +2082,41 @@ class Student:
 
 
 
-### 公有属性和私有属性
+### 访问控制权限
 
 ~~~python
-class Student:
-	# 构造方法, 必须写self, 可以添加其他参数
-    def __init__(self, name, age):
-        # 通过self创建实例属性并赋值,  不能和java一样在类结构中定义属性, 必须在构造函数中
-        self.name = name
-        self.age = age
-        # 在前面添加__的方法或者属性表示为私有, 无法在外部调用
-        self.__score = 100
-~~~
+class Person:
+    def __init__(self, name, age, score):
+        self.name = name  # public属性, 随便调
 
+        # protect属性, 和public没什么区别, 按照约定最好只在内部和子类中访问
+        # 不要在外边访问, 但是没有严格限制, 只是约定
+        self._age = age
 
+        # private 属性, 只能在内部访问, 无法在子类和外部访问
+        # python会将private属性和方法重命名为_ClassName__MemberName的形式, 使得其难以访问
+        # 所以你也可以直接通过这个名字访问private属性和方法, 但是最好不要
+        self.__score = score
 
-### 公有和私有方法
+    def _info(self): # protect方法, 按照约定最好在内部和子类中使用, 不要在外部中使用
+        return f'{self.name} is {self._age} years old, score is {self.__score}'
 
-~~~python
-class Student:
-    def __init__(self, name, age):
-        self.age = age
- 
-    # 实例方法, 必须添加self, self类似this
-    def eat(self):
-        print('学生在吃饭')
+    def __message(self): # private方法, 只能外部调用, 但是可以通过_ClassName__MemberName的形式来调用
+        return f'{self.name} is {self._age}  years old, score is {self.__score}'
 
-    # 私有的实例方法, 前面添加两个下划线
-    def __grow_age(self):
-        self.age += 1
+    def show(self): # public方法, 随便调用
+        print(self.__message())
+
+p = Person('John', 24, 80)
+print(p.name)
+print(p._age) # 可以从外部访问protected, protected只是约定的最好不要从外部调用
+# print(p.__score) # 外部无法访问
+print(p._Person__score) # 可以通过_ClassName__MemberName强制访问private
+
+p.show()
+p._info() # 可以从外部访问protected, protected只是约定的最好不要从外部调用
+p.__message()  # 外部无法访问
+p._Person__message() # 可以通过_ClassName__MemberName强制访问private
 ~~~
 
 
@@ -2106,6 +2156,171 @@ class Student:
 ~~~
 
 staticmethod和classmethod的不同只是在于classmethod能够多接受一个cls作为参数
+
+
+
+### 动态添加属性和方法
+
+在python中, 可以给对象动态的添加属性, 方法, 类属性, 类方法
+
+~~~python
+class Student:
+    pass
+
+stu = Student()
+stu.age = 18 # 动态添加一个age属性
+
+def show():
+    print('show...')
+stu2.show = show # 动态添加一个实例方法
+
+Student.number = 0; # 动态添加一个类属性
+
+Student.show = show # 动态添加一个类方法
+~~~
+
+
+
+### 强制调用私有属性和方法
+
+在python中, 私有的属性和方法在调用的时候, 并不会去判断访问修饰符, python只是简单的将他们换一个名字隐藏起来了, 我们可以使用更换之后的名字来调用他们
+
+所以私有属性和方法就是防君子不防小人
+
+~~~python
+class Student:
+
+    __private_class_field = 0
+
+    def __init__(self):
+        self.__age = 18
+
+    def __say(self):
+        print("say...")
+
+    @classmethod
+    def __class_method(cls):
+        print("private class method")
+
+
+stu = Student()
+list = dir(stu) # 获取stu的所有属性, 方法, 类方法, 类属性
+# 可以看到,
+# __say方法被变成了_Student__say,
+# __age属性变成了_Student__age
+# __private_class_field变成了_Student__private_class_field
+# ____class_method变成了_Student__class_method
+print(list)
+
+# 所有我们可以使用转换之后的名称来调用他们
+stu._Student__say() # 强制调用say方法
+print(stu._Student__age) # 强制获取age属性
+print(stu._Student__private_class_field) # 强制获取私有的类属性
+stu._Student__class_method() # 强制调用私有类方法
+~~~
+
+
+
+### 方法重载
+
+**python不支持方法重载, 如果需要重载, 使用默认参数**
+
+
+
+### 对象的比较
+
+默认情况下, 对象的`==`都是对地址的比较,  但是你可以重写`__eq__()`方法改变这个行为
+
+默认情况下，`!=` 也是基于内存地址的比较，实际操作中，Python会调用 `__ne__()` 方法（如果定义了）。如果没有定义 `__ne__()`，Python 会使用 `__eq__()` 来推导 `!=`。
+
+~~~python
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __eq__(self, other):
+        if isinstance(other, Point):
+            return self.x == other.x and self.y == other.y
+        return False
+
+p1 = Point(1, 2)
+p2 = Point(1, 2)
+p3 = Point(2, 3)
+
+print(p1 == p2)  # True
+print(p1 == p3)  # False
+~~~
+
+
+
+默认情况下, 对象不能进行大小的比较, 如果需要进行排序比较（例如使用 `sorted()` 函数或 `min()` 等）, 你可以重写如下方法
+
+- `__lt__(self, other)`：定义小于操作 `<`。
+
+- `__le__(self, other)`：定义小于等于操作 `<=`。
+
+- `__gt__(self, other)`：定义大于操作 `>`。
+
+- `__ge__(self, other)`：定义大于等于操作 `>=`。
+
+如果你只重载了 `__lt__()`和`__eq__()`，Python会根据这两个方法自动推导出`<=, >, >=, !=`
+
+~~~python
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __lt__(self, other):
+        if isinstance(other, Point):
+            return (self.x, self.y) < (other.x, other.y)
+        return False
+
+    def __eq__(self, other):
+        if isinstance(other, Point):
+            return self.x == other.x and self.y == other.y
+        return False
+
+p1 = Point(1, 2)
+p2 = Point(2, 3)
+p3 = Point(1, 2)
+
+print(p1 < p2)   # True
+print(p1 <= p3)  # True
+print(p2 > p1)   # True
+print(p1 >= p3)  # True
+~~~
+
+
+
+**`__hash__()` 和 `__eq__()` 一致性**
+
+如果你打算使用对象作为字典的键或者存储在集合中，重载 `__eq__()` 方法时，应该同时重载 `__hash__()` 方法。否则，即使两个对象相等，Python也无法正确地将它们视为相同的键或元素。
+
+```python
+class Point:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def __eq__(self, other):
+        return (self.x, self.y) == (other.x, other.y)
+
+    def __hash__(self):
+        return hash((self.x, self.y))
+
+p1 = Point(1, 2)
+p2 = Point(1, 2)
+p3 = Point(2, 3)
+
+points = {p1, p2, p3}
+print(len(points))  # 2, 因为p1和p2被认为是相同的
+```
+
+
+
+
 
 
 
@@ -2217,78 +2432,6 @@ staticmethod和classmethod的不同只是在于classmethod能够多接受一个c
    ~~~
 
    
-
-
-
-### 动态添加属性和方法
-
-在python中, 可以给对象动态的添加属性, 方法, 类属性, 类方法
-
-~~~python
-class Student:
-    pass
-
-stu = Student()
-stu.age = 18 # 动态添加一个age属性
-
-def show():
-    print('show...')
-stu2.show = show # 动态添加一个实例方法
-
-Student.number = 0; # 动态添加一个类属性
-
-Student.show = show # 动态添加一个类方法
-~~~
-
-
-
-### 强制调用私有属性和方法
-
-在python中, 私有的属性和方法在调用的时候, 并不会去判断访问修饰符, python只是简单的将他们换一个名字隐藏起来了, 我们可以使用更换之后的名字来调用他们
-
-所以私有属性和方法就是防君子不防小人
-
-~~~python
-class Student:
-
-    __private_class_field = 0
-
-    def __init__(self):
-        self.__age = 18
-
-    def __say(self):
-        print("say...")
-
-    @classmethod
-    def __class_method(cls):
-        print("private class method")
-
-
-stu = Student()
-list = dir(stu) # 获取stu的所有属性, 方法, 类方法, 类属性
-# 可以看到,
-# __say方法被变成了_Student__say,
-# __age属性变成了_Student__age
-# __private_class_field变成了_Student__private_class_field
-# ____class_method变成了_Student__class_method
-print(list)
-
-# 所有我们可以使用转换之后的名称来调用他们
-stu._Student__say() # 强制调用say方法
-print(stu._Student__age) # 强制获取age属性
-print(stu._Student__private_class_field) # 强制获取私有的类属性
-stu._Student__class_method() # 强制调用私有类方法
-~~~
-
-
-
-### 方法重载
-
-**python不支持方法重载, 如果需要重载, 使用默认参数**
-
-
-
-
 
 ### Getter和Setter
 
@@ -2804,10 +2947,26 @@ B    C    D
 参数: 
 
 1. file: 是要打开的文件, 类型是字符串, 文件的路径可以是相对路径,也可以是绝对路径(从根目录开始书写的路径),建议使用相对路径(相对于当前代码文件所在的路径, ./ ../ )
-2.  mode:  默认参数(缺省参数), 表示的是打开文件的方式 
-   - r: read **只读打开, 如果文件不存在会报错**
-   - w: write  只写打开, **文件不存在会创建, 文件存在,会覆盖原来的内容**
-   - a: append 追加打开, **文件不存在会创建文件, 文件存在, 在文件的末尾写入内容**
+
+2. mode:  默认参数(缺省参数), 表示的是打开文件的方式 
+   | 模式 | 描述                                                         |
+   | :--- | :----------------------------------------------------------- |
+   | x    | 写模式，新建一个文件，如果该文件已存在则会报错。             |
+   | b    | 二进制模式。                                                 |
+   | +    | 表示可读可写                                                 |
+   | r    | 以只读方式打开文件。**文件的指针将会放在文件的开头**。       |
+   | rb   | 以二进制格式打开一个文件用于只读。文件指针将会放在文件的开头。这是默认模式。一般用于非文本文件如图片等。 |
+   | r+   | 读写的形式打开。文件指针将会放在文件的开头。                 |
+   | rb+  | 以二进制格式打开一个文件用于读写。文件指针将会放在文件的开头。一般用于非文本文件如图片等。 |
+   | w    | 打开一个文件只用于写入。如果该文件已存在则打开文件，并从开头开始编辑，**即原有内容会被删除**。如果该文件不存在，创建新文件。 |
+   | wb   | 以二进制格式打开一个文件只用于写入。如果该文件已存在则打开文件，并从开头开始编辑，即原有内容会被删除。如果该文件不存在，创建新文件。一般用于非文本文件如图片等。 |
+   | w+   | 打开一个文件用于读写。如果该文件已存在则打开文件，并从开头开始编辑，即原有内容会被删除。如果该文件不存在，创建新文件。 |
+   | wb+  | 以二进制格式打开一个文件用于读写。如果该文件已存在则打开文件，并从开头开始编辑，即原有内容会被删除。如果该文件不存在，创建新文件。一般用于非文本文件如图片等。 |
+   | a    | 打开一个文件用于追加。如果该文件已存在，文件指针将会放在文件的结尾。也就是说，新的内容将会被写入到已有内容之后。如果该文件不存在，创建新文件进行写入。 |
+   | ab   | 以二进制格式打开一个文件用于追加。如果该文件已存在，文件指针将会放在文件的结尾。也就是说，新的内容将会被写入到已有内容之后。如果该文件不存在，创建新文件进行写入。 |
+   | a+   | 打开一个文件用于读写。如果该文件已存在，文件指针将会放在文件的结尾。文件打开时会是追加模式。如果该文件不存在，创建新文件用于读写。 |
+   | ab+  | 以二进制格式打开一个文件用于追加。如果该文件已存在，文件指针将会放在文件的结尾。如果该文件不存在，创建新文件用于读写。 |
+
 3. encoding: 编码方式,(文字和二进制如何进行转换的)
    - gbk: 将一个汉字转换为 2 个字节二进制
    - utf-8: 常用, 将一个汉字转换为 3 个字节的二进制
@@ -2829,6 +2988,26 @@ file1.close()
 with open('a.txt', 'a', encoding='utf-8') as f:
     f.write('good good study ') # 不用手动close
 ~~~
+
+上面代码等效于
+
+~~~python
+context = open('a.txt', 'a', encoding='utf-8')
+f = context.__enter__()
+
+try:
+    # do something
+finally:
+    # 这里的三个参数是调用过程中产生的异常的类型, 实例, 调用栈
+    # 系统会自动传递到__exit__函数中, 告诉我们异常
+    context.__exit__(None, None, None)
+~~~
+
+
+
+
+
+
 
 
 
@@ -2882,25 +3061,6 @@ with open('b.txt', encoding='utf-8') as f:
             print(buf)
         else:
             break
-~~~
-
-### JSON操作
-
-json 文件 也是一个文本文件, 就可以直接使用  read()  和 write() 方法 去操作文件
-
-只是使用这两个方法,不方便,所以对 json 文件有自己独特的读取和写入的方法
-
-~~~python
-# 导入 json
-import json
-
-# 读打开文件
-with open('info.json', encoding='utf-8') as f:
-    result = json.load(f) # 读取文件并转换为dict
-    print(type(result))  # <class 'dict'>
-    print(result.get('name')) # 姓名
-    print(result.get('age')) # 年龄
-    print(result.get('address').get('city')) # 城市
 ~~~
 
 
@@ -3076,7 +3236,7 @@ root.sub2.b.b() # 这行报错
 
 我们在导入root之后, 会执行`__init__`文件, 但是python不会自动的为我们导入c模块和sub1,sub2子模块
 
-python唯一会做的就是执行`__init__`文件
+**python唯一会做的就是执行`__init__`文件**
 
 所以如我我们想要在导入root模块之后, 自动的导入c模块和sub1, sub2模块, 我们可以在root的`__init__`文件下手动导入
 
@@ -3140,6 +3300,59 @@ from root.c import c # 只从c模块中导入c函数
 c() # 可以直接调用c函数, 而不再需要使用root.c.c()了
 ~~~
 
+## 导入所有变量
+
+你可以使用`from ... import *`来将一个包或者模块中所有的内容导入出来
+
+
+
+## 访问控制权限
+
+python对于什么是可以导出的控制的不严格,   默认情况下, 如果变量, 函数, 类是以`_`单个下划线开始的, 那么我们不能使用`from xxx import *` 来导出他,  但是可以使用`import xxx 和 from xxx import bbb`来导出他
+
+~~~python
+# a.py
+public_variable = "public"
+
+# 无法通过from module import *的形式被导入
+# 但是可以通过 from module import xxx或者import module的形式来导入
+_protect_variable = "protected"
+~~~
+
+~~~python
+# b.py
+import a
+print(a.public_variable)
+print(a._protect_variable)
+
+from a import public_variable, _protect_variable
+print(public_variable)
+print(_protect_variable)
+
+# 使用from a import *的形式, 只能导出public_variable, 不能导出_protect_variable
+~~~
+
+
+
+当然了, 你可以在模块或者包的init.py中定义一个`__all__`变量, 来控制`from module import *`能够导出什么
+
+~~~python
+# a.py
+public_variable = "public"
+_protect_variable = "protected"
+
+# __all__是一个字符串列表!!!!!!!!!
+__all__ = ["public_variable", "_protect_variable"]
+~~~
+
+~~~python
+# b.py
+from a import *
+print(public_variable, _protect_variable)
+~~~
+
+
+
 
 
 ## as 别名
@@ -3155,6 +3368,10 @@ rd.randint(10, 100)
 import from random import randint as ri # 给导入的函数起别名
 print(ri(10, 100))
 ~~~
+
+
+
+
 
 ## import的搜索路径
 
@@ -3222,14 +3439,42 @@ pip list # 查看已安装的包
 
 
 
+pip使用镜像
+
+~~~shell
+# 临时安装的时候设置
+pip3 install numpy -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 永久设置
+pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+# 查看镜像
+pip config get global.index-url
+# 取消进行
+pip config unset global.index-url
+~~~
+
 pip设置代理
 
 ~~~python
-pip config set global.proxy <proxy_ip>:<proxy_port>
-pip config set global.proxy-ssl <proxy_ip>:<proxy_port>
+pip config set global.proxy 127.0.0.1:7890
+pip config set global.proxy-ssl 127.0.0.1:7890
+    
+# 取消代理
+pip config unset unset global.proxy 
+pip config unset unset global.proxy-ssl 
+
+# 查看代理
+pip config get unset global.proxy 
+pip config get unset global.proxy-ssl 
 ~~~
 
+查看pip的所有设置
 
+~~~shell
+pip config list
+~~~
+
+当然你也可以直接编辑`C:\Users\Administrator\AppData\Roaming\pip\pip.ini`文件
 
 
 
@@ -4275,7 +4520,7 @@ d.quack(5)
 
 # 多线程与锁
 
-## 线程
+## 多线程
 
 ### 创建线程
 
@@ -4292,7 +4537,7 @@ def run(n):
 
 
 if __name__ == '__main__':
-    t1 = threading.Thread(target=run, args=("t1",)) # 通过一个函数创建线程, 并指定函数参数
+    t1 = threading.Thread(target=run, args=("t1",), name="T1") # 通过一个函数创建线程, 并指定函数参数
     t1.start()
     t1.join()
 ~~~
@@ -4369,6 +4614,46 @@ if __name__ == '__main__':
     t2.start()
     t2.join()
 ~~~
+
+
+
+## 多进程
+
+~~~python
+import time
+from multiprocessing import Process
+
+def fn(message):
+    print(message)
+    time.sleep(5)
+
+
+# 继承Thread类, 实现他的run方法也可以
+class MyProcess(Process):
+    def run(self):
+        print(f"my process: {self.message}")
+        time.sleep(5)
+
+    def __init__(self, message):
+        super().__init__()
+        self.message = message
+
+if __name__ == '__main__':
+    for i in range(10):
+        # target指定一个函数, args表示给函数传递的参数, args是一个tuple, 单个元素的tuple后面需要加一个逗号, 要不然表示的是字符串
+        t = Process(target=fn, args=(f"message: {i}",))
+        t.start()
+
+    for i in range(10):
+        my_process= MyProcess(i)
+        my_process.start()
+        
+    print("end!!!")
+~~~
+
+
+
+
 
 
 
@@ -4531,7 +4816,7 @@ Exectuor 提供了如下常用方法：
 - shutdown(wait=True)：关闭线程池。
 
 
-程序将 task 函数提交（submit）给线程池后，submit 方法会返回一个 Future 对象，Future 类主要用于获取线程任务函数的返回值。由于线程任务会在新线程中以异步方式执行，因此，线程执行的函数相当于一个“将来完成”的任务，所以 Python 使用 Future 来代表。
+程序将 task 函数提交（submit）给线程池后，submit 方法会返回一个 Future 对象，Future 类主要用于获取线程任务函数的返回值。
 
 Future 提供了如下方法：
 
@@ -4544,36 +4829,79 @@ Future 提供了如下方法：
 - add_done_callback(fn)：为该 Future 代表的线程任务注册一个“回调函数”，当该任务成功完成时，程序会自动触发该 fn 函数。
 
 
-在用完一个线程池后，应该调用该线程池的 shutdown() 方法，该方法将启动线程池的关闭序列。调用 shutdown() 方法后的线程池不再接收新任务，但会将以前所有的已提交任务执行完成。当线程池中的所有任务都执行完成后，该线程池中的所有线程都会死亡。
-
-使用线程池来执行线程任务的步骤如下：
-
-1. 调用 ThreadPoolExecutor 类的构造器创建一个线程池。
-2. 定义一个普通函数作为线程任务。
-3. 调用 ThreadPoolExecutor 对象的 submit() 方法来提交线程任务。
-4. 当不想提交任何任务时，调用 ThreadPoolExecutor 对象的 shutdown() 方法来关闭线程池。
+线程池使用完之后应该关闭。调用 shutdown() 方法后的线程池不再接收新任务，但会将以前所有的已提交任务执行完成。当线程池中的所有任务都执行完成后，该线程池中的所有线程都会死亡。
 
 ~~~python
+from concurrent.futures import ThreadPoolExecutor
+
 def test(value1, value2=None):
     print("%s threading is printed %s, %s"%(threading.current_thread().name, value1, value2))
     time.sleep(2)
     return 'finished'
 
-def test_result(future):
-    print(future.result())
-
 if __name__ == "__main__":
-    import numpy as np
-    from concurrent.futures import ThreadPoolExecutor
-    threadPool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="test_") # 创建线程池
+    # 方式1
+    threadPool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="test_") 
     for i in range(0,10):
-        future = threadPool.submit(test, i,i+1) # 提交任务
+        # 提交任务, 并指定函数的参数
+        future = threadPool.submit(test, i,i+1) 
 	    # future.add_done_callback(test_result) # 添加回调函数
-        print(future.result()) # 等待future执行完毕
+        print(future.result()) # 堵塞直到test执行完毕, 并获取结果
+        
     threadPool.shutdown(wait=True) # 关闭线程池
+    
+    # 方式2, with会自动调用shutdown(wait=True)等待所有任务执行完毕, 并返回
+    with ThreadPoolExecutor(max_workers=10) as executor:  
+        for i in range(100):
+            executor.submit(fn, f"thread: {i}")  
+            
+    print("All tasks completed!")
 ~~~
 
+
+
 ## 进程池
+
+在使用进程池的时候, 可以使用`multiprocessing.Pool`, 也可以使用`concurrent.futures.ProcessPoolExecutor`
+
+他们的区别在于:
+
+- 前者的api更为底层, 也更难用,  后者的api和ThreadPoolExecutor一样, 方便好用
+- 前者在python2和python3中都支持, 但是后者在python3.2中才引入
+
+推荐使用ProcessPoolExecutor
+
+
+
+
+
+### ProcessPoolExecutor
+
+ProcessPoolExecutor的api和ThreadPoolExecutor是一样的, 只需要换一个名字就好了
+
+~~~python
+from concurrent.futures import ProcessPoolExecutor
+
+def worker(x):
+    if x == 5:
+        raise ValueError("Error on 5")
+    return x * x
+
+if __name__ == "__main__":
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(worker, i) for i in range(10)]
+        
+        for future in futures:
+            try:
+                result = future.result()
+                print("Result:", result)
+            except Exception as e:
+                print("Exception:", e)
+~~~
+
+
+
+### Pool
 
 创建进程池:
 
@@ -4584,40 +4912,14 @@ Pool(numprocess ,initializer , initargs)
 ~~~
 
 1. numprocess：要创建的进程数，如果省略，将默认使用`cpu_count()`的值
-2. initializer：是每个工作进程启动时要执行的可调用对象，默认为None
-3. initargs：是要传给initializer的参数组
+2. initializer：进程启动时要执行的初始化函数, 默认为None
+3. initargs：执行的函数的参数
 
 
 
 主要方法:
 
-`p.apply(func [, args [, kwargs]])`：提交一个任务执行func(*args,\**kwargs)到进程池中执行,然后返回结果。
-
-`p.apply_async(func [, args [, kwargs]], [callback])`：在一个池工作进程中执行func(*args,**kwargs),然后返回结果。此方法的结果是AsyncResult类的实例，callback是可调用对象，接收输入参数。当func的结果变为可用时，将理解传递给callback。
-
-`p.close()`：关闭进程池，防止进一步操作。如果所有操作持续挂起，它们将在工作进程终止前完成
-
-`P.join()`：等待所有工作进程退出。此方法只能在`close()`或`teminate()`之后调用
-
-
-
-其他方法
-
-方法`apply_async()`和`map_async()`的返回值是AsyncResul的实例obj。实例具有以下方法：
-
-`obj.get()`：返回结果，如果有必要则等待结果到达。timeout是可选的。如果在指定时间内还没有到达，将引发一场。如果远程操作中引发了异常，它将在调用此方法时再次被引发。
-
-`obj.ready()`：如果调用完成，返回True
-
-`obj.successful()`：如果调用完成且没有引发异常，返回True，如果在结果就绪之前调用此方法，引发异常
-
-`obj.wait([timeout])`：等待结果变为可用。
-
-`obj.terminate()`：立即终止所有工作进程，同时不执行任何清理或结束任何挂起工作。如果p被垃圾回收，将自动调用此函数
-
-
-
-同步执行进程代码:
+`p.apply(func [, args [, kwargs]])`：提交一个任务执行func(*args,\**kwargs)到进程池中执行, 堵塞并返回结果
 
 ~~~python
 import os,time
@@ -4629,38 +4931,87 @@ def work(n):
     return n**2
 
 if __name__ == '__main__':
-    p=Pool(3) #创建进程池, 里面三个进程
-    for i in range(10):
-        res=p.apply(work,args=(i,)) # 执行work, 并等待work执行完毕, 返回结果               
+    with Pool(3) as p: # with会关闭pool, 并等待所有任务完成再退出
+    	for i in range(10):
+        	res=p.apply(work,args=(i,)) # 执行work, 堵塞直到任务执行完, 并返回结果   
+    print("all task completed")
 ~~~
 
 
 
-异步执行进程代码
+`p.apply_async(func [, args [, kwargs]], [callback])`：
+
+- 在一个池工作进程中执行func(*args,**kwargs)并立即返回一个AsyncResult类的实例
+
+- callback是可调用对象，接收输入参数。当func的结果变为可用时，将理解传递给callback。
+
+- AsyncResult有如下方法:
+  - `obj.get()`：返回结果，如果有必要则等待结果到达。timeout是可选的。如果在指定时间内还没有到达，将引发一场。如果远程操作中引发了异常，它将在调用此方法时再次被引发。
+  - `obj.ready()`：如果调用完成，返回True
+  - `obj.successful()`：如果调用完成且没有引发异常，返回True，如果在结果就绪之前调用此方法，引发异常
+  - `obj.wait([timeout])`：等待结果变为可用。
+  - `obj.terminate()`：立即终止所有工作进程，同时不执行任何清理或结束任何挂起工作。如果p被垃圾回收，将自动调用此函数
 
 ~~~python
+from multiprocessing import Pool
 import os
 import time
-import random
-from multiprocessing import Pool
 
-def work(n):
-    print('%s run' %os.getpid())
-    time.sleep(random.random())
-    return n**2
+def worker(task_id):
+    print(f"Process {os.getpid()} is handling task {task_id}")
+    time.sleep(1)
+    return f"Task {task_id} completed by process {os.getpid()}"
 
-if __name__ == '__main__':
-    p=Pool(3) #创建进程池, 里面三个进程
-    res_l = []
-    for i in range(10):
-        res=p.apply_async(work,args=(i,)) # 异步调用work, 返回的是AsyncResult
-        # res=p.apply_async(work,args=(i,), callback=lambda a: print(a) )
-        res_l.append(res)
-                                      
-    p.close() # 关闭进程池
-    p.join() # 等待进程池关闭
-    print([res.get() for res in res_l]) # 获取所有的结果
+if __name__ == "__main__":
+    tasks = range(10)
+    pool_size = 4
+
+    # with会关闭pool, 并等待所有任务完成再退出
+    with Pool(pool_size) as pool: 
+        # results是一个AsyncResult的列表
+        results = [pool.apply_async(worker, args=(task_id,)) for task_id in tasks]
+
+        # 获取任务结果
+        for result in results:
+            print(result.get())  # .get() 会阻塞，等待任务结果
 ~~~
+
+`map_async(task, iter)`类似于foreach, 迭代iter, 并执行task, 返回的也是一个AsyncResult
+
+~~~python
+from multiprocessing import Pool
+import os
+import time
+
+def worker(task_id):
+    print(f"Process {os.getpid()} is handling task {task_id}")
+    time.sleep(1)
+    return f"Task {task_id} completed"
+
+if __name__ == "__main__":
+    iterator = range(10)
+    pool_size = 4
+
+    with Pool(pool_size) as pool:
+        # 返回的是一个AsyncResult
+        result_async = pool.map_async(worker, iterator)
+        print("Tasks submitted, doing other work...")
+
+        results = result_async.get()  # 等待所有任务执行完毕, 返回一个list
+        print("Results:")
+        for result in results:
+            print(result)
+~~~
+
+`p.close()`：关闭进程池，防止进一步操作。如果所有操作持续挂起，它们将在工作进程终止前完成
+
+`P.join()`：等待所有工作进程退出。此方法只能在`close()`或`teminate()`之后调用
+
+
+
+
+
+
 
 
 
@@ -4668,7 +5019,7 @@ if __name__ == '__main__':
 
 ### GIL（Global Interpreter Lock）全局解释器锁
 
-在非python环境中，单核情况下，同时只能有一个任务执行。多核时可以支持多个线程同时执行。但是在python中，无论有多少核，同时只能执行一个线程。究其原因，这就是由于GIL的存在导致的。
+在非python环境中，单核情况下，同时只能有一个任务执行。多核时可以支持多个线程同时执行。**但是在python中，无论有多少核，同时只能执行一个线程。究其原因，这就是由于GIL的存在导致的。**
 
 GIL的全称是Global Interpreter Lock(全局解释器锁)，来源是python设计之初的考虑，为了数据安全所做的决定。某个线程想要执行，必须先拿到GIL，我们可以把GIL看作是“通行证”，并且在一个python进程中，GIL只有一个。拿不到通行证的线程，就不允许进入CPU执行。GIL只在cpython中才有，因为cpython调用的是c语言的原生线程，所以他不能直接操作cpu，只能利用GIL保证同一时间只能有一个线程拿到数据。而在pypy和jpython中是没有GIL的。
 
@@ -4698,7 +5049,7 @@ python下想要充分利用多核CPU，就用多进程。因为每个进程有�
 
 总结就是: 
 
-IO密集型的应用, GIL几乎没有什么影响,  
+IO密集型的应用, GIL几乎没有什么影响
 
 CPU密集型的应用, GIL使得多线程的效率与单线程类似, 推荐采用多进程+协程的方式
 
@@ -4836,10 +5187,6 @@ if __name__ == "__main__":
 # 协程
 
 https://www.bilibili.com/video/BV1AB4y197k6/?spm_id_from=333.788&vd_source=f79519d2285c777c4e2b2513f5ef101a
-
-
-
-
 
 
 
@@ -5052,18 +5399,18 @@ yield关键字是在python2.2的PEP252中引进的,  他的作用主要是为了
    - \__iter__: 返回迭代器对象自身
    - \__next__: 每次返回一个迭代器对象, 如果没有数据, 就抛出StopIteration
 
-3. 我们可以通过`next(generator)` 或者 `generator.__next__()`来真正的开始/继续执行这个函数
+3. **我们可以通过`next(generator)` 或者 `generator.__next__()`来真正的开始/继续执行这个函数**
 
-4. 当函数执行的时候, 如果碰到了yield, 那么他会保存调用栈, 然后返回yield的值, 作为`next`的返回值
+4. **当函数执行的时候**, 如果碰到了yield, 那么他会保存调用栈, 然后返回yield的值, 作为`next`的返回值
 
-5. 当函数在执行的时候退出了, 或者碰到了return, 那么会抛出StopIteration并携带return的值, 没有return值就携带None
+5. **当函数在执行的时候退出了, 或者碰到了return, 那么会抛出StopIteration并携带return的值, 没有return值就携带None**
 
 6. 生成器具有4个状态
 
-   - 当调用生成器函数创建一个生成器的时候, 此时处于初始状态
-   - 当调用next()方法, 生成器还是执行生成器函数, 此时处于运行状态
-   - 当执行函数时, 碰到了yield关键字, 此时会返回next函数, 此时生成器处于暂停状态
-   - 当函数执行完毕时, 抛出StopIteration, 此时生成器处于结束状态
+   - **当调用生成器函数创建一个生成器的时候, 此时处于初始状态**
+   - **当调用next()方法, 生成器还是开始执行生成器函数, 此时处于运行状态**
+   - **当执行函数时, 碰到了yield关键字, 此时会返回next函数, 此时生成器处于暂停状态**
+   - **当函数执行完毕时, 抛出StopIteration, 此时生成器处于结束状态**
 
 测试代码如下:
 
@@ -6279,7 +6626,7 @@ asyncio.get_event_loop:
 
 获得与当前线程绑定的`_running_loop`, 如果没有那么该方法会自动就创建一个并绑定到`_loop`上, 多次调用只会返回同一个对象
 
-这个函数一般情况下用在事件循环外部
+**这个函数一般情况下用在事件循环外部**
 
 
 
@@ -6295,7 +6642,7 @@ loop.create_task:
 
 接受一个coroutine, 将其包装为task, 并放到loop的`_ready`队列中调度
 
-一般情况下, 想要添加一个协程到loop中, 就会调用这个函数
+**一般情况下, 想要添加一个协程到loop中, 就会调用这个函数, 可以在事件循环内部/外部调用**
 
 
 
@@ -6376,10 +6723,10 @@ if __name__ == '__main__':
     ... # do something
 
     # 方式1, 传入一个task
-    loop = asyncio.get_event_loop()
-    task1 = loop.create_task(big_step(), name="big step")
-    task1.add_done_callback(lambda x: print(x))
-    result = loop.run_until_complete(task1)
+    loop = asyncio.get_event_loop() # 创建一个事件循环
+    task1 = loop.create_task(big_step(), name="big step") # 放入loop中准备调度
+    task1.add_done_callback(lambda x: print(x)) # 添加回调
+    result = loop.run_until_complete(task1) # 开始调度
 
     # 方式2, 传入一个协程
     loop1 = asyncio.get_event_loop()
@@ -6413,7 +6760,7 @@ asyncio.create_task:
 
 接受一个coroutine, 获取与当前线程绑定的`_running_loop`, 然后调用`loop.create_task`将其包装为一个task, 并将其放到与当前线程绑定的`_running_loop`中进行调度, 然后返回task
 
-这个函数只能在事件循环内部调用, 即在async函数内部调用, 因为只有eventloop驱动async函数执行的时候`_running_loop`才不为None
+**这个函数只能在事件循环内部调用**, 即在async函数内部调用, 因为只有eventloop驱动async函数执行的时候`_running_loop`才不为None
 
 ~~~python
 async def func1():
@@ -6449,12 +6796,12 @@ if __name__ == '__main__':
 
 asyncio.ensure_future:   
 
-接受一个task或者coroutine, 调用`asyncio.get_event_loop()`来获取一个loop, 确保返回的是task并放到了loop中
+接受一个task或者coroutine, 调用`asyncio.get_event_loop()`来获取一个loop, 确保返回的是task并放到了loop中进行调度
 
 - 如果是coroutine, 那么就调用`loop.create_task()`来将coroutine包装为task, create_task的时候会将task添加到loop中进行调度,  然后返回task
 - 如果是task,  那么这个task可定是通过`loop.create_task`创建出来的, 已经loop的在调度中, 所以不做任何事情, 直接返回
 
-这个函数既可以在事件循环内部使用, 也可以在事件循环外部使用
+**这个函数既可以在事件循环内部使用, 也可以在事件循环外部使用**
 
 ~~~python
 async def func1():
@@ -6492,7 +6839,7 @@ asyncio.gather
 
 这个Task的执行结果就是一个list, 里面包装了所有任务执行的结果
 
-这个函数可以在事件循环内部调用, 也可以在事件循环内部调用
+**这个函数可以在事件循环内部调用, 也可以在事件循环内部调用**
 
 ~~~python
 import asyncio
@@ -6535,6 +6882,8 @@ asyncio.wait
 
 wait和gather类似, 都是将一组协程都放到loop中进行调度, 但是wait具有更多的参数可以选择
 
+**这个函数可以在事件循环内部调用, 也可以在事件循环内部调用**
+
 
 
 默认情况下, 只有所有的协程都执行完毕了, 合并后的协程才执行完毕, 可以通过return_when来设置
@@ -6556,18 +6905,53 @@ async def hello(name):
     return result
 
 loop = asyncio.get_event_loop()
-# 创建一组任务
+# 创建一组任务, 并放到loop中
 tasks = [ asyncio.ensure_future(hello1(i)) for i in range(10) ]
 
 combined_coro = asyncio.wait(tasks, timeout=10, return_when=concurrent.futures.ALL_COMPLETED)
 assert isinstance(combined_coro, Coroutine)
 
+# 开始调度
 done, pending = loop.run_until_complete(combined_coro)
 for task in done:
     assert isinstance(task, Task)
     print(task.done()) # 判断是否完成
     print(task.result()) # 获取结果
     print(task.exception()) # 获取异常
+~~~
+
+
+
+### 模板
+
+~~~python
+async def process(message):
+    await asyncio.sleep(1)
+    print(message)
+    return message
+
+async def do():
+    
+    task1 = asyncio.create_task(process("hello")) # 添加一个任务
+    task2 = asyncio.ensure_future(process("world")) # 添加一个任务
+    task1_result = await task1
+    task2_result = await task2
+
+    # 添加多个任务
+    tasks = [process(f"{i}") for i in range(10)]
+    all_task = asyncio.gather(*tasks)
+    result_list = await all_task
+    [print(result) for result in result_list]
+
+
+if __name__ == '__main__':
+    asyncio.run(do()) # 执行一个任务
+
+    # 执行一批任务
+    tasks = [process(f"{i}") for i in range(10)]
+    all_task = asyncio.gather(*tasks)
+    loop = asyncio.get_event_loop()
+    result_list = loop.run_until_complete(all_task)
 ~~~
 
 
@@ -6671,7 +7055,7 @@ anaconda和miniconda和conda的区别在于:
 conda config --show proxy_servers # 查看当前使用的代理
 conda config --set proxy_servers.http http://127.0.0.1:7890
 conda config --set proxy_servers.https http://127.0.0.1:7890 # 注意指定http协议
-conda config --set ssl_verify false # 进制使用ssl
+conda config --set ssl_verify false # 禁止使用ssl
 ~~~
 
 
@@ -6726,6 +7110,12 @@ conda clean -y -all # 删除所有的安装包及cache(索引缓存、锁定文�
 ### pycharm使用conda环境
 
 ![image-20240617195209346](img/python/image-20240617195209346.png)
+
+- Locations: 表示当前新创建的虚拟环境的位置
+- Python version: 表示当前环境使用的python版本
+- Conda executable: 表示conda的位置
+
+
 
 在创建完这个项目后,  pycharm会使用conda命令在`anaconda安装目录/envs`下创建一个与项目名项目同名的环境
 
@@ -7056,7 +7446,7 @@ for name, member in Month.__members__.items():
 ```python
 from enum import Enum, unique
 
-@unique
+@unique # @unique装饰器可以帮助我们检查保证没有重复值。
 class Weekday(Enum):
     Sun = 0 # Sun的value被设定为0
     Mon = 1
@@ -7067,7 +7457,7 @@ class Weekday(Enum):
     Sat = 6
 ```
 
-`@unique`装饰器可以帮助我们检查保证没有重复值。
+
 
 访问这些枚举类型可以有若干种方法：
 
@@ -7093,3 +7483,50 @@ ValueError: 7 is not a valid Weekday
 ```
 
 可见，既可以用成员名称引用枚举常量，又可以直接根据value的值获得枚举常量。
+
+
+
+## JSON操作
+
+操作json需要如下模块, 他是python自带的
+
+~~~python
+# 导入 json
+import json
+~~~
+
+1. json字符串转换为python对象
+
+   ~~~python
+   json_str = '{"name": "Alice", "age": 25, "is_student": false}'
+   data = json.loads(json_str)
+   
+   print(data["name"])
+   ~~~
+
+2. 文件转换为python对象
+
+   ~~~python
+   with open("data.json", "r") as f:
+       data = json.load(f)
+       print(data["name"])
+   ~~~
+
+3. dict转换为json字符串
+
+   ~~~python
+   data = {"name": "Alice", "age": 25, "is_student": False}
+   json_str = json.dumps(data)
+   ~~~
+
+4. dict写到文件中
+
+   ~~~python
+   data = {"name": "Alice", "age": 25, "is_student": False}
+   
+   with open("output.json", "w") as f:
+       json.dump(data, f, indent=4, ensure_ascii=False)
+   ~~~
+
+loads和dumps适用于字符串,  load和dump适用于文本
+
