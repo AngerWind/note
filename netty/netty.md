@@ -2816,7 +2816,7 @@ copy()
 
 - 切片后的 ByteBuf 维护独立的 read，write, capacity, max capacity 指针
 - **slice创建的bytebuf和原来的bytebuf共用一片内存地址, 修改会相互影响**
-- **<font color=red>slice只能随机写, 而不能顺序写, 同时也不能扩容</font>**
+- **<font color=red>slice只能读取, 随机写, 而不能顺序写, 同时也不能扩容</font>**
 - **<font color=red>对于retainedSlice()创建的ByteBuf, 使用完毕之后, 一定要记得release掉</font>**
 
 ![](img/netty/0011.png)
@@ -2948,67 +2948,6 @@ ByteBuffer nioBuffer(int index, int length)
 
 
 
-#### 内存管理
-
-ByteBuf根据是否是否池化, 是否是直接内存可以分为四类
-
-- UnpooledHeapByteBuf
-- UnpooledDirectByteBuf
-- PooledHeapByteBuf
-- PooledDirectByteBuf
-
-对于UnpooledHeapByteBuf, 因为
-
-由于 Netty 中有堆外内存的 ByteBuf 实现，堆外内存最好是手动来释放，而不是等 GC 垃圾回收。
-
-* UnpooledHeapByteBuf 使用的是 JVM 内存，只需等 GC 回收内存即可
-* UnpooledDirectByteBuf 使用的就是直接内存了，需要特殊的方法来回收内存
-* PooledByteBuf 和它的子类使用了池化机制，需要更复杂的规则来回收内存
-
-> 回收内存的源码实现，请关注下面方法的不同实现
->
-> `protected abstract void deallocate()`
-
-Netty 这里采用了引用计数法来控制回收内存，每种类型的 ByteBuf 都实现了 ReferenceCounted 接口
-
-* 每个 ByteBuf 对象的初始计数为 1
-* 调用 `release` 方法计数减 1，如果计数为 0，ByteBuf 内存被回收
-* 调用 `retain` 方法计数加 1，表示调用者没用完之前，其它 handler 即使调用了 release 也不会造成回收
-* 当计数为 0 时，底层内存会被回收，这时即使 ByteBuf 对象还在，其各个方法均无法正常使用
-
-谁来负责 release 呢？
-
-不是我们想象的（一般情况下）
-
-```java
-ByteBuf buf = ...
-try {
-    ...
-} finally {
-    buf.release();
-}
-```
-
-请思考，因为 pipeline 的存在，一般需要将 ByteBuf 传递给下一个 ChannelHandler，如果在 finally 中 release 了，就失去了传递性（当然，如果在这个 ChannelHandler 内这个 ByteBuf 已完成了它的使命，那么便无须再传递）
-
-基本规则是，**谁是最后使用者，谁负责 release**
-
-假设有如下pipeline, 其中3个Inbound, 3个Outbound
-
-![image-20240525113839896](img/Netty02-入门/image-20240525113839896.png)
-
-如果有一个入站的ByteBuf
-
-- 如果In_1处理之后将buf传到In_2, 那么In_1就不需要处理release
-- 如果In_2没有将buf传给In_3, 那么他就需要处理release
-- **如果In_2传给了In_3, 并且In_3传给了tail, 那么tail也会在内部调用release**
-
-对于一个出站的ByteBuf, 也是一样的, **如果这个buf最后传到了head, 那么head也会在内部把它release**
-
-
-
-
-
 #### CompositeByteBuf
 
 【零拷贝】的体现之一，可以将多个 ByteBuf 合并为一个逻辑上的 ByteBuf，避免拷贝
@@ -3076,7 +3015,7 @@ System.out.println(buf4.getClass()); // 01 02 03 04 05 06
 
 
 
-### netty的直接内存管理
+### netty的内存管理
 
 说到netty的内存管理, 我们先来看看ByteBuffer对内存的使用是怎么样的
 
@@ -3195,81 +3134,162 @@ ByteBuffer有两个具体的子类实现
 
 
 
-#### ByteBuf如何内存管理
+#### ByteBuf的内存管理
 
-ByteBuf有四种具体的实现类:
+Netty 采用了引用计数法来对ByteBuf进行计数, 看看有多少个ByteBuf引用着底层的内存
 
-- UnpooledHeapByteBuf
-- UnpooledDirectByteBuf
-- PooledHeapByteBuf
-- PooledDirectByteBuf
+每种类型的 ByteBuf 都实现了 ReferenceCounted 接口
 
-对于
+- 当ByteBuf创建的时候, 会为ByteBuf分配一块内存, 根据具体的实现可能是堆内存也可能是直接内存, 同时引用计数器的初始值为1,  表示有一个ByteBuf引用着底层的内存
+- 调用方法`retain`计数会加1, 表示多了一个对应引用底层的内存
+
+* 调用 `release` 方法计数减 1，如果计数为 0，ByteBuf 内存被回收
+* 当计数为 0 时，底层内存会被回收，这时即使 ByteBuf 对象还在，其各个方法均无法正常使用
+
+在ByteBuf中, 有如下的方法需要注意
+
+- duplicate, slice, readSlice都会在原来的内存上再建立一个ByteBuf对象
+
+  但是调用这些方法不会导致refCnt增加, 同时他们公用同一个refCnt, 所以我们只需要管理好原来的ByteBuf即可
+
+~~~java
+        ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer();
+        buffer.writeBytes("hello world, hello world".getBytes(StandardCharsets.UTF_8));
+
+        // 此时buffer和其他三个变量共享一个区域, 同时底层也是使用的同一个refCnt
+        // 这是我们只需要管理好buffer的声明周期就行了, 在不需要使用他的时候release掉就行了, 其他三个也会release掉
+        // 适用于不需要管理独立生命周期的场景。
+        ByteBuf duplicate = buffer.duplicate();
+        ByteBuf slice = buffer.slice(0, 5);
+        ByteBuf readSlice = buffer.readSlice(5);
+        logRefCount(buffer, duplicate, slice, readSlice); // 1111
+
+        buffer.release(); // 释放掉buffer, 此时duplicate, slice, readSlice也会变得不可用
+        logRefCount(buffer, duplicate, slice, readSlice); // 0000
+~~~
+
+~~~java
+    public static void logRefCount(ByteBuf... bufs){
+        for (ByteBuf buf : bufs) {
+            System.out.print(buf.refCnt());
+        }
+        System.out.println();
+    }
+~~~
+
+- retainedDuplicate, retainedSlice, readRetainedSlice也会在原来的ByteBuf上建立一个新的ByteBuf, 两者公用同一块内存
+- 调用这些方法会导致原来的ByteBuf的refCnt加一,  同时新建的ByteBuf有他们各种独立的引用计数器
+- 调用这些新建的ByteBuf的release方法, 不仅会导致他们自己的refCnt减一, 同时也会导致原来的ByteBuf的refCnt减一
+
+~~~java
+    public static void test2() {
+        ByteBuf buffer1 = PooledByteBufAllocator.DEFAULT.directBuffer();
+        buffer1.writeBytes("hello world, hello world".getBytes(StandardCharsets.UTF_8));
+        // 此时buffer和其他三个变量共享一个区域, 但是调用这些函数会导致buffer的refCnt加1
+        // 这些副本有独立的生命周期，但释放副本时会减少原始缓冲区的引用计数。
+        // 适用于需要长时间独立使用副本，并管理其生命周期的场景。
+        ByteBuf retainedDuplicate = buffer1.retainedDuplicate(); // 会导致buffer的refCnt加1, 同时自己的refCnt是独立的, 为1
+        logRefCount(buffer, retainedDuplicate); // 21
+
+        ByteBuf retainedSlice = buffer1.retainedSlice(0, 5); // 会导致buffer的refCnt加1, 同时自己的refCnt是独立的, 为1
+        logRefCount(buffer, retainedDuplicate, retainedSlice); // 311
+
+        ByteBuf readRetainedSlice = buffer1.readRetainedSlice(5); // 会导致buffer的refCnt加1, 同时自己的refCnt是独立的, 为1
+        logRefCount(buffer, retainedDuplicate, retainedSlice, readRetainedSlice); // 4111
+
+        retainedDuplicate.release(); // 释放掉retainedDuplicate, 此时retainedDuplicate变得不可用, 同时buffer的refCnt也会减1
+        logRefCount(buffer, retainedDuplicate, retainedSlice, readRetainedSlice); // 3011
+
+        retainedSlice.release(); // 释放掉retainedSlice, 此时retainedSlice变得不可用, 同时buffer的refCnt也会减1
+        logRefCount(buffer, retainedDuplicate, retainedSlice, readRetainedSlice); // 2001
+
+        readRetainedSlice.release(); // 释放掉readRetainedSlice, 此时readRetainedSlice变得不可用, 同时buffer的refCnt也会减1
+        logRefCount(buffer, retainedDuplicate, retainedSlice, readRetainedSlice); // 1000
+
+        buffer1.release(); // 释放掉buffer1, 此时buffer1变得不可用
+        logRefCount(buffer, retainedDuplicate, retainedSlice, readRetainedSlice); // 0000
+    }
+~~~
 
 
 
-- 使用堆内存时, 不需要手动释放内存, gc会自动回收
+谁来负责 release 呢？
 
-- 使用直接内存时, 有如下几种释放方式:
+不是我们想象的（一般情况下）
 
-  1. 等待gc, 在gc的时候也会自动回收内存
+```java
+ByteBuf buf = ...
+try {
+    ...
+} finally {
+    buf.release();
+}
+```
 
-  2. 通过Cleaner释放
+请思考，因为 pipeline 的存在，一般需要将 ByteBuf 传递给下一个 ChannelHandler，如果在 finally 中 release 了，就失去了传递性（当然，如果在这个 ChannelHandler 内这个 ByteBuf 已完成了它的使命，那么便无须再传递）
 
-     ~~~java
-         public static void cleanDirectBuffer(ByteBuffer buffer) {
-             if (buffer.isDirect()) {
-                 try {
-                     Method cleanerMethod = buffer.getClass().getMethod("cleaner");
-                     cleanerMethod.setAccessible(true);
-                     Object cleaner = cleanerMethod.invoke(buffer);
-                     if (cleaner != null) {
-                         Method cleanMethod = cleaner.getClass().getMethod("clean");
-                         cleanMethod.invoke(cleaner);
-                     }
-                 } catch (Exception e) {
-                     throw new RuntimeException("Failed to clean up direct ByteBuffer", e);
-                 }
-             }
-         }
-     
-         public static void main(String[] args) {
-             ByteBuffer directBuffer = ByteBuffer.allocateDirect(1024);
-             cleanDirectBuffer(directBuffer);
-         }
-     ~~~
+基本规则是，<font color=red>**谁是最后使用者，谁负责 release**</font>
 
-  3. 通过netty的工具类来释放,  底层也是通过反射调用Cleaner来释放
+假设有如下pipeline, 其中3个Inbound, 3个Outbound
 
-     ~~~java
-     public class DirectMemoryWithNetty {
-         public static void main(String[] args) {
-             ByteBuffer directBuffer = ByteBuffer.allocateDirect(1024);
-             PlatformDependent.freeDirectBuffer(directBuffer); // 释放直接内存
-         }
-     }
-     ~~~
+![image-20240525113839896](img/Netty02-入门/image-20240525113839896.png)
 
-  4. 通过Unsafe来释放
+如果有一个入站的ByteBuf
 
-     ~~~java
-         private static Unsafe getUnsafe() throws Exception {
-             Field unsafeField = Unsafe.class.getDeclaredField("theUnsafe");
-             unsafeField.setAccessible(true);
-             return (Unsafe) unsafeField.get(null);
-         }
-     
-         public static void main(String[] args) throws Exception {
-             Unsafe unsafe = getUnsafe();
-             ByteBuffer buffer = ByteBuffer.allocateDirect(1024);
-     
-             // 获取 buffer 的地址
-             long address = ((sun.nio.ch.DirectBuffer) buffer).address();
-             unsafe.freeMemory(address); // 释放内存
-         }
-     ~~~
+- 如果In_1处理之后将buf传到In_2, 那么In_1就不需要处理release
 
-     
+- 如果In_2没有将buf传给In_3, 那么他就需要处理release
+
+- 如果In_2传给了In_3, 并且In_3传给了tail, 那么tail也会在内部调用release
+
+  ~~~java
+  final class TailContext extends AbstractChannelHandlerContext implements ChannelInboundHandler {
+          
+      @Override
+      public void channelRead(ChannelHandlerContext ctx, Object msg) {
+          onUnhandledInboundMessage(ctx, msg);
+      }
+      
+      protected void onUnhandledInboundMessage(ChannelHandlerContext ctx, Object msg) {
+          onUnhandledInboundMessage(msg);
+          if (logger.isDebugEnabled()) {
+              logger.debug("Discarded message pipeline : {}. Channel : {}.",
+                           ctx.pipeline().names(), ctx.channel());
+          }
+      }
+      
+      protected void onUnhandledInboundMessage(Object msg) {
+          try {
+              logger.debug(
+                      "Discarded inbound message {} that reached at the tail of the pipeline. " +
+                              "Please check your pipeline configuration.", msg);
+          } finally {
+              // 通过工具类释放掉ByteBuf
+              ReferenceCountUtil.release(msg);
+          }
+      }
+  }
+  
+  class ReferenceCountUtil {
+      public static boolean release(Object msg) {
+          // 判断是不是ReferenceCounted, 这个是ByteBuf的父接口
+          if (msg instanceof ReferenceCounted) {
+              return ((ReferenceCounted) msg).release();
+          }
+          return false;
+      }
+  }
+  ~~~
+
+对于一个出站的ByteBuf, 也是一样的, 如果这个buf最后传到了head, 那么head也会在内部把它release
+
+~~~java
+
+~~~
+
+
+
+如果我们没有将一个ByteBuf向后传递, 那么我们自己就要调用
 
 
 

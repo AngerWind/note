@@ -1568,7 +1568,6 @@ for index, value in enumerate(dict.values()):  # 迭代index, value
     print(index, value)
 
 # 迭代tuple
-
 for element in (10, 20, 30, 40):
     print(element)
 
@@ -5724,7 +5723,7 @@ for i in g:
 
 
 
-而在Python2.5的PEP342中, 对yield进行了增强, 让他从语句升级为了表达式, 即他不仅可以将yield后面的值发送出去, 还可以返回一个值,  这就为协程的实现奠定了基础
+而在Python2.5的PEP342中, 对yield进行了增强, 让他从语句升级为了表达式, **即他不仅可以将yield后面的值发送出去, 还可以返回一个值,  这就为协程的实现奠定了基础**
 
 
 
@@ -5913,7 +5912,7 @@ yield from是在python3.3的PEP380中引入进来的
 _i = iter(EXPR) # 获取子生成器
 
 try:
-    _y = next(_i) # prime
+    _y = next(_i) # 预激活生成器
 except StopIteration as _e: # 一次yield都没有碰到, 直接结束了
     _r = _e.value # _e.value就是生成器函数的返回值
 
