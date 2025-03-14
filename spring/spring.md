@@ -4692,6 +4692,44 @@ public class MyService {
 
 #### @Validated校验方法参数的原理
 
+
+
+
+
+## springboot 类chatgpt流式返回
+
+~~~java
+@RestController
+public class ChatTestController {
+
+    @GetMapping("/chat")
+    public SseEmitter chat(String msg) {
+        // 设置超时时间, 默认30秒, 0表示不超时
+        SseEmitter emitter = new SseEmitter(30L * 1000);
+
+        // 使用另外一个线程来发送数据
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        executorService.execute(() -> {
+            try {
+                for (int i = 0; i < 10; i++) {
+                    // 向客户端发送数据库
+                    emitter.send("GPT-like response chunk" + i);
+                    // 模拟延迟
+                    Thread.sleep(1000);
+                }
+                emitter.complete();
+            } catch (IOException | InterruptedException e) {
+                // 通知客户端异常
+                emitter.completeWithError(e);
+            }
+        });
+        return emitter;
+    }
+}
+~~~
+
+只要通过get请求接口, 就可以得到流式的返回了, 并且response的Content-Type: text/event-stream, 表示流式返回
+
 # SpringCloud
 
 

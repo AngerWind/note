@@ -2556,7 +2556,7 @@ ByteBuf从内存的角度看可以分为两类
 
   **因为在io的时候, 要求内存地址不能变动, JVM的gc会整理对象到内存头部, 这会导致基于堆内存的ByteBuf的地址变动, 所以在io的时候要将堆内存中的数据拷贝到直接内存中, 然后在进行io**
 
-**经验表明, 如果ByteBuf是需要直接配合Channel进行读写的, 那么推荐使用直接内存, 如果是用于编解码等其他情况的话, 使用堆内存的ByteBuf好**
+**经验表明, 如果ByteBuf是需要直接配合Channel进行读写的, 那么推荐使用PooledDirectByteBuf, 如果是用于编解码, 业务数据等其他情况的话, 使用UnpooledHeapByteBuf好, 分配回收快, 不会出现内存问题**
 
 
 
@@ -3150,7 +3150,9 @@ Netty 采用了引用计数法来对ByteBuf进行计数, 看看有多少个ByteB
 
 - duplicate, slice, readSlice都会在原来的内存上再建立一个ByteBuf对象
 
-  但是调用这些方法不会导致refCnt增加, 同时他们公用同一个refCnt, 所以我们只需要管理好原来的ByteBuf即可
+  但是调用这些方法不会导致refCnt增加, 同时他们公用同一个refCnt, 所以我们只需要管理好原来的ByteBuf即可, 新创建出来的ByteBuf对象不需要管理
+  
+  **如果要把这些衍生ByteBuf传递给其他函数时，必须要主动调用retain()函数, 并且在不需要使用的时候手动release**
 
 ~~~java
         ByteBuf buffer = PooledByteBufAllocator.DEFAULT.directBuffer();
@@ -3180,6 +3182,7 @@ Netty 采用了引用计数法来对ByteBuf进行计数, 看看有多少个ByteB
 - retainedDuplicate, retainedSlice, readRetainedSlice也会在原来的ByteBuf上建立一个新的ByteBuf, 两者公用同一块内存
 - 调用这些方法会导致原来的ByteBuf的refCnt加一,  同时新建的ByteBuf有他们各种独立的引用计数器
 - 调用这些新建的ByteBuf的release方法, 不仅会导致他们自己的refCnt减一, 同时也会导致原来的ByteBuf的refCnt减一
+- 需要注意的是: ByteBuf in = (ByteBuf) super.decode(ctx,inByteBuf) 调用decode函数时，会调用到buffer.retainedSlice(index, length)函数, 所以记得release
 
 ~~~java
     public static void test2() {
@@ -3211,7 +3214,7 @@ Netty 采用了引用计数法来对ByteBuf进行计数, 看看有多少个ByteB
     }
 ~~~
 
-
+#### 谁来是否ByteBuf
 
 谁来负责 release 呢？
 
@@ -3284,14 +3287,161 @@ try {
 对于一个出站的ByteBuf, 也是一样的, 如果这个buf最后传到了head, 那么head也会在内部把它release
 
 ~~~java
+final class HeadContext extends AbstractChannelHandlerContext
+            implements ChannelOutboundHandler, ChannelInboundHandler {
 
+   private final Unsafe unsafe;
+   @Override
+   public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) {
+            unsafe.write(msg, promise);
+        }
+    }
+
+        @Override
+        public final void write(Object msg, ChannelPromise promise) {
+     		// ... 
+            int size;
+            try {
+                msg = filterOutboundMessage(msg);
+                size = pipeline.estimatorHandle().size(msg);
+                if (size < 0) {
+                    size = 0;
+                }
+            } catch (Throwable t) {
+                try {
+                    // 是否掉内存
+                    ReferenceCountUtil.release(msg);
+                } finally {
+                    safeSetFailure(promise, t);
+                }
+                return;
+            }
+            // 把消息添加到outboundBuffer
+            outboundBuffer.addMessage(msg, size, promise);
+        }
+~~~
+
+如果我们没有将一个ByteBuf向后传递, 那么我们自己就要向上面一样, 调用`ReferenceCountUtil.release(ByteBuf)`方法来释放掉
+
+
+
+#### 内存限制
+
+如果使用的是DirectBuffer
+
+- 可以通过`-XX:MaxDirectMemorySize=2G`来指定能够使用的内存大小
+
+- 如果没有指定, 默认情况下与堆内存大小一致, 可以通过`-Xms100M`来限制堆内存大小, 间接限制直接内存大小
+
+- 你也可以通过如下代码来获取最大能够使用的直接内存大小
+
+  ~~~java
+      public static void main(String[] args) {
+          long maxDirectMemory = VM.maxDirectMemory();
+          System.out.println("Max Direct Memory: " + maxDirectMemory / (1024 * 1024) + " MB");
+      }
+  ~~~
+
+- 源码在
+
+  ~~~java
+  class Bits {
+      private static volatile long MAX_MEMORY = VM.maxDirectMemory();
+      private static boolean tryReserveMemory(long size, int cap) {
+  
+          // 通过-XX:MaxDirectMemorySize=2G来限制大小
+          long totalCap;
+          while (cap <= MAX_MEMORY - (totalCap = TOTAL_CAPACITY.get())) {
+  			// ... 
+          }
+          return false;
+      }
+  }
+  ~~~
+
+如果使用的是netty
+
+- 可以通过`-Dio.netty.maxDirectMemory=2G`来限制直接内存的大小
+
+- 如果没有设置, 那么会继承JDK的直接内存限制, 可以通过`-XX:MaxDirectMemorySize=2G`来限制JDK的直接内存限制
+
+- 如果没有设置JDK的直接内存限制, 那么默认的直接内存限制就是堆内存大小, 可以通过`-Xmx:2G`来限制堆内存大小
+
+- 你可以通过如下代码来获取netty的直接内存大小
+
+  ~~~java
+  public static void main(String[] args) {
+      // netty的直接内存大小
+      System.out.println("Netty Max Direct Memory: " + PlatformDependent.maxDirectMemory() + " bytes");
+      // JDK的直接内存大小
+      long maxDirectMemory = VM.maxDirectMemory();
+      System.out.println("Max Direct Memory: " + maxDirectMemory / (1024 * 1024) + " MB");
+      }
+  ~~~
+  
+- 可以通过如下代码来打印已经使用的直接内存大小
+  
+~~~javva
+  PlatformDependent.usedDirectMemory()
 ~~~
 
 
 
-如果我们没有将一个ByteBuf向后传递, 那么我们自己就要调用
+#### 直接内存OOM导致程序假死的问题
 
+netty的直接内存底层还是使用的DirectByteBuffer
 
+DirectByteBuffer(int cap)构造方法中才会初始化Cleaner对象，方法中检查当前内存是否超过允许的最大堆外内存，如果直接内存分配超出限制后，则会先尝试将不可达的Reference对象加入Reference链表中，依赖Reference的内部守护线程触发可以被回收DirectByteBuffer关联的Cleaner的run()方法
+
+如果内存还是不足， 则执行 System.gc()，触发full gc，来回收堆内存中的DirectByteBuffer对象来触发堆外内存回收，如果还是超过限制，则抛出java.lang.OutOfMemoryError(代码位于`java.nio.Bits#reserveMemory()`方法)。
+
+所以这样就导致了一个恶性循环，qps高 =》 直接内存满 =》触发full gc =》 jvm stw =》堆内存中的DirectByteBuffer对象释放慢 =》 直接内存满 =》触发full gc  =》 ……。
+
+  
+
+  
+
+  
+
+  
+
+#### 内存泄露
+
+Netty提供了一种内存泄露检测机制，可以通过配置参数不同选择不同的检测级别，参数设置为`java -Dio.netty.leakDetection.level=advanced`
+
+- `DISABLED` ：完全禁用内存泄露检测，不推荐
+- `SIMPLE` ：抽样1%的ByteBuf，提示是否有内存泄露
+- `ADVANCED` ：抽样1%的ByteBuf，提示哪里产生了内存泄露
+- `PARANOID` ：对每一个ByteBu进行检测，提示哪里产生了内存泄露
+
+我在测试时，直接提示了ByteBuf内存泄露的位置，如下，找到自己程序代码，看哪里有新生成的ByteBuf对象没有释放，主动释放一下，调用对象的release()函数，或者用工具类帮助释放ReferenceCountUtil.release(msg)。
+
+```
+2020-06-12 17:04:41.242 [nioEventLoopGroup-2-1] ERROR io.netty.util.ResourceLeakDetector - LEAK: ByteBuf.release() was not called before it's garbage-collected. See https://netty.io/wiki/reference-counted-objects.html for more information.
+Recent access records: 
+Created at:
+    io.netty.buffer.PooledByteBufAllocator.newDirectBuffer(PooledByteBufAllocator.java:363)
+    io.netty.buffer.AbstractByteBufAllocator.directBuffer(AbstractByteBufAllocator.java:187)
+    io.netty.buffer.AbstractByteBufAllocator.buffer(AbstractByteBufAllocator.java:123)
+    io.netty.buffer.AbstractByteBuf.readBytes(AbstractByteBuf.java:872)
+    com.spring.netty.twg.service.TwgMessageDecoder.formatDecoder(TwgMessageDecoder.java:176)
+    com.spring.netty.twg.service.TwgMessageDecoder.getMessageBody(TwgMessageDecoder.java:90)
+    com.spring.netty.twg.service.TwgMessageDecoder.decode(TwgMessageDecoder.java:76)
+    io.netty.handler.codec.LengthFieldBasedFrameDecoder.decode(LengthFieldBasedFrameDecoder.java:332)
+    io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:501)
+```
+
+```
+2020-06-12 17:04:45.460 [nioEventLoopGroup-2-1] ERROR io.netty.util.ResourceLeakDetector - LEAK: ByteBuf.release() was not called before it's garbage-collected. See https://netty.io/wiki/reference-counted-objects.html for more information.
+Recent access records: 
+Created at:
+    io.netty.buffer.SimpleLeakAwareByteBuf.unwrappedDerived(SimpleLeakAwareByteBuf.java:143)
+    io.netty.buffer.SimpleLeakAwareByteBuf.retainedSlice(SimpleLeakAwareByteBuf.java:57)
+    io.netty.handler.codec.LengthFieldBasedFrameDecoder.extractFrame(LengthFieldBasedFrameDecoder.java:498)
+    io.netty.handler.codec.LengthFieldBasedFrameDecoder.decode(LengthFieldBasedFrameDecoder.java:437)
+    com.spring.netty.twg.service.TwgMessageDecoder.decode(TwgMessageDecoder.java:31)
+    io.netty.handler.codec.LengthFieldBasedFrameDecoder.decode(LengthFieldBasedFrameDecoder.java:332)
+```
 
 
 

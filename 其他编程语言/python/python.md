@@ -3862,7 +3862,7 @@ from functools import wraps
 def singleton(cls):
     print("singletion被调用")
     
-    """装饰类的装饰器"""
+    """记录已经装饰过的类"""
     instances = {}
 
     # 返回的这个函数, 会装饰cls的构造函数
@@ -6957,6 +6957,8 @@ if __name__ == '__main__':
 
 # 虚拟环境
 
+
+
 python的虚拟环境可以选择的技术方案有:
 
 - anaconda
@@ -6966,13 +6968,17 @@ python的虚拟环境可以选择的技术方案有:
 - virtualenvwrapper
 - venv
 - pipenv
+- uv
 
 anaconda和miniconda和conda的区别在于:
 
 - Conda是一个**适用于任何语言的软件包/依赖项/环境管理工具,** 而不仅仅是python的包/环境管理工具
 - Anaconda/Miniconda是打包好的Conda安装程序, 可以帮你一键安装 Python + Conda + 一些软件包, 不同之处在于Anaconda同时打包了1500个常用的软件包, 可以一次性安装到你到python环境中, 这样你就不用再一个个安装软件包了, 对新手非常友好. 而Miniconda一个最小的python+conda安装程序, 只包含了最必要的包.
+- **我们在选择安装的时候,  可以选择anaconda或者miniconda, 而不能选择直接安装conda**
 
 
+
+## anaconda
 
 
 
@@ -7171,7 +7177,1055 @@ conda clean -y -all # 删除所有的安装包及cache(索引缓存、锁定文�
    conda install --yes --file requirements.txt
    ~~~
 
+
+
+
+## uv
+
+uv是rust编写的pyhon包管理工具, 同时也提供了虚拟环境, 依赖管理
+
+可以将其类比为一个npm+nvm
+
+
+
+因为是rust编写的项目, 所以提供了二进制程序, 而不需要实现安装python
+
+
+
+
+
+### 安装
+
+https://docs.astral.sh/uv/getting-started/installation/
+
+
+
+#### 安装
+
+**通过Github Release 安装(推荐)**
+
+1. 直接到https://github.com/astral-sh/uv/releases下载二进制文件
+2. 配置安装目录到path下
+
+**通过脚本安装**
+
+1. 执行如下脚本来下载二进制文件
+
+   ~~~shell
+   # On macOS and Linux and windows使用GitBash.
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ~~~
+
+   默认情况下，uv 安装到`~/.local/bin` 。要更改安装路径，请使用`UV_INSTALL_DIR`
+
+   ~~~shell
+   # On macOS and Linux and windows使用GitBash.
+   curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR="D:\uv" sh
+   ~~~
+
+2. 配置安装目录到path下
+
+
+
+#### 配置
+
+| 环境变量                | 作用                       | 备注                                    |
+| ----------------------- | -------------------------- | --------------------------------------- |
+| `UV_INSTALL_DIR`        | 安装的时候指定uv的安装目录 |                                         |
+| `UV_CACHE_DIR`          | uv的缓存的目录             | 可以通过`uv cache dir`查看当前的值      |
+| `UV_PYTHON_INSTALL_DIR` | python的安装目录           | 通过`uv python dir`查看当前的值         |
+| `UV_PYTHON_BIN_DIR`     | python可执行文件的保存目录 |                                         |
+| `UV_TOOL_DIR`           | tool 的安装目录            | 通过`uv tool dir`查看当前的tool安装目录 |
+| `UV_TOOL_BIN_DIR`       | tool可执行文件的安装目录   |                                         |
+| `HTTPS_PROXY`           | HTTPS代理                  |                                         |
+| `HTTP_PROXY`            | HTTP代理                   |                                         |
+|                         |                            |                                         |
+
+
+
+
+
+#### 配置shell 自动补全
+
+~~~shell
+# bash and windows下使用gitbash
+echo 'eval "$(uv generate-shell-completion bash)"' >> ~/.bashrc
+echo 'eval "$(uvx --generate-shell-completion bash)"' >> ~/.bashrc
+
+# 如果在windows下无效, 是因为Git Bash 在 Win 端只会 source ~/.bash_profile 而不会激活 ~/.bashrc 的配置。所以如果你和我一样，喜欢在 ~/.bashrc 配置别名，在 ~/.bash_profile 配置环境的话，
+# 解决方法是那就在 ~/.bash_profile 加一行，source ~/.bashrc 就好啦！
+~~~
+
+然后重启shell
+
+
+
+#### 升级
+
+~~~~shell
+uv self update
+~~~~
+
+
+
+#### 卸载
+
+1. 删除所有uv的数据, 包括python版本,  安装的工具
+
+   ~~~shell
+   uv cache clean
+   rm -r "$(uv python dir)"
+   rm -r "$(uv tool dir)"
+   ~~~
+
+2. 删除uv和uvx二进制文件
+
+   ~~~shell
+   # 直接删除安装目录中的uv, uvx两个二进制文件
+   # 然后删除path即可
+   ~~~
+
    
+
+### python版本管理
+
+~~~shell
+uv python list # 查看可用的 Python 版本, 包括已安装的uv管理的, 非uv管理的
+uv python list --only-installed # 仅显示已安装的, 包括非uv管理的
+
+uv python install 3.14 # 安装 Python 版本, 默认情况下安装的是cpython。
+uv python install pypy@3.10 # 安装py-python
+uv python install # 默认安装最新版的c-python
+
+uv python find # 显示当前终端默认使用的python
+uv python find >=3.11 # 查找符合条件的已安装的python
+
+uv python pin # 固定当前项目以使用特定的 Python 版本。
+
+uv python uninstall 3.12 # 卸载一个 Python 版本。
+~~~
+
+安装完python后, 并不可以直接在命令行直接使用他, 而是要通过`uv run` 或者创建并激活虚拟环境来使用他
+
+
+
+### 运行脚本
+
+1. 如果你的脚本没有依赖任何的库, 那么可以直接运行
+
+   ~~~shell
+   print("Hello world")
+   ~~~
+
+   ~~~shell
+   uv run example.py
+   uv run --python 3.10 example.py # 指定python的版本
+   ~~~
+
+2. 如果脚本依赖标准库中的模块, 那么也可以直接运行
+
+   ~~~shell
+   import os
+   print(os.path.expanduser("~"))
+   ~~~
+
+   ~~~shell
+   uv run example.py
+   ~~~
+
+3. 可以向脚本提供参数：
+
+   ```python
+   import sys
+   
+   print(" ".join(sys.argv[1:]))
+   ```
+
+   ~~~shell
+   $ uv run example.py test
+   test
+   ~~~
+
+4. 如果你的脚本有依赖的库, 比如如下代码
+
+   ~~~shell
+   import time
+   from rich.progress import track
+   
+   for i in track(range(20), description="For example:"):
+       time.sleep(0.05)
+   ~~~
+
+   他依赖rich库, 那么你可以使用如下代码来执行, 他会创建一个临时的虚拟环境来运行代码
+
+   ~~~shell
+   uv run --with rich example.py
+   uv run --with 'rich>12,<13' example.py # --with可以指定多个
+   ~~~
+
+5. 你也可以在脚本中声明依赖项, 然后uv在执行脚本的时候, 会自动下载这些依赖
+
+   ~~~shell
+   # /// script
+   # requires-python = ">=3.12" 
+   # dependencies = [
+   #   "requests<3",
+   #   "rich",
+   # ]
+   # ///
+   
+   import requests
+   from rich.pretty import pprint
+   
+   resp = requests.get("https://peps.python.org/api/peps.json")
+   data = resp.json()
+   pprint([(k, v["title"]) for k, v in data.items()][:10])
+   ~~~
+
+   
+
+### 使用工具
+
+你可以直接使用`uvx`来执行一些工具, 而无需提前安装他,  `uvx`是`uv tool run` 的别名
+
+uv会将这些工具安装到uv的缓存目录中的一个临时的虚拟环境中
+
+如果你执行`uv cache clean`清除缓存, 那么这些虚拟环境也会被清除
+
+~~~shell
+uvx ruff # 自动下载ruff包, 并使用最新版本, 并执行ruff命令
+uvx ruff@0.3.0 check # 自动下载ruff@0.3.0 并执行ruff check
+uvx ruff@latest check 
+uvx --from 'ruff==0.3.0' ruff check # 下载ruff@0.3.0 并执行 ruff check
+uvx --from 'ruff>0.2.0,<0.3.0' ruff check
+uvx --from httpie http # 下载httpie, 并执行http命令
+~~~
+
+
+
+
+
+当然如果你经常使用某个工具, 那么也可以将他们直接安装`~/.local/bin`, 而不是安装在临时的虚拟环境中
+
+同时uv还会判断这个目录是不是在你的path下, 如果不是, 会提示你执行如下代码来将该目录添加到path下
+
+~~~shell
+uv tool install ruff
+uv tool install 'httpie>0.1.0'
+uv tool install ruff==0.5.0
+~~~
+
+你还可以更新工具
+
+~~~shell
+uv tool upgrade ruff
+uv tool upgrade --all # 更新所有工具
+~~~
+
+列出所有已经安转的工具
+
+~~~shell
+uv tool list
+~~~
+
+
+
+你可以通过如下命令来查看安装的tool保存的位置
+
+~~~shell
+$ uv tool dir
+C:\Users\Administrator\AppData\Roaming\uv\tools
+~~~
+
+当然你也可以使用`UV_TOOL_DIR`环境变量来自定义位置
+
+
+
+### 虚拟环境
+
+虚拟环境就是一个安装包的集合, 用来隔离python安装环境
+
+**需要配合项目使用, 找不出单独使用的场景, 可以直接看项目部分**
+
+
+
+1. 创建虚拟环境
+
+   ~~~shell
+   uv venv # 在当前目录下创建一个 .venv 文件夹作为虚拟环境
+   uv venv  --python 3.11 # 如果没有安装py3.11, 那么会自动安装
+   
+   uv venv my-name # 创建my-name/.venv作为虚拟环境
+   ~~~
+
+2. 激活环境
+
+   你可以在shell中执行如下命令, 来激活这个环境, 这样这个环境中安装的包就可以直接使用了
+
+   ~~~shell
+   # mac or linux or git bash
+   source .venv/bin/activate
+   
+   # windows
+   .venv\Scripts\activate
+   ~~~
+
+3. 安装依赖到虚拟环境
+
+   ~~~shell
+   uv pip install ruff # 安装依赖到当前目录下的 .venv中 
+   uv pip install 'ruff>=0.2.0'
+   uv pip install 'ruff==0.3.0'
+   
+   uv pip install -r requirements.txt # 根据项目下的requirements.txt来安装包
+   uv pip install -r pyproject.toml # 根据项目下的pyproject.toml来安装包
+   ~~~
+
+4. 查看虚拟环境中安转的所有依赖
+
+   ~~~shell
+   uv pip list
+   ~~~
+
+5. 卸载包
+
+   ~~~shell
+   uv pip uninstall flask
+   uv pip uninstall flask ruff # 一次性卸载多个包
+   ~~~
+
+6. 使用虚拟环境中的命令
+
+   ~~~shell
+   ruff check # 需要先激活虚拟环
+   ~~~
+
+7. 退出虚拟环境
+
+   ~~~shell
+   deactivate
+   ~~~
+
+   
+
+
+
+
+
+### 项目
+
+我们可以通过uv init来创建一个py项目,  创建的模板有三种
+
+- Application
+
+  这种模板主要适用于web服务器, 脚本, 命令行
+
+  ~~~shell
+  # 可以通过 -p 3.14 来指定要使用的python的版本
+  uv init hello-world
+  ~~~
+
+  
+
+  创建的结构如下
+
+  ~~~shell
+  .
+  ├── .python-version
+  ├── README.md
+  ├── main.py
+  └── pyproject.toml
+  ~~~
+
+  `main.py`文件包含一个简单的“Hello world”程序。使用`uv run`尝试一下
+
+- Packaged application 
+
+  这种模板适用于需要发布到PyPI的命令行界面
+
+  ~~~shell
+  uv init --package example-pkg
+  ~~~
+
+  ~~~shell
+  $ tree example-pkg
+  example-pkg
+  ├── .python-version
+  ├── README.md
+  ├── pyproject.toml
+  └── src
+      └── example_packaged_app
+          └── __init__.py
+  ~~~
+
+  并且还会在`.pyproject.toml`中定义一个构建系统, 以及命令
+
+  ~~~shell
+  [project]
+  name = "example-pkg"
+  version = "0.1.0"
+  description = "Add your description here"
+  readme = "README.md"
+  requires-python = ">=3.11"
+  dependencies = []
+  
+  [project.scripts]
+  example-pkg = "example_packaged_app:main"
+  
+  [build-system]
+  requires = ["hatchling"]
+  build-backend = "hatchling.build"
+  ~~~
+
+- library 库
+
+  这种模板适用于库, 用于提供函数和对象给其他项目使用
+
+  ~~~shell
+  uv init --lib example-lib
+  ~~~
+
+  ~~~shell
+  $ tree example-lib
+  example-lib
+  ├── .python-version
+  ├── README.md
+  ├── pyproject.toml
+  └── src
+      └── example_lib
+          ├── py.typed
+          └── __init__.py
+  ~~~
+
+  并且还会在`.pyproject.toml`中定义一个构建系统
+
+  ~~~shell
+  [project]
+  name = "example-lib"
+  version = "0.1.0"
+  description = "Add your description here"
+  readme = "README.md"
+  requires-python = ">=3.11"
+  dependencies = []
+  
+  [build-system]
+  requires = ["hatchling"]
+  build-backend = "hatchling.build"
+  ~~~
+
+  
+
+
+
+#### 完整的项目结构
+
+~~~shell
+.
+├── .venv
+│   ├── bin
+│   ├── lib
+│   └── pyvenv.cfg
+├── .python-version
+├── README.md
+├── main.py
+├── pyproject.toml
+└── uv.lock
+~~~
+
+1. `.venv`是当前项目的依赖包, 类似node项目的node_modules
+
+2. `.python-version`记录了当前项目使用的python版本, 内容如下
+
+   ~~~shell
+   3.13
+   ~~~
+
+   如果当前项目下没有这个文件, 那么你可以使用`uv python pin`命令来生成这个文件
+
+3. `pyproject.toml`记录了当前项目的信息, 包括名称, 版本, 依赖
+
+   ~~~toml
+   [project]
+   name = "hello-world"
+   version = "0.1.0"
+   description = "Add your description here"
+   readme = "README.md"
+   dependencies = []
+   # requires-python = ">=3.11"
+   requires-python = 3.14
+   ~~~
+
+   **如果存在这个文件, 那么uv就会将当前目录识别为一个项目**
+
+4. `uv.lock`是一个跨平台的锁定文件，其中包含有关项目依赖项的准确信息, 与`pyproject.toml`不同, 锁定文件包含安装在项目环境中的准确解析版本
+
+   `uv.lock`是一个人类可读的 TOML 文件，但由 uv 管理，不应手动编辑。
+
+5. `requirements.txt`
+
+   类似`uv.lock`, 主要用于别人使用项目的时候导入依赖
+
+   可以使用如下命令来生成这个文件
+
+   ~~~shell
+   uv pip compile pyproject.toml -o requirements.txt
+   ~~~
+
+   
+
+
+
+
+
+#### 项目的依赖管理
+
+##### 依赖管理
+
+你可以在项目的根目录下执行如下命令, 来管理项目的依赖
+
+~~~shell
+uv add requests
+uv add 'requests==2.31.0'
+uv add "httpx>=0.20"
+uv add "jax; sys_platform == 'linux'" # 添加特定平台的依赖
+
+uv add -r requirements.txt # 根据requirements文件来添加依赖, 常用来克隆别人的项目
+
+uv remove requests
+uv remove --dev urllib3 # 移除开发依赖
+
+uv lock --upgrade-package requests # 尝试将指定的包更新到最新兼容版本
+~~~
+
+当然, 你也可以手动修改`pyproject.toml`文件, 然后执行如下命令来同步依赖
+
+~~~shell
+uv sync
+~~~
+
+你还可以使用如下命令来查看所有已经安装的包
+
+~~~shell
+uv tree # (推荐)
+uv pip list
+~~~
+
+你还可以查看已经安装的依赖的具体信息
+
+~~~shell
+uv pip show numpy
+~~~
+
+
+
+`uv add xxx` 和 `uv pip install xxx`的区别在于:
+
+- add会添加依赖到虚拟环境中, 并且同步更新`uv.lock`文件和`.pyproject.toml`文件
+- pip install 只是将包安装到虚拟环境中, 而不是动这两个文件
+
+
+
+##### 依赖的分类
+
+项目的依赖项可以分为如下几类:
+
+1. 需要打包到真实包中的依赖, 类似requests
+
+   ~~~shell
+   uv add httpx
+   ~~~
+
+   ~~~toml
+   [project]
+   name = "example"
+   version = "0.1.0"
+   dependencies = ["httpx>=0.27.2"]
+   ~~~
+
+2. 只在开发时需要,  打包后不需要的依赖, 类似ruff
+
+   ~~~shell
+   uv add --dev pytest
+   ~~~
+
+   ~~~toml
+   [dependency-groups]
+   dev = [
+     "pytest >=8.1.1,<9"
+   ]
+   ~~~
+
+   当然你也可以将开发依赖分为多个组, 一类相同的依赖放在同一个组
+
+   ~~~shell
+   uv add --group lint ruff
+   ~~~
+
+   ~~~shell
+   [dependency-groups]
+   lint = [
+     "ruff"
+   ]
+   ~~~
+
+3. 构建项目所需要的依赖项
+
+   这些依赖在构建项目的时候需要, 但是在其他时候不需要
+
+   例如，如果项目使用`setuptools`作为其构建后端，则它应该将`setuptools`声明为构建依赖项：
+
+   ```toml
+   [project]
+   name = "pandas"
+   version = "0.1.0"
+   
+   [build-system]
+   requires = ["setuptools>=42"]
+   build-backend = "setuptools.build_meta"
+   ```
+
+4. 可选的依赖(没懂)
+
+   作为库发布的项目通常会将某些功能设为可选，以减少 默认的依赖关系树。例如，Pandas 有一个 [`excel` extra](https://pandas.pydata.org/docs/getting_started/install.html#excel-files)和 [`plot` extra](https://pandas.pydata.org/docs/getting_started/install.html#visualization)以避免安装 Excel 解析器和`matplotlib` ，除非有人明确要求。使用`package[<extra>]`语法请求 extra，例如`pandas[plot, excel]` 。
+
+   ~~~shell
+   uv add httpx --optional network
+   ~~~
+
+   ~~~shell
+   [project.optional-dependencies]
+   network = [
+       "httpx>=0.28.1",
+   ]
+   ~~~
+
+   
+
+##### 包的索引(镜像)
+
+索引按照定义的顺序作为优先级
+
+~~~toml
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+default = true
+~~~
+
+如果在任何的index中都找不到包, 那么uv会查找默认索引, 即PyPI, 如果要覆盖默认索引, 使用如下代码
+
+~~~toml
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+default = true
+~~~
+
+默认索引始终被视为最低优先级，无论其在索引列表中的位置如何。
+
+
+
+你也可以将包固定到特定的索引上
+
+~~~toml
+[tool.uv.sources]
+torch = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cpu"
+~~~
+
+
+
+
+
+##### 依赖的来源
+
+依赖的来源可以有多种, 比如git, http, 本地, 镜像, 当前项目的其他模块
+
+1. 别的镜像
+
+   ~~~shell
+   # 添加依赖时指定镜像
+   uv add torch --index pytorch=https://download.pytorch.org/whl/cpu
+   ~~~
+
+   之后uv会将该依赖指向这个镜像
+
+   ~~~shell
+   [project]
+   dependencies = ["torch"]
+   
+   [tool.uv.sources]
+   torch = { index = "pytorch" }
+   
+   [[tool.uv.index]]
+   name = "pytorch"
+   url = "https://download.pytorch.org/whl/cpu"
+   ~~~
+
+2. Git
+
+   如果要指定包的来源是git, 那么使用如下命令
+
+   ~~~shell
+   uv add git+https://github.com/encode/httpx
+   ~~~
+
+   之后的`pyproject.toml`如下
+
+   ~~~toml
+   [project]
+   dependencies = ["httpx"]
+   
+   [tool.uv.sources]
+   httpx = { git = "https://github.com/encode/httpx" }
+   ~~~
+
+   你也可以指定使用的分支的tag, 或者直接指定分钟
+
+   ~~~shell
+   uv add git+https://github.com/encode/httpx --tag 0.27.0
+   uv add git+https://github.com/encode/httpx --branch main
+   ~~~
+
+   如果包不在git的根目录, 那么可以指定子目录
+
+   ~~~shell
+   uv add git+https://github.com/langchain-ai/langchain#subdirectory=libs/langchain
+   ~~~
+
+3. URL网址
+
+   ~~~shell
+   uv add "https://files.pythonhosted.org/packages/5c/2d/3da5bdf4408b8b2800061c339f240c1802f2e82d55e50bd39c5a881f47f0/httpx-0.27.0.tar.gz"
+   ~~~
+
+   ~~~shell
+   [project]
+   dependencies = ["httpx"]
+   
+   [tool.uv.sources]
+   httpx = { url = "https://files.pythonhosted.org/packages/5c/2d/3da5bdf4408b8b2800061c339f240c1802f2e82d55e50bd39c5a881f47f0/httpx-0.27.0.tar.gz" }
+   ~~~
+
+   如果包不在文件的根目录, 同样可以指定子目录
+
+4. Path本地目录
+
+   ~~~shell
+   uv add /example/foo-0.1.0-py3-none-any.whl
+   ~~~
+
+   ~~~shell
+   [project]
+   dependencies = ["foo"]
+   
+   [tool.uv.sources]
+   foo = { path = "/example/foo-0.1.0-py3-none-any.whl" }
+   ~~~
+
+5. Workspace member 工作区成员
+
+   要声明对工作区成员的依赖，请使用`{ workspace = true }`添加成员名称
+
+   ~~~~shell
+   [project]
+   dependencies = ["foo==0.1.0"]
+   
+   [tool.uv.sources]
+   foo = { workspace = true } # 设置foo包的来源是工作区
+   
+   [tool.uv.workspace]
+   members = [ # 指定工作区成员
+     "packages/foo"
+   ]
+   ~~~~
+
+
+
+
+
+#### 运行命令
+
+你可以在项目的目录下运行任意的脚本和命令,  uv会递归查找上级目录中的`pyproject.toml`文件
+
+1. 运行工具命令
+
+   ~~~shell
+   uv add flask
+   uv run -- flask run -p 3000
+   
+   uv run python -c "import example"
+   ~~~
+
+2. 运行脚本
+
+   ~~~shell
+   # Require a project dependency
+   import flask
+   
+   print("hello world")
+   ~~~
+
+   ~~~shell
+   uv run example.py
+   ~~~
+
+
+
+
+
+#### 激活环境
+
+**你可以在shell中激活`.venv`中的虚拟环境, 这样在执行命令的时候, 就不需要使用`uv run`了**
+
+~~~shell
+source .venv\Scripts\activate # 激活环境
+flask run -p 3000 # 直接执行命令
+python example.py # 直接执行python
+~~~
+
+
+
+#### 锁定和同步
+
+锁定的目的是根据`pyproject.toml`中的依赖项来更新`uv.lock`文件, 同步的作用是根据`uv.lock`更新虚拟环境中的依赖项
+
+**锁定和同步是自动的,  也就是在项目中调用其他命令的时候, 会自动执行锁定和同步, 比如`uv run`**
+
+
+
+##### 手动锁定和同步
+
+你可以使用如下命令来创建或者更新`uv.lock`文件
+
+~~~shell
+uv lock
+~~~
+
+你可以使用如下命令来同步依赖项
+
+~~~shell
+uv sync
+~~~
+
+##### 同步dev依赖
+
+默认情况下, 开发的依赖项, dev是自动同步的, 但是别的group的依赖不会自动同步, 这个时候你需要通过如下命令来同步其他group中的依赖
+
+~~~shell
+uv sync --all-groups
+~~~
+
+##### 升级lock文件中的依赖项
+
+你可以升级lock文件中的依赖项, 让venv中的依赖来尽可能的达到最新,  但是也要符合`pyproject.toml`中的版本约束
+
+~~~shell
+uv lock --upgrade # 更新所有lock文件中的依赖
+uv lock --upgrade-package <package> # 更新特定版本的依赖
+uv lock --upgrade-package <package>==<version>
+~~~
+
+##### 导入lock文件
+
+你可以将lock文件中的依赖导出到`requirements.txt`,  这样别人就可以在使用你的项目的时候直接安装依赖了
+
+~~~shell
+uv export --format requirements-txt
+
+uv pip install -r requirements.txt # 根据项目下的requirements.txt来安装包
+~~~
+
+
+
+#### 项目的Entry Points(需要使用build system)
+
+项目的entry points其实就是可以在项目中自定义一些属于项目的命令
+
+命令有三类
+
+- 命令行
+
+  ~~~shell
+  [project.scripts]
+  hello = "example:hello"
+  ~~~
+
+  我们可以调用`uv run hello` , 这样就会执行`example.py`下的`hello`函数
+
+- GUI接口
+
+  这个应该是执行这个命令就会出现一个gui界面
+
+  ~~~shell
+  [project.gui-scripts]
+  hello = "example:app"
+  ~~~
+
+  我们可以调用`uv run hello` , 这样就会执行`example.py`下的`app`函数
+
+- 插件入口点 Plugin entry points(不知道有什么用)
+
+  ~~~shell
+  [project.entry-points.'example.plugins']
+  a = "example_plugin_a"
+  ~~~
+
+  然后，在`example`中，插件将被加载：
+
+  **example/__init__.py**
+
+  ```
+  from importlib.metadata import entry_points
+  
+  for plugin in entry_points(group='example.plugins'):
+      plugin.load()
+  ```
+
+
+
+#### 项目构建
+
+Python 项目通常以源代码发行版 (sdists) 和二进制发行版 (wheels) 的形式发布。前者通常是包含项目源代码和一些其他元数据的`.tar.gz`或`.zip`文件，而后者是包含可直接安装的预构建工件的`.whl`文件。
+
+`uv build`可用于为您的项目构建源分布和二进制分布（wheel）。
+
+你需要在`.pyproject.toml`中添加一个构建后端
+
+~~~toml
+[project.scripts] # 指定一个自定义命令, 可选, 如果你的包没有命令, 那么就不需要
+hello = "example:hello"
+
+[build-system] # 指定一个构建后端, 必须
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+~~~
+
+当使用`uv build`时，uv 充当[构建前端](https://peps.python.org/pep-0517/#terminology-and-goals), 但他的作用仅仅是确定要使用的 Python 版本并调用构建后端。具体的构建工作, 例如包含的文件和分发文件名，由构建后端决定 ，在[`[build-system]`](https://docs.astral.sh/uv/concepts/projects/config/#build-systems)中定义。有关构建配置的信息可在相应工具的文档中找到。
+
+
+
+默认情况下， `uv build`将在当前目录中构建项目，并将构建的工件放在`dist/`子目录中：
+
+~~~shell
+$ uv build
+$ ls dist/
+hello-world-0.1.0.tar.gz
+hel1o-world-0.1.0-py3-none-any.whl
+
+$ uv build path/to/project  # 生成到指定目录下
+~~~
+
+之后就可以将whl文件发布到 PyPI上面供别人下载了, 别人可以使用`uv pip install`或者`uv add`来添加这个依赖, 然后使用`uv run hello`, 那么他就会执行`example.py`的hello函数了
+
+
+
+
+
+
+
+#### 工作区
+
+uv中的工作区类似于maven中的多模块,  一个大的项目下具有多个子项目, 每个项目都有一个`pyproject.toml`, 但是只有一个`uv.lock`文件, 以保证工作区以一组一致的依赖项进行运行。
+
+
+
+常见的工作区结构如下
+
+~~~shell
+albatross
+├── packages # 在packages下定义子项目
+│   ├── bird-feeder
+│   │   ├── pyproject.toml # 每个子项目有一个配置文件
+│   │   └── src
+│   │       └── bird_feeder
+│   │           ├── __init__.py
+│   │           └── foo.py
+│   └── seeds
+│       ├── pyproject.toml
+│       └── src
+│           └── seeds
+│               ├── __init__.py
+│               └── bar.py
+├── pyproject.toml
+├── README.md
+├── uv.lock
+└── src # 在src下保存跟项目的代码
+    └── albatross
+        └── main.py
+~~~
+
+
+
+
+
+在一个项目的目录下面使用`uv init`来创建子项目, 会自动向父项目的`pyproject.toml`中添加如下内容
+
+~~~shell
+[tool.uv.workspace]
+members = ["subproject"]
+~~~
+
+当然你也可以手动指定哪些目录是子项目, 哪些不是
+
+~~~shell
+[tool.uv.workspace]
+members = ["packages/*"]
+exclude = ["packages/seeds"]
+~~~
+
+
+
+如果某个子项目依赖另外一个子项目, 那么可以通过如下方式来实现
+
+~~~shell
+# 跟项目的pyproject.toml
+[tool.uv.workspace]
+members = ["packages/a", "packages/b"] # 声明子项目
+
+# a子项目的pyproject.toml
+[project]
+name = "a"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["b"]
+
+[tool.uv.sources]
+bird-feeder = { workspace = true }
+~~~
+
+
+
+在项目根目录的`tool.uv.sources`中可以定义依赖项的来源, 他对所以子项目都有效, 除非子项目中也配置了``tool.uv.sources``来进行覆盖
+
+~~~shell
+[project]
+name = "albatross"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.uv.sources]
+tqdm = { git = "https://github.com/tqdm/tqdm" } # 对a, b子项目都有效
+
+[tool.uv.workspace]
+members = ["packages/a", "packages/b"]
+~~~
+
+### uv整合pycharm
+
+pycharm现在支持uv不是很好, 不要通过pycharm来直接创建一个python项目, 否则pycharm可能会下载一些python版本, 而不是使用uv管理的
+
+
+
+- 可以通过`uv init project_name -p 3.12`来创建一个3.12版本的项目
+- 然后在pycharm的终端`source .venv\Scripts\activate`来激活环境
+- 最后使用`uv run main`来执行一下脚本, 这个时候uv会自动同步和锁定, 也会创建虚拟环境
+- 之后就可以直接使用这个项目了
+
+
 
 # 其他
 
@@ -7528,4 +8582,57 @@ import json
    ~~~
 
 loads和dumps适用于字符串,  load和dump适用于文本
+
+
+
+## dataclass
+
+类似java中的lombok
+
+~~~python
+import random
+from dataclasses import dataclass, field
+from typing import ClassVar
+
+"""
+使用dataclass装饰的类, 会自动生成如下方法:
+__init__方法来生成name和age属性, 
+__repr__方法, 打印对象时会输出属性
+__eq__方法, 所以在调用 == 比较两个对象的时候, 比较的是属性, 而不是内存地址
+"""
+# 还可以通过装饰器的属性来详细设置, 比如这里设置生成比较相关的方法, 比较是按照属性的字典序来的
+@dataclass(order=True)
+class Person:
+    name: str = "null"
+    age: int = 0
+        
+    # 通过field来精确控制属性
+    # default为0, height不作为对象属性, 打印的时候不输出, 不在比较的时候使用
+    height: int = field(default=0, init=False, repr=False, compare=False)
+    # default_factory表示通过这个函数来生成属性的默认值
+    weight: int = field(default_factory=lambda: random.randint(1, 100))
+
+    # 因为dataclass通过静态属性来生成对象属性, 如果你要定义真正的静态属性
+    # 你需要通过如下方式来进行
+    people_num: ClassVar[int] = 0
+
+    # 对象生成之后, 会自动调用生命周期函数
+    def __post_init__(self):
+        Person.people_num += 1
+
+
+        
+ # 如果使用原生的方式的话, 非常的不方便, 要自动定义__repr__和__eq__方法
+class Person1:
+    def __init__(self, name: str, age: int):
+        self.name = name
+        self.age = age
+
+
+if __name__ == '__main__':
+    p1 = Person()
+    print(Person.name)
+    Person.age = 100
+    print(Person.age)
+~~~
 
