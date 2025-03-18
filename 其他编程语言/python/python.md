@@ -8227,6 +8227,37 @@ pycharm现在支持uv不是很好, 不要通过pycharm来直接创建一个pytho
 
 
 
+# 打包工具
+
+## nuitka
+
+我们可以使用nuitka来将python文件打包为exe文件,  直接发给别人就可以执行了
+
+- nuitka会分析python文件中使用到的依赖, 并将他们一起打包
+
+使用uv的话, 我们可以运行如下命令来继续打包
+
+~~~shell
+# --standalone表示将python解释器也打包进来, 否则编译后的exe文件还是要python解释器才能运行
+# --onefile表示打包为一个exe文件
+uvx --from nuitka nuitka.cmd main.py --standalone --onefile
+~~~
+
+如果你的python中使用到了一些资源文件, 比如图片, nuitka会自动分析并将他们打包进来,  但是有时候可能也分析不到位, 所以你可以自己指定要打包进来的资源文件
+
+~~~shell
+# --include-data-files=test.jpg=pgzero/data/icon.png 表示要将当前目录下的test.jpg文件打包为exe文件中的pgzero/data/icon.png
+# --include-data-dir=images=images 表示要将当前目录下的images文件夹打包为exe文件中的的data/images
+uvx --from nuitka nuitka.cmd main.py \
+--standalone --onefile \
+--include-data-files=test.jpg=pgzero/data/icon.png \
+--include-data-dir=images=data/images
+~~~
+
+因为nuitka的参数众多, 你也可以使用别人制作好的nuitka的可视化界面, 比如NuitkaGUI
+
+https://github.com/271374667/NuitkaGUI/releases
+
 # 其他
 
 ### with 关键字
