@@ -1854,6 +1854,12 @@ new ServerBootstrap()
     .bind(8080); // 绑定到8080端口
 ```
 
+一般情况下, 如果你只绑定一个端口, 那么只会有一个ServerSocketChannel, 尽管你可以设置BossGroup中的线程数为10, 也只会使用其中的一个线程来处理这个ServerSocketChannel, 其他线程都是空着的
+
+除非是你的应用需要占用多个端口, 那么每个端口都有一个ServerSocketChannel和Selector, 此时你可以调大BossGroup的线程数
+
+
+
 
 
 ### 2.3 客户端
@@ -2349,6 +2355,51 @@ log.debug("{}",promise.get());
 11:51:54 [DEBUG] [defaultEventLoop-1-1] c.i.o.DefaultPromiseTest2 - set success, 10
 11:51:54 [DEBUG] [main] c.i.o.DefaultPromiseTest2 - 10
 ```
+
+
+
+### Promise和ProgressivePromise
+
+在netty中, Promise的作用是用来监听某个动作是否成功, 通常都是用在写数据的时候, 监听数据输出成功
+
+~~~java
+// write方法会返回一个promise, 你也可以通过ctx.newPromise()来创建一个
+ctx.channel().write("hello").addListener(new GenericFutureListener<Future<? super Void>>() {
+    @Override
+    public void operationComplete(Future<? super Void> future) throws Exception {
+        if (future.isSuccess()) {
+            System.out.println("write success");
+        }
+    }
+})
+~~~
+
+但是在一些特定的操作下, 你不仅可以监听写操作的完成, 你还可以监听写操作的进度, 这可以通过添加一个ChannelProgressivePromise来监听
+
+~~~java
+File file = new File("large.zip");
+RandomAccessFile raf = new RandomAccessFile(file, "r");
+ChunkedFile chunkedFile = new ChunkedFile(raf);
+
+ChannelProgressivePromise promise = ctx.newProgressivePromise();
+ctx.writeAndFlush(new HttpChunkedInput(chunkedFile), promise);
+
+promise.addListener(new ChannelProgressiveFutureListener() {
+    public void operationProgressed(ChannelProgressiveFuture future, long progress, long total) {
+        System.out.println("上传进度: " + progress + "/" + total);
+    }
+
+    public void operationComplete(ChannelProgressiveFuture future) {
+        System.out.println("上传完成！");
+    }
+});
+~~~
+
+**什么时候可以使用ProgressiveFuture**
+
+当你执行的是一个**普通的数据写操作**，比如写 `ByteBuf`、`String`、`POJO` 等，没有任何 handler 去上报进度时，就不会触发进度通知。
+
+如果你在使用ChunkedWriteHandler写文件,  或者使用DefaultFileRegion传输文件, 那么可以使用ProgressiveFuture来监听进度
 
 
 
@@ -4303,7 +4354,7 @@ Netty中有两个用来处理分割符的解码器:
 
    这个属性是一个特别的字段,  在设置的时候, 有两种设置的方法:
 
-   1. 如果长度字段中填写的是body的长度,  那么lengthAdjustment表示的是**length字段结尾到body开头的间隔**
+   1. 如果长度字段中填写的是body的长度,  那么lengthAdjustment表示的是**length字段结尾到body开头的间隔**(推荐)
    2. 如果长度字段中填写的是整个消息的长度, 那么lengthAdjustment表示的是**-(lengthFieldOffset + lengthFieldLenght)**
 
 4. initialBytesToStrip: 指定解析消息之时, 将头几个字节剥离出去, 之后的数据作为解析后的结果
@@ -5787,7 +5838,7 @@ new ServerBootStrap().childOption();
 
 
 
-#### 1）CONNECT_TIMEOUT_MILLIS
+#### CONNECT_TIMEOUT_MILLIS
 
 * 属于 客户端中的SocketChannal 参数
 * 用在客户端建立连接时，如果因为网络状况不好, 在指定毫秒内无法连接，会抛出 ConnectTimeoutException异常
@@ -5849,7 +5900,7 @@ public final void connect(
 
 
 
-#### 2）SO_BACKLOG
+#### SO_BACKLOG
 
 * 属于 ServerSocketChannal 参数
 
@@ -5902,28 +5953,32 @@ netty 中可以通过  `ServerBootstrap.option(ChannelOption.SO_BACKLOG, value)`
 
 这个值的默认大小在windos上是200, 在linux上是128
 
+<font color=red>在高并发海量连接的场景下，该参数应适当调大。但是 SO_BACKLOG 也不能太大，否则无法防止 SYN-Flood 攻击。</font>
+
 具体源码在: `NioServerSocketChannel#doBind`方法中使用, 在`NetUtil#SOMAXCONN`中赋值
 
 
 
-#### 3）ulimit -n
+#### ulimit -n
 
 * 属于操作系统参数, 需要再操作系统中配置, netty中无法设置
 * 用于设置一个进程能够同时打开的最大文件描述符的个数, 如果进程打开的文件描述符到达了这个上限, 如果再想打开就会报错
 
 
 
-#### 4）TCP_NODELAY
+#### TCP_NODELAY
 
 * 属于 SocketChannal 参数,  TCP在发送数据包时, 为了提高效率, 默认会使用nagle算法将多个小的数据包合并在一起发送, 那么这就会导致数据包的发送有一些延迟
 
-  可以设置这个参数为true来关闭nagle算法,  关闭之后不管多小的数据包都会立即发送出去
+  Nagle 算法 在海量流量的场景下非常有效，但是会造成一定的数据延迟。
 
+  如果对数据传输延迟敏感的话, 可以设置这个参数为true来关闭nagle算法,  关闭之后不管多小的数据包都会立即发送出去
+  
   
 
 
 
-#### 5）SO_SNDBUF & SO_RCVBUF
+#### SO_SNDBUF & SO_RCVBUF
 
 * `SO_SNDBUF` 属于 SocketChannal 参数
 
@@ -5935,7 +5990,7 @@ netty 中可以通过  `ServerBootstrap.option(ChannelOption.SO_BACKLOG, value)`
 
 
 
-#### 6）ALLOCATOR
+#### ALLOCATOR
 
 * 属于 SocketChannal 参数, 用来控制`ctx.alloc()`返回的allocator创建的buf是什么类型的, 默认是池化的字节内存
 * 可以通过系统变量`io.netty.allocator.type`来设置, `unpooled`为非池化, `pooled`为池化的
@@ -5943,7 +5998,7 @@ netty 中可以通过  `ServerBootstrap.option(ChannelOption.SO_BACKLOG, value)`
 
 
 
-#### 7）RCVBUF_ALLOCATOR
+#### RCVBUF_ALLOCATOR
 
 * 属于 SocketChannal 参数, 用来控制 netty 接收缓冲区大小, 应为这个属于IO的buffer, 所以netty强制使用直接内存来提高效率
 
@@ -6024,7 +6079,45 @@ new BootStrap().option(ChannelOption.SO_KEEPALIVE, true);
 
 
 
+### 1.3 代码调优
 
+https://blog.csdn.net/Fireworkit/article/details/136686571
+
+1. 使用业务线程池
+
+   Netty 是基于 Reactor 线程模型实现的，I/O 线程数量固定且资源珍贵，ChannelPipeline 负责所有事件的传播，如果其中任何一个 ChannelHandler 处理器需要执行耗时的操作，其中那么 I/O 线程就会出现阻塞，甚至整个系统都会被拖垮。
+   所以推荐的做法是在 ChannelHandler 处理器中自定义新的业务线程池，将耗时的操作提交到业务线程池中执行。
+
+   以 RPC 框架为例，在服务提供者处理 RPC 请求调用时就是将 RPC 请求提交到自定义的业务线程池中执行，如下所示：
+
+   ```java
+   public class RpcRequestHandler extends SimpleChannelInboundHandler<MiniRpcProtocol<MiniRpcRequest>> {
+   
+       @Override
+       protected void channelRead0(ChannelHandlerContext ctx, MiniRpcProtocol<MiniRpcRequest> protocol) {
+           RpcRequestProcessor.submitRequest(() -> {
+               // 处理 RPC 请求
+           });
+       }
+   }
+   ```
+
+2. 共享ChannelHandler
+
+   我们经常使用以下 new HandlerXXX() 的方式进行 Channel 初始化，在每建立一个新连接的时候会初始化新的 HandlerA 和 HandlerB，如果系统承载了 1w 个连接，那么就会初始化 2w 个处理器，造成非常大的内存浪费。
+
+   为了解决上述问题，Netty 提供了 @Sharable 注解用于修饰 ChannelHandler，标识该 ChannelHandler 全局只有一个实例，而且会被多个 ChannelPipeline 共享。
+   所以我们必须要注意的是，@Sharable 修饰的 ChannelHandler 必须都是无状态的，这样才能保证线程安全。
+
+3. 设置高低水位线
+
+4. 使用对象池来减少gc压力
+
+5. 使用压缩算法(protobuf, gzip, snappy)来减少数据传输量
+
+6. 适当调整 I/O 线程池大小：I/O 线程池的大小应该根据系统资源和需求来适当调整。如果设置太小，可能会导致线程饥饿或阻塞；如果设置太大，可能会浪费系统资源。
+
+7. 使用 Direct ByteBuffers：使用 Direct ByteBuffers 可以避免将内存从 JVM 移动到操作系统内核空间的额外复制，从而提高效率。
 
 
 
@@ -6050,7 +6143,6 @@ public abstract class Message implements Serializable {
         messageClasses.put(RPC_MESSAGE_TYPE_REQUEST, RpcRequestMessage.class);
         messageClasses.put(RPC_MESSAGE_TYPE_RESPONSE, RpcResponseMessage.class);
     }
-
 }
 ```
 
@@ -7950,6 +8042,30 @@ public class MyReplayingDecoder extends ReplayingDecoder<State> {
 
 ## 高低水位
 
+### netty发送消息的流程
+
+我们先来了解一下`Netty`发送消息的流程，再谈`Netty`中的高水位和低水位
+
+![img](https://p3-xtjj-sign.byteimg.com/tos-cn-i-73owjymdk6/ef4c42eec6d14b2484e863a460577032~tplv-73owjymdk6-jj-mark-v1:0:0:0:0:5o6Y6YeR5oqA5pyv56S-5Yy6IEAg5bCP5aWP5oqA5pyv:q75.awebp?rk3s=f64ab15b&x-expires=1743881396&x-signature=iBTUXKB5%2FAGAX8yUKsxMjAZMYxU%3D)
+
+首先我们知道`Netty`写数据的时候都有两个流程
+
+1. `write`: 将数据写入到`ChannelOutboundBuffer`中
+2. `flush`: 将`ChannelOutboundBuffer`中的数据写入到`SocketChannel`中,也就是真正的发送数据，即发送到TCP缓冲区，再通过网卡发送到对端
+
+这里我们再来理解一下操作系统内核的两个缓冲区
+
+- `SO_SEND_BUF`: `SO_SEND_BUF`是操作系统内核的写缓冲区，所有应用程序需要发送到对端的信息，都会放到该缓冲区中，等待发往对端
+- `SO_REC_BUFF`: `SO_REC_BUFF`是操作系统内核的读缓冲区，所有从对端接收到的信息，都会放到该缓冲区中，等待应用程序读取
+
+所以我们发送消息的一般流程是
+
+业务 -> write -> ChannelOutboundBuffer -> flush -> SO_SEND_BUF -> 网卡
+
+
+
+### 高地水位线
+
 在netty中, 我们调用`ctx.write()`或者`ctx.channel().write()`这两个方法, 可以将我们想要发送的消息写到channel中, 然后发送给对面.
 
 我们调用`ctx.write()`时, 他会调用前一个Outbound Handler的write方法, 而前一个Outbound Handler又会调用`ctx.write`去调用他的前一个Outbound Handler方法, 所以这个write的消息会一直传递到HeadContext Handler中
@@ -7958,11 +8074,15 @@ public class MyReplayingDecoder extends ReplayingDecoder<State> {
 
 而调用`ctx.channel().write()`时, 他会调用TailContext Handler的write方法,  在该方法中, TailContext会调用前一个OutboundHandler的write()方法,  类似的, 这个write消息也会被传递到HeadContext Handler中
 
+> `ctx.channel().write()是从tail往前传, ctx.write()是从当前handler往前传`
+
 
 
 在HeadContext中, 实现了我们的write操作.  
 
-对于所有write()的消息, HeadContext不会立即将他发送出去, 而是会将其保存到一个ChannelOutboundBuffer中, 只有调用了flush()方法后才会将这些数据发送出去.  这样做可以提高效率.
+对于所有write()的消息, HeadContext不会立即将他发送出去, 而是会将其保存到一个ChannelOutboundBuffer中, <font color=red>只有调用了flush()方法后才会将这些数据发送出去</font>.  这样做可以提高效率(**因为flush设计到用户态到内核态的转换**).
+
+你也可以调用`writeAndFlush`方法来同步发送和刷新数据
 
 
 
@@ -7974,14 +8094,32 @@ public class MyReplayingDecoder extends ReplayingDecoder<State> {
 
 同时在netty中的ChannelOption还有两个配置:
 
-1. WRITE_BUFFER_HIGH_WATER_MARK: 默认64kb
-2. WRITE_BUFFER_LOW_WATER_MARK: 默认32kb
+1. `WRITE_BUFFER_HIGH_WATER_MARK`: 默认64kb
+2. `WRITE_BUFFER_LOW_WATER_MARK`: 默认32kb
 
 在每次增加消息的时候, ChannelOutboundBuffer都会判断当前消息总大小有没有超过高水位线, 如果超过了, 他会调用`pipeline.channelWritabilityChanged`方法, 来告诉Inbound Handler, 当前写出缓存中有太多的数据没有写出了, 必须要采取措施. (只有从没超过到超过的那一次会触发, 不是次次都触发)
 
 
 
-同时当用户调用channel.flush()的时候, ChannelOutboundBuffer会将消息写出去, 并且每写一条数据都会减少当前buf中的总大小, 当总大小小于`WRITE_BUFFER_LOW_WATER_MARK`时, ChannelOutboundBuffer也会调用`pipeline.channelWritabilityChanged`方法, 来告诉Inbound Handler, 当前缓冲区中的没有太多数据了, 可以放心写了
+同时当用户调用`channel.flush()`的时候, ChannelOutboundBuffer会将消息写出去, 并且每写一条数据都会减少当前buf中的总大小, 当总大小小于`WRITE_BUFFER_LOW_WATER_MARK`时, ChannelOutboundBuffer也会调用`pipeline.channelWritabilityChanged`方法, 来告诉Inbound Handler, 当前缓冲区中的没有太多数据了, 可以放心写了
+
+
+
+需要注意的是: **ChannelOutboundBuffer本身是无界的**, <font color=red>即使你设置了高低水位线, 但是如果没有监听对应的事件来进行处理的话, 也有可能导致内存的大量占用</font>
+
+
+
+### 高并发的场景
+
+我们想象这么一个场景
+
+当网络出现阻塞或者`Netty`客户端负载很高的时候，客户端接收速度和处理速度越来越慢。 会出现什么情况
+
+1. TCP的滑动窗口不断缩小，以减少网络数据的发送，直到为0
+2. `Netty`服务端有大量频繁的写操作，不断写入到`ChannelOutboundBuffer`中
+3. 但是`ChannelOutboundBuffer`中的数据flush不到`SO_SEND_BUF`中，导致`ChannelOutboundBuffer`中的数据不断增加，最终撑爆`ChannelOutboundBuffer`导致OOM
+
+所以为了解决这个问题，你就可以使用高低水位，用来表示`ChannelOutboundBuffer`中的待发送数据的内存占用量的上限和下限
 
 
 
@@ -8088,34 +8226,74 @@ private void setUnwritable(boolean invokeLater) {
     }
 ~~~
 
-我们的Inbound Handler可以实现`channelWritabilityChanged`来接收该事件, 从而应对数据过多的情况, 如下:
+
+
+如果仅仅只是设置了高低水位参数，但是没有对他进行控制，那么高低水位还是不会生效, 我们的Inbound Handler可以实现`channelWritabilityChanged`来接收该事件, 从而应对数据过多的情况
+
+https://juejin.cn/post/7434077340766814243
+
+- 比如说RockMQ中的`NettyRemotingAbstract`
+
+  ~~~java
+  @Override
+  public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+      Channel channel = ctx.channel();
+      // 判断HeadContext中保存的数据是否超过高水位线
+      if (channel.isWritable()) {
+          // 降到了低水位线的下面
+          if (!channel.config().isAutoRead()) {
+              // 设置autoread为true, 这会让channel重新关注上read事件, 继续从socket读取数据
+              channel.config().setAutoRead(true);
+              log.info("Channel[{}] turns writable, bytes to buffer before changing channel to un-writable: {}", RemotingHelper.parseChannelRemoteAddr(channel), channel.bytesBeforeUnwritable());
+           }
+      } else {
+          // 升到了高水位线上面
+          // 设置autoread为false, 这会清除掉当前channel的注册的read事件, 停止从socket读取数据
+          channel.config().setAutoRead(false);
+          log.warn("Channel[{}] auto-read is disabled, bytes to drain before it turns writable: {}", RemotingHelper.parseChannelRemoteAddr(channel), channel.bytesBeforeWritable());
+      }
+      // 调用下一个Inbound的channelWritabilityChanged
+      ctx.fireChannelWritabilityChanged();
+  }
+  ~~~
+
+  这样可以实现背压机制,当下游处理慢时,自动降低上游发送速度。同时防止出现OOM
+
+- 同时在Pulsar中也有如下代码
+
+  ~~~java
+  @Override
+  public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
+      // handle backpressure
+      // stop/resume reading input from connection between the client and the proxy
+      // when the writability of the connection between the proxy and the broker changes
+      inboundChannel.config().setAutoRead(ctx.channel().isWritable());
+      super.channelWritabilityChanged(ctx);
+  }
+  ~~~
+
+同时在发送数据的时候, 我们还应该通过`channel.isWritable()`来判断是否可以写
+
+https://www.jianshu.com/p/092ded8d1f8c
 
 ~~~java
-public void channelWritabilityChanged(ChannelHandlerContext ctx) throws Exception {
-        Channel ch = ctx.channel();
-        ChannelConfig config = ch.config();
-
-        // 判断HeadContext中保存的数据是否超过高水位线
-        if (!ch.isWritable()) {
-            if (log.isWarnEnabled()) {
-                log.warn("{} is not writable, over high water level : {}",
-                    ch, config.getWriteBufferHighWaterMark());
-            }
-            // 设置autoread为false, 这会清除掉当前channel的注册的read事件
-            config.setAutoRead(false);
-        } else {
-            // HeadContext中的数据低于低水位线
-            if (log.isWarnEnabled()) {
-                log.warn("{} is writable, to low water : {}",
-                    ch, config.getWriteBufferLowWaterMark());
-            }
-            // 设置autoread为true, 这会让channel重新关注上read事件
-            config.setAutoRead(true);
-        }
-        // 调用下一个Inbound的channelWritabilityChanged
-        ctx.fireChannelWritabilityChanged();
+// 这是对设置的高低水位线参数的尊重，如果设置了高低水位线，这里却不做判断，直接写，依然有可能 OOM；
+if (ctx.channel().isActive()) {
+    if (ctx.channel().isWritable()) {
+        ctx.writeAndFlush(responseMessage);
+    } else {
+        log.error("message dropped");
     }
+} 
 ~~~
+
+
+
+
+
+
+
+
 
 ## 限流
 
@@ -8190,6 +8368,10 @@ public class ChannelTrafficShapingHandlerTest {
 }
 ~~~
 
+
+
+
+
 ## LengthFieldPrepender
 
 LengthFieldPrepender:将当前发送消息的二进制字节长度, 添加到缓冲区头部, 这样消息就有了固定长度, 长度存储在缓冲头中
@@ -8239,19 +8421,23 @@ https://cloud.tencent.com/developer/article/1152654
 
 https://www.cnblogs.com/shamo89/p/8600833.html
 
-因为网络饱和的可能性，如何在异步框架中高效地写大块的数据是特殊问题。由于写操作是非阻塞的，所以即使没有写出所有的数据，写操作也会在完成时返回并通知 ChannelFuture。当这种情况发生时，如果仍然不停地写入，就有内存耗尽的风险。所以在写大型数据时，需要准备好处理到远程节点的连接是慢速连接的情况，这种情况会导致内存释放的延迟。
+**ChunkedWriteHandler主要用在要传输文件, 或者传输网络流等超大数据包的场景中**
 
-而ChunkedWriteHandler就可以很好的处理这种情况, 他能够将大数据包拆分为多个小数据包发送出去
+如果你直接将整个文件拉到内存中, 然后发送出去, 可能会导致内存溢出, 而是用ChunkedWriteHandler就不会占用太大的内存
 
-
-
-需要注意的是, 对于write出去的消息, 需要实现ChunkedInput接口, ChunkedWriteHandler才能够将其拆分为多个小数据包, 而对于没有实现ChunkedInput接口的message, ChunkedWriteHandler是不能拆分的.
+如果你的数据本身就是在JVM内存中的, 那么ChunkedWriteHandler实际上起不到减少内存的作用, 只能起到将一个大的数据包拆分为多个小的数据包的作用
 
 
 
-netty中提供了ChunkedInput的四个实现, 分别是:
+ChunkedWriteHandler的主要作用是将大数据包拆分为多个小数据包发送出去, 对于write出去的消息, 需要实现ChunkedInput接口, ChunkedWriteHandler才能够将其拆分为多个小数据包, 而对于没有实现ChunkedInput接口的message, ChunkedWriteHandler是不能拆分的.
+
+
+
+netty中提供了ChunkedInput的四个实现, 用于传输大文件或者Stream, 分别是:
 
 ![表11-7：ChunkedInput的实现](img/netty/413c43df8efdb0c6bdad548fac6b890f.png)
+
+> ChunkedFile和ChunkedNioFile只在你的平台不支持零拷贝的时候使用, 如果支持零拷贝, 请使用`DefaultFileRegion `
 
 下面是写文件时, 通过ChunkedWriteHandler和ChunkedStream, 将文件分为多个小数据包的案例:
 
@@ -8284,24 +8470,646 @@ public class ChunkedWriteHandlerInitializer extends ChannelInitializer<Channel> 
 
 
 
-如果上面的netty中自带的四个ChunkedInput无法实现你的功能, 你也可以自己实现ChunkedInput接口.
+如果你自己有一个大的数据包, 想要拆分开来发送, 那么也可以自己来实现ChunkedInput接口, 然后通过ChunkedWriteHandler来拆分为小块, 发送出去
 
 ~~~java
-public interface ChunkedInput<B> {
-	// 返回true, 如果input中的内容已经被读取完毕
-    boolean isEndOfInput() throws Exception;
-	// 释放相关资源
-    void close() throws Exception;
-    @Deprecated
-    B readChunk(ChannelHandlerContext ctx) throws Exception;
-    // 从input中读取一个chunk 大小的数据, 如果返回null, 说明当前input中没有内容可以读取
-    // 但这并不意味着读取完毕, 对于一些比较慢的Stream, 可能还有些chunk还没有到达
-    B readChunk(ByteBufAllocator allocator) throws Exception;
-	// 返回整个input的长度
-    long length();
-    // 返回当前已经读取的进度
-    long progress();
+// 拆分后chunk的数据类型为ByteBuf
+public static class Message implements ChunkedInput<ByteBuf> {
 
+        private final byte[] value;
+        private int readIndex = 0;
+
+        // 将一个超大的String拆开来多次传输
+        public Message(String value) {
+            this.value = value.getBytes(StandardCharsets.UTF_8);
+        }
+
+        // 返回true, 表示消息已经读取完毕, 之后会调用close()来释放资源
+        // 返回false, 表示还没有读取完毕, 之后会调用readChunk()来读取数据
+        @Override
+        public boolean isEndOfInput() throws Exception {
+            return readIndex >= value.length;
+        }
+
+        // 用于读取结束后, 释放相关的资源
+        @Override
+        public void close() throws Exception { }
+
+        // 已经过期的方法
+        @Override
+        public ByteBuf readChunk(ChannelHandlerContext ctx) throws Exception {
+            // 直接调用下面的新的方法就好了
+            return readChunk(ctx.alloc());
+        }
+
+        // 从大的消息中读取一个chunk, 如果返回null, 表示当前消息中没有可以读取的内容
+        // 但是这并不意味着消息读取完毕, 对于一些比较慢的Stream来说, 可能还有些chunk还没有到来
+        @Override
+        public ByteBuf readChunk(ByteBufAllocator allocator) throws Exception {
+            int copyLength = Math.min(value.length - readIndex, 8);
+            // 每次返回8字节作为一个chunk
+            ByteBuf byteBuf = allocator.directBuffer(copyLength);
+            byteBuf.writeBytes(value, readIndex, copyLength);
+            readIndex += 8;
+            return byteBuf;
+        }
+
+        // 返回整个消息的长度
+        @Override
+        public long length() {
+            return value.length;
+        }
+
+        // 返回当前已经读取的消息的长度
+        @Override
+        public long progress() {
+            return readIndex;
+        }
+    }
+~~~
+
+
+
+
+
+
+
+## 空闲检测
+
+### IdleStateHandler
+
+IdleStateHandler可以用于读写的空闲检测,  一旦检测到了空闲检测, 那么就会触发一个自定义事件
+
+~~~java
+public static void main(String[] args) {
+        NioEventLoopGroup bossGroup = new NioEventLoopGroup();
+        NioEventLoopGroup workerGroup = new NioEventLoopGroup(2);
+        try {
+            Channel channel = new ServerBootstrap().group(bossGroup, workerGroup).channel(NioServerSocketChannel.class)
+                .option(ChannelOption.ALLOCATOR, ByteBufAllocator.DEFAULT).handler(new LoggingHandler())
+                .childHandler(new ChannelInitializer<NioSocketChannel>() {
+                    @Override
+                    protected void initChannel(NioSocketChannel ch) throws Exception {
+                        // 添加一个IdleStateHandler, 用于空闲检测
+                        // 读空闲4s, 写空闲4s
+                        // new IdleStateHandler(0, 0, 4, TimeUnit.SECONDS)也是一样的效果
+                        ch.pipeline().addLast(new IdleStateHandler(4, 4, 0, TimeUnit.SECONDS));
+                        // 添加一个自定义的处理器, 用于接受读写空闲的事件
+                        ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
+
+                            @Override
+                            public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+                                if (evt instanceof IdleStateEvent) {
+                                    IdleStateEvent event = (IdleStateEvent) evt;
+                                    if (event.equals(IdleStateEvent.FIRST_READER_IDLE_STATE_EVENT)) {
+                                        System.out.println("first reader idle");
+                                    } else if (event.equals(IdleStateEvent.READER_IDLE_STATE_EVENT)) {
+                                        System.out.println("reader idle");
+                                    } else if (event.equals(IdleStateEvent.FIRST_WRITER_IDLE_STATE_EVENT)) {
+                                        System.out.println("first writer idle");
+                                    } else if (event.equals(IdleStateEvent.WRITER_IDLE_STATE_EVENT)) {
+                                        System.out.println("writer idle");
+                                    } else if (event.equals(IdleStateEvent.FIRST_ALL_IDLE_STATE_EVENT)) {
+                                        System.out.println("first all idle");
+                                    } else if (event.equals(IdleStateEvent.ALL_IDLE_STATE_EVENT)) {
+                                        System.out.println("all idle");
+                                    }
+                                } else {
+                                    super.userEventTriggered(ctx, evt);
+                                }
+                            }
+                        });
+                    }
+                }).bind(8088).sync().channel();
+
+            channel.closeFuture().sync(); // 等待服务器关闭
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } finally {
+            bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
+        }
+    }
+~~~
+
+
+
+#### 读写事件的说明
+
+IdleStateHandler在检测到了读写空闲的时候, 会根据情况发出6个事件
+
+我们以读空闲距离, 首先要明白的是, 读空闲可能会持续很长的一个时间段, 所以当检测到读空闲的时候, 首先会发出一个`FIRST_READER_IDLE_STATE_EVENT`事件, 表示这是这个事件段内第一次检测到空闲, 之后如果还是空闲, 那么就会发出`READER_IDLE_STATE_EVENT`, 表示这是同一个时间段的空闲事件
+
+一旦我们的channel有数据可以读了, 就会触发`IdleStateHandler.channelRead()`, 此时IdleStateHandler就知道读空闲的这一段时间已经过去了
+
+等下一次又检测到读空闲的时候, 他还是会先发出一个`FIRST_READER_IDLE_STATE_EVENT`事件, 如果后续还是空闲, 那么就会发出`READER_IDLE_STATE_EVENT`了, 依次循环
+
+
+
+写空闲也是类似, `FIRST_WRITER_IDLE_STATE_EVENT`表示一段时间的第一个写空闲事件, `WRITER_IDLE_STATE_EVENT`表示后续连续的写空闲事件
+
+~~~java
+public class IdleStateEvent {
+    public static final IdleStateEvent FIRST_READER_IDLE_STATE_EVENT =
+            new DefaultIdleStateEvent(IdleState.READER_IDLE, true);
+    public static final IdleStateEvent READER_IDLE_STATE_EVENT =
+            new DefaultIdleStateEvent(IdleState.READER_IDLE, false);
+    public static final IdleStateEvent FIRST_WRITER_IDLE_STATE_EVENT =
+            new DefaultIdleStateEvent(IdleState.WRITER_IDLE, true);
+    public static final IdleStateEvent WRITER_IDLE_STATE_EVENT =
+            new DefaultIdleStateEvent(IdleState.WRITER_IDLE, false);
+    public static final IdleStateEvent FIRST_ALL_IDLE_STATE_EVENT =
+            new DefaultIdleStateEvent(IdleState.ALL_IDLE, true);
+    public static final IdleStateEvent ALL_IDLE_STATE_EVENT =
+            new DefaultIdleStateEvent(IdleState.ALL_IDLE, false);
 }
 ~~~
 
+
+
+#### 原理
+
+IdleStateHandler是一个双向的handler
+
+对于读事件
+
+- 当channel开始读取数据的时候, 会频繁的调用`channelRead`方法, 此时Handler就知道这个时候在读取数据, 定时任务在检测的时候会直接跳过, 因为知道还在读取数据
+- 等到channel里面没有数据可以读的时候, 会调用`channelReadComplete`方法, 此时Handler就知道数据读取完毕, 并记录下当前时间
+- Handler还会向eventloop中提交定时任务, 检测上次`channelReadComplete`的事件到现在的事件有没有超过阈值, 有就出发事件
+
+
+
+对于写数据, 
+
+- 当我们调用`channel.write()`的时候, 就会触发`write`方法, 此时IdleStateHandler会在promise中添加一个Listener, 当数据完全flush出去之后, 会回调Listener, 此时IdleStateHandler就会记录下当前的事件
+- 同时Handler还会添加一个定时任务到eventLoop中, 用来检测上一次记录的事件, 到当前的事件, 如果超过了阈值就会触发写空闲
+
+> https://cloud.tencent.com/developer/article/1152654
+>
+> 需要注意的是: 对于写事件, 因为只有数据完全被flush出去的时候, 才会回调Listener记录下时间, 如果你有一个超大的数据包, 那么在原生的SocketChannel上一次write可能还不足以将数据完全写出去, 要经历多次write才可以完全写出去
+>
+> 尽管此时一直在写数据, 但是只有完全写完了才会被记录下时间, 所以就可能你发送一个大的数据包, 虽然底层一直在write, 但是还是触发了写空闲
+
+
+
+
+
+
+
+
+
+
+
+### ReadTimeoutHandler
+
+- 专门用于检测读空闲
+- 当在指定时间内没有读取到数据时，会抛出 `ReadTimeoutException` 并关闭连接
+
+~~~java
+// 在 pipeline 中添加 ReadTimeoutHandler
+// 参数：超时时间，时间单位
+pipeline.addLast(new ReadTimeoutHandler(30, TimeUnit.SECONDS));
+~~~
+
+
+
+
+
+
+
+### WriteTimeoutHandler
+
+- 专门用于检测写空闲
+- 当在指定时间内没有写入数据时，会抛出 `WriteTimeoutException` 并关闭连接
+
+~~~java
+// 在 pipeline 中添加 WriteTimeoutHandler
+// 参数：超时时间，时间单位
+pipeline.addLast(new WriteTimeoutHandler(30, TimeUnit.SECONDS));
+~~~
+
+
+
+
+
+
+
+## IP黑白名单
+
+在netty中, 提供了RuleBasedIpFilter这个handler来对IP地址进行过滤, 不符合规则的IP的chanel会被关闭
+
+
+
+### 使用
+
+要实现这样的功能, 可以按照如下的步骤
+
+1. 创建特定的过滤规则
+
+   方式1: 通过通过IpFilterRule自定义对ip的拦截
+
+   ~~~java
+   IpFilterRule ipFilterRule = new IpFilterRule() {
+       @Override
+       public boolean matches(InetSocketAddress remoteAddress) {
+       // 查询黑名单, 判断是否要拦截
+           return remoteAddress.getHostString().startsWith("192.1");
+        }
+   
+        @Override
+        public IpFilterRuleType ruleType() {
+            return IpFilterRuleType.REJECT;
+        }
+   };
+   ~~~
+
+   方式2:  你也可以通过IpFilterRule的实现类`IpSubnetFilterRule`来定义要拦截的网段
+
+   ~~~java
+   IpSubnetFilterRule rule = new IpSubnetFilterRule("192.168.1.1", 32, IpFilterRuleType.ACCEPT); // 只接受192.168.1.1这个ip
+               IpSubnetFilterRule rule2 = new IpSubnetFilterRule("192.168.1.2", 24, IpFilterRuleType.REJECT); // 拒绝192.168.1这个ip段的所有ip
+   ~~~
+
+2. 创建`RuleBasedIpFilter`,  并传入对应的拦截规则
+
+   ~~~java
+   // 第一个参数表示如果一个ip不匹配任何rule, 那么是否接受这个ip
+   // 如果有多个能够匹配ip的Rule, 那么第一个添加的会生效
+   RuleBasedIpFilter filter = new RuleBasedIpFilter(true, ipFilterRule, rule, rule2) {
+       // protected方法, 在连接接受的时候会调用, 你也可以不实现
+       @Override
+       protected void channelAccepted(ChannelHandlerContext ctx, InetSocketAddress remoteAddress) {
+           System.out.println("accept: " + remoteAddress.getAddress().getHostAddress());
+        }
+   
+         // protected方法, 在连接被拒绝的时候被调用, 你也可以选择不实现
+         @Override
+         protected ChannelFuture channelRejected(ChannelHandlerContext ctx, InetSocketAddress remoteAddress) {
+             assert ctx.channel().isActive();
+             assert ctx.channel().isWritable();
+   
+             // RuleBasedIpFilter会监听write的Promise, 在消息被写出去的时候, 通过回调函数关闭Channel
+             // 如果没有写出内容, 那么可以返回null, 那么会直接关闭连接
+             return ctx.writeAndFlush(Unpooled.wrappedBuffer("reject".getBytes(StandardCharsets.UTF_8)));
+        }
+   };
+   ~~~
+
+3. 将RuleBasedIpFilter添加到Handler中
+
+   <font color=red> 请确保RuleBasedIpFilter在handler的第一位,  这样才可以确保拦截</font>
+
+   ~~~java
+   public static void main(String[] args) {
+           NioEventLoopGroup bossGroup = new NioEventLoopGroup();
+           NioEventLoopGroup workerGroup = new NioEventLoopGroup(2);
+           try {
+               Channel channel = new ServerBootstrap()
+                       .group(bossGroup, workerGroup)
+                       .channel(NioServerSocketChannel.class)
+                       .option(ChannelOption.ALLOCATOR, ByteBufAllocator.DEFAULT)
+                       .handler(new LoggingHandler())
+                       .childHandler(new MyChannelInitializer())
+                   	.bind(8088)
+                   	.sync()
+                   	.channel();
+   
+               channel.closeFuture().sync(); // 等待服务器关闭
+           } catch (InterruptedException e) {
+               throw new RuntimeException(e);
+           } finally {
+               bossGroup.shutdownGracefully();
+               workerGroup.shutdownGracefully();
+           }
+       }
+   public static class MyChannelInitializer extends ChannelInitializer<NioSocketChannel> {
+           @Override
+           protected void initChannel(NioSocketChannel ch) throws Exception {
+               // ...省略
+               
+               // 必须添加在第一位, 确保能对ip进行过滤
+               ch.pipeline().addLast(filter);
+           }
+       }
+   ~~~
+
+   
+
+### 完整代码
+
+~~~java
+public class RuleBasedIpFilterTest {
+
+    public static void main(String[] args) {
+        NioEventLoopGroup bossGroup = new NioEventLoopGroup();
+        NioEventLoopGroup workerGroup = new NioEventLoopGroup(2);
+        try {
+            Channel channel = new ServerBootstrap()
+                    .group(bossGroup, workerGroup)
+                    .channel(NioServerSocketChannel.class)
+                    .option(ChannelOption.ALLOCATOR, ByteBufAllocator.DEFAULT)
+                    .handler(new LoggingHandler())
+                    .childHandler(new MyChannelInitializer()).bind(8088).sync().channel();
+
+            channel.closeFuture().sync(); // 等待服务器关闭
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        } finally {
+            bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
+        }
+    }
+
+    public static class MyChannelInitializer extends ChannelInitializer<NioSocketChannel> {
+        @Override
+        protected void initChannel(NioSocketChannel ch) throws Exception {
+
+            // 通过IpFilterRule来实现对ip的拦截
+            IpFilterRule ipFilterRule = new IpFilterRule() {
+
+                @Override
+                public boolean matches(InetSocketAddress remoteAddress) {
+                    // 查询黑名单, 判断是否要拦截
+                    return remoteAddress.getHostString().startsWith("192.1");
+                }
+
+                @Override
+                public IpFilterRuleType ruleType() {
+                    return IpFilterRuleType.REJECT;
+                }
+            };
+
+            // 或者你也可以使用现成的实现类, 这个实现类可以实现对IP, 子网掩码, 是否接受
+            IpSubnetFilterRule rule = new IpSubnetFilterRule("192.168.1.1", 32, IpFilterRuleType.ACCEPT); // 只接受192.168.1.1这个ip
+            IpSubnetFilterRule rule2 = new IpSubnetFilterRule("192.168.1.2", 24, IpFilterRuleType.REJECT); // 拒绝192.168.1这个ip段的所有ip
+
+            // 如果有多个能够匹配ip的Rule, 那么第一个添加的会生效
+            RuleBasedIpFilter filter = new RuleBasedIpFilter(true, ipFilterRule, rule, rule2) {
+                // protected方法, 在连接接受的时候会调用
+                @Override
+                protected void channelAccepted(ChannelHandlerContext ctx, InetSocketAddress remoteAddress) {
+                    System.out.println("accept: " + remoteAddress.getAddress().getHostAddress());
+                }
+
+                // protected方法, 在连接被拒绝的时候被调用
+                @Override
+                protected ChannelFuture channelRejected(ChannelHandlerContext ctx, InetSocketAddress remoteAddress) {
+                    assert ctx.channel().isActive();
+                    assert ctx.channel().isWritable();
+
+                    // RuleBasedIpFilter会监听write的Promise, 在消息被写出去的时候, 通过回调函数关闭Channel
+                    // 如果没有写出内容, 那么可以返回null, 那么会直接关闭连接
+                    return ctx.writeAndFlush(Unpooled.wrappedBuffer("reject".getBytes(StandardCharsets.UTF_8)));
+                }
+            };
+
+            // 必须添加在第一位, 确保能对ip进行过滤
+            ch.pipeline().addLast(filter);
+        }
+    }
+}
+~~~
+
+
+
+### 原理
+
+`RuleBasedIpFilter`继承了`AbstractRemoteAddressFilter` 这个类,  
+
+这个类会在`channelActive`和`channelRegistered`的时候, 判断是不是要拒绝这个地址的连接
+
+~~~java
+public abstract class AbstractRemoteAddressFilter<T extends SocketAddress> extends ChannelInboundHandlerAdapter {
+
+    @Override
+    public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+        handleNewChannel(ctx); // 判断要不要拒绝连接
+        ctx.fireChannelRegistered();
+    }
+
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        if (!handleNewChannel(ctx)) { // 判断要不要拒绝连接
+            throw new IllegalStateException("cannot determine to accept or reject a channel: " + ctx.channel());
+        } else {
+            ctx.fireChannelActive();
+        }
+    }
+
+    private boolean handleNewChannel(ChannelHandlerContext ctx) throws Exception {
+        
+        T remoteAddress = (T) ctx.channel().remoteAddress();
+        // ...
+        ctx.pipeline().remove(this); // 从pipeline中移除当前handler, 因为这个handler只需要使用一次
+
+        // 调用accept来判断是不是要拒绝连接
+        if (accept(ctx, remoteAddress)) {
+            channelAccepted(ctx, remoteAddress); // 调用回调函数通知连接被accept了, 我们可以自定义这个回调函数
+        } else {
+            // 调用回调函数通知channel被拒绝了, 我们可以自定义这个回调函数
+            ChannelFuture rejectedFuture = channelRejected(ctx, remoteAddress);
+            
+            
+            if (rejectedFuture != null) {
+                // 回调函数可能会往channel中写一些数据, 告知client拒绝连接, 所以我们要等future完成之后再调用channel.close()
+                rejectedFuture.addListener(ChannelFutureListener.CLOSE);
+            } else {
+                // 否则直接关闭channle
+                ctx.close();
+            }
+        }
+
+        return true;
+    }
+}
+~~~
+
+然后在RuleBasedIpFilter中实现了accept方法, 来判断一个ip是不是要拒绝
+
+~~~java
+@Override
+    protected boolean accept(ChannelHandlerContext ctx, InetSocketAddress remoteAddress) throws Exception {
+        for (IpFilterRule rule : rules) {
+            if (rule.matches(remoteAddress)) {
+                return rule.ruleType() == IpFilterRuleType.ACCEPT;
+            }
+        }
+
+        return acceptIfNotFound;
+    }
+~~~
+
+
+
+
+
+## FileRegion零拷贝传输文件
+
+Netty 传输文件的时候没有使用 ByteBuf 进行向 Channel 中写入数据，而使用的 FileRegion。下面通过示例了解下 FileRegion 的用法，然后深入源码分析 为什么不使用 ByteBuf 而使用 FileRegion。
+
+```javascript
+public final class FileServer {
+
+    public static void main(String[] args) throws Exception {
+        EventLoopGroup bossGroup = new NioEventLoopGroup(1);
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        try {
+            ServerBootstrap b = new ServerBootstrap();
+            b.group(bossGroup, workerGroup)
+             .channel(NioServerSocketChannel.class)
+             .option(ChannelOption.SO_BACKLOG, 100)
+             .handler(new LoggingHandler(LogLevel.INFO))
+             .childHandler(new ChannelInitializer<SocketChannel>() {
+                 @Override
+                 public void initChannel(SocketChannel ch) throws Exception {
+                     ChannelPipeline p = ch.pipeline();
+                     p.addLast(
+                             new StringEncoder(CharsetUtil.UTF_8),
+                             new LineBasedFrameDecoder(8192),
+                             new StringDecoder(CharsetUtil.UTF_8),
+                             // 在不支持零拷贝的情况下使用ChunkedWriteHandler
+                             new ChunkedWriteHandler(), 
+                             // 自定义 Handler
+                             new FileServerHandler());
+                 }
+             });
+            ChannelFuture f = b.bind(8080).sync();
+            f.channel().closeFuture().sync();
+        } finally {
+            bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
+        }
+    }
+}
+```
+
+从示例中可以看出 ChannelPipeline 中添加了自定义的 FileServerHandler()。 下面看下 FileServerHandler 的源码，其它几个 Handler 的都是 Netty 中自带的，以后会分析这些 Handler 的具体实现原理。
+
+```javascript
+public class FileServerHandler extends SimpleChannelInboundHandler<String> {
+
+    @Override
+    public void channelRead0(ChannelHandlerContext ctx, String msg) throws Exception {
+        RandomAccessFile raf = null;
+        long length = -1;
+        try {
+            // 获取文件, msg是文件的path
+            raf = new RandomAccessFile(msg, "r");
+            length = raf.length();
+        } catch (Exception e) {
+            ctx.writeAndFlush("ERR: " + e.getClass().getSimpleName() + ": " + e.getMessage() + '\n');
+            return;
+        } finally {
+            if (length < 0 && raf != null) {
+                raf.close();
+            }
+        }
+
+        ctx.write("OK: " + raf.length() + '\n');
+        if (ctx.pipeline().get(SslHandler.class) == null) {
+            // 传输文件使用了 DefaultFileRegion 进行写入到 NioSocketChannel 中
+            ChannelProgressivePromise promise = channel.newProgressivePromise();
+            ctx.write(new DefaultFileRegion(raf.getChannel(), 0, length), promise);
+            // 通过progressivePromise来监听传输的进度
+            promise.addListener(new ChannelProgressiveFutureListener() {
+    			@Override
+    			public void operationProgressed(ChannelProgressiveFuture future, long progress, long total) {
+        			System.out.printf("进度: %.2f%%\n", 100.0 * progress / total);
+    			}
+
+    			@Override
+    			public void operationComplete(ChannelProgressiveFuture future) {
+        			if (future.isSuccess()) {
+            			System.out.println("文件传输成功！");
+        			} else {
+            			future.cause().printStackTrace();
+        			}
+    			}
+        } else {
+            // SSL enabled - cannot use zero-copy file transfer.
+            // 在不支持零拷贝的情况下, 使用ChunkedFile来减少内存压力
+            ctx.write(new ChunkedFile(raf));
+        }
+        ctx.writeAndFlush("\n");
+    }
+}
+```
+
+从 FileServerHandler 中可以看出，传输文件使用了 DefaultFileRegion 进行写入到 NioSocketChannel 里。 我们知道向 NioSocketChannel 里写数据，都是使用的 ByteBuf 进行写入。
+
+
+
+
+
+## 时间轮
+
+### 为什么使用时间轮
+
+在JDK中有如下Timer, DelayQueue, ScheduledThreadPoolExecutor可以用来实现定时任务等功能, 但是他们的实现都是使用的小顶堆, 虽然他们都会sleep直到元素可用, 和时间轮一样.
+
+但是在添加和删除任务的时候, 小顶堆的时间复杂度都是O(logn), 无法满足海量的延时任务的调度
+
+
+
+### netty时间轮的运行原理
+
+https://www.cnblogs.com/binlovetech/p/18629491
+
+![image-20250404230912853](img/netty/image-20250404230912853.png)
+
+netty的时间轮写的比较简单, 可以直接看源码, 这里只将简单的概述
+
+1. 在netty中, 一个时间轮默认有512个bucket, 每个bucket默认代表100ms
+2. bucket内部有一个链表, 保存属于这个bucket的所有任务, 包括本轮和之后几轮的的任务
+3. 每个task都有一个`remainningRounds`属性, 表示还有多少轮要执行这个任务
+4. 在添加任务的时候, 不是直接将task添加到bucket中, 而是放到一个`timeouts`的队列中
+5. 在取消任务的时候, 不是直接去找到task所在的bucket, 然后将他从bucket中移除出去, 而是直接将他放到一个`cancelledTimeouts`的队列中
+6. 时间轮内部有一个worker线程, 他会sleep直到下一个tick的时间到来, 然后执行如下的步骤
+   1. 计算当前tick使用的bucket
+   2. 从`cancelledTimeouts`中取出所有的任务, 将他们从bucket中移除
+   3. 从`timeouts`取出所有的任务, 计算所属的bucket, 然后添加到链表尾部
+   4. 从当前使用的bucket中, 遍历链表, 如果`remainningRounds`为0, 那么就执行这个任务, 否则就将`remainingRounds--`,  表示过了一轮了
+
+
+
+### 使用
+
+在netty中, 提供了HashedTimeWheel来实现时间轮
+
+~~~java
+public static void main(String[] args) {
+
+        HashedWheelTimer timer = new HashedWheelTimer(
+                Executors.defaultThreadFactory(), // 用于创建驱动时间轮前进的worker线程的线程工程,默认为Executors.defaultThreadFactory()
+                100, // 每个bucket表示的时间间隔, 默认为100
+                TimeUnit.MILLISECONDS, // 默认为ms
+                512, // 时间轮有多少个bucket, 默认为512
+                true, // 是否检测资源泄露, 默认为true
+                -1, // pending队列中能够保存的最大数量的任务, 默认为-1, 表示不限制
+                Executors.newSingleThreadExecutor()); // 用于执行任务的线程池, 默认就是通过worker线程来执行
+
+        // 提交任务, 如果时间轮没有启动, 那么会自动启动
+        // 会返回一个Timeout对象, 类似于Future, 可以用来取消任务, 判断任务是否取消
+        Timeout newedTimeout = timer.newTimeout((timeout) -> {
+            timeout.isCancelled();
+
+            System.out.println("hello");
+        }, 0, TimeUnit.SECONDS);
+
+        newedTimeout.isCancelled(); // 任务有没有被取消
+        newedTimeout.cancel(); // 取消任务
+        newedTimeout.isExpired(); // 任务有没有被执行完毕
+
+        System.out.println(timer.pendingTimeouts()); // 查看pending队列中的任务数量
+
+        timer.stop(); // 停止时间轮
+
+    }
+~~~
+
+使用时间轮有以下几个注意点:
+
+1. 一定要设置线程池, 否则默认就是通过Worker线程来执行任务, 会导致Worker线程无法准确的推动时间轮前进
+2. 不必调用`timer.start()`方法,  因为在提交任务的时候, 会自动启动时间轮,  如果提前启动了也支持徒增浪费
+3. 在不使用时间轮之后, 一定要调用`stop()`方法来停止时间轮
+4. 在不使用时间轮之后, 一定要关闭时间轮中的线程池

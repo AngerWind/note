@@ -30,7 +30,9 @@
   * [logback手册](logback/logback-chinese-manual/)
 * 其他编程语音
   * [go](其他编程语言/go/go.md)
-  * [groovy](其他编程语言/groovy-doc/doc/cn/core-syntax-cn.adoc)
+  * [groovy](其他编程语言/groovy-doc/groovy.md)
+  * [python](其他编程语言/python/python.md)
+  * [scala](其他编程语言/scala/scala.md)
 * 大数据
   * [clickhouse](大数据/clickhouse/clickhouse.md)
   * [flink](大数据/flink/flink.md)
@@ -51,4 +53,5 @@
   * [docker](运维/docker/docker.md)
 * 消息队列
   * [kafka](消息队列/kafka/kafka.md)
+  * [rocketmq](消息队列/rocketmq.md)
 

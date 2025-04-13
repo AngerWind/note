@@ -135,7 +135,7 @@ derby数据库是有java语言编写的轻量级数据库, 类文件大小大约
    mysql> flush privileges;
    ~~~
 
-4. 从maven仓库下载mysql对应jdbc驱动包到Hive的lib目录下
+4. 从maven仓库下载mysql对应jdbc驱动包到Hive的`lib`目录下
 
    ~~~shell
    wget https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar
@@ -147,7 +147,7 @@ derby数据库是有java语言编写的轻量级数据库, 类文件大小大约
    mysql> create database hive_metadata
    ~~~
 
-7. 在$HIVE_HOME/conf/hive-site.xml( 没有新建 ) 配置hive到mysql的连接信息
+7. 在`$HIVE_HOME/conf/hive-site.xml`( 没有新建 ) 配置hive到mysql的连接信息
 
    ~~~xml
    <?xml version="1.0"?>
