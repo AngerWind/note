@@ -46,7 +46,7 @@ String a = "hello"
 def b = 10 // 自动推断类型
 var c = 10 // 自动推断类型
 
-// 一次性创建多个变量, 
+// 一次性创建多个变量
 def (a, b, c) = [10, 20, 'foo'] // 自动推断类型
 def (int i, String j) = [10, 'foo']
 
@@ -231,15 +231,39 @@ SQLDate sqlDate = new SQLDate(1000L)
 
 ~~~groovy
 def a1 = 'hello world' // 单引号字符串, 底层是`java.lang.String` ，不支持插值
-def a2 = ''' 
-hello world
+def a2 = '''\
+hello world\
 ''' // 多行字符串, 底层是`java.lang.String` ，不支持插值
 
 def a3 = "$a1" // 双引号字符串, 可以插值, 如果有插值, 那么底层类型是`groovy.lang.GString`, 否则为`java.lang.String`
 
-def a4 = """
-$a1
+def a4 = """\
+$a1\
 """ // // 多行字符串, 可以插值, 如果有插值, 那么底层类型是`groovy.lang.GString`, 否则为`java.lang.String`
+~~~
+
+在使用多行字符串的时候, 最好在第一行的末尾加一个`\`, 表示的是连字符, 而不是换行
+
+~~~groovy
+def a2 = '''
+hello world
+aaaa
+'''
+println a2 == "\nhello world\naaaa\n" // true
+
+def a1 = '''\
+hello world
+aaaa\
+'''
+println a1 == "hello world\naaaa" // true
+~~~
+
+
+
+你可以将任何对象赋值给字符串, 会自动调用他们的toString方法
+
+~~~groovy
+def str = new Date()
 ~~~
 
 
@@ -507,6 +531,9 @@ assert d instanceof Long
 // Long.MAX_VALUE + 1
 def e = 9223372036854775808
 assert e instanceof BigInteger
+
+def g = 3.14
+assert e instanceof BigDemical // 小数自动推断为BigDemical, 而不是float
 ~~~
 
 
@@ -515,25 +542,14 @@ assert e instanceof BigInteger
 
 我们可以通过给出后缀（见下表）（大写或小写）来强制数字（包括二进制、八进制和十六进制）具有特定类型。
 
------------------------------------------------------------------------
-
-  Type                    Suffix
-
------------------------ -----------------------------------------------
-
-  BigInteger              `G` or `g`
-
-  Long                    `L` or `l`
-
-  Integer                 `I` or `i`
-
-  BigDecimal              `G` or `g`
-
-  Double                  `D` or `d`
-
-  float                    `F` or `f`
-
-
+| Type       | Suffix                              | 案例          |
+| ---------- | ----------------------------------- | ------------- |
+| BigInteger | `G` or `g`                          | def a = 1g    |
+| Long       | `L` or `l`                          |               |
+| Integer    | `I` or `i`                          |               |
+| BigDecimal | `G` or `g`（小数默认是 BigDecimal） | def b = 3.14g |
+| Double     | `D` or `d`                          |               |
+| Float      | `F` or `f`                          |               |
 
 **如果你需要精确计算, 那么推荐使用`G`来作为后缀, 这样就可以使用BigDecimal**
 
@@ -554,10 +570,7 @@ booleanField = true
  Groovy 列表默认情况下是的 JDK  `java.util.ArrayList`
 
 ```groovy
-def numbers = [1, 2, 3]         
-
-assert numbers instanceof List  
-assert numbers.size() == 3      
+def numbers = [1, 2, 3] // java.util.ArrayList
 ```
 
 列表中可以包含不同的类型
@@ -566,70 +579,118 @@ assert numbers.size() == 3
 def heterogeneous = [1, "a", true]  
 ```
 
-
-
 可以使用`as`, 或者直接指定类型,  来创建其他类型的List
 
 ```groovy
 def arrayList = [1, 2, 3] // java.util.ArrayList
 def linkedList = [2, 3, 4] as LinkedList    // java.util.LinkedList
-LinkedList otherLinked = [3, 4, 5] // java.util.LinkedList         
+LinkedList otherLinked = [3, 4, 5] // java.util.LinkedList       
 ```
 
 
 
-可以使用索引来访问元素, 使用`<<`来追加元素
+下面是List的操作
 
-可以使用`,`和`..`一次性访问多个元素
+~~~groovy
+def list = [1, 2, 3, 4]
+println list[0]      // 访问元素
+println list[-1]     // 倒数第一个
 
-```groovy
-def letters = ['a', 'b', 'c', 'd']
+list[0] = 2 // 修改元素
 
-assert letters[0] == 'a'     
-assert letters[-1] == 'd'    
+def list1 = list[1..3]   // 范围切片 [2, 3, 4]
+def list2 = list[1, 2, 3] // 一次性访问多个元素, 返回新List
+def (a, b, c, d) = list // 解构赋值
 
-letters << 'e'     // 追加元素          
+list << 5              // 添加单个元素
+list += [6, 7]         // 添加多个元素
+list.add(8)            // Java 风格
 
-assert letters[1, 3] == ['b', 'd'] // 一次访问两个元素，返回包含这两个元素的新列表     
-assert letters[2..4] == ['C', 'd', 'e']  // 使用范围访问列表中从开始到结束元素位置的一系列值
-```
+def newList = list -1  // 返回一个移除1后的新List, 不改变原来的List
+list -= 1              // 删除值为1的元素
+list -= [1, 2]         // 删除值为1, 2的元素
+list.remove(0)         // 删除索引为0的元素
 
+list.clear() // 清空
 
+// 判断是否存在
+def list = [1, 2, 3, 4]
+println 3 in list  // true
+println 3 !in list  // true
+println list.contains(3)  // true
 
-由于列表本质上可以是异构(heterogeneous )的，因此列表还可以包含其他列表来创建多维列表：
+~~~
+
+遍历List:
+
+~~~groovy
+def list = [1, 2, 3, 4]
+
+// groovy风格
+list.each { println it }                
+list.eachWithIndex { val, idx -> println "$idx: $val" }
+for (item in list) {
+    println "Groovy-style: $item"
+}
+
+// java风格
+for (Integer item : list) {
+    println "Item: $item"
+}
+for (int i = 0; i < list.size(); i++) {
+    println "Index $i = ${list[i]}"
+}
+~~~
+
+高级操作:
+
+~~~groovy
+// 查找元素
+list.find { it > 3 }          // 返回第一个符合条件的
+list.findAll { it % 2 == 0 }  // 返回所有符合条件的
+list.any { it > 10 }          // 是否有任何一个符合条件, 返回true/false
+list.every { it < 10 }        // 所有元素都满足, 返回true/false
+
+// map
+list.collect { it * 2 }       // 返回新 List，元素变成原来的两倍
+list.collectIndexed { i, v -> "$i:$v" }  // 带索引的转换
+// 排序
+list.sort()                   // 默认升序
+list.sort { -it }             // 降序
+list.unique()                 // 去重
+// 聚合
+def max = list.max()
+def min = list.min()
+def sum = list.sum()
+
+def tupleList = list.collate(2)         // [[1,2],[3,4]] 每2个一组
+
+// 笛卡尔积
+def result = [[1, 2], 'A', 'B'].combinations() // [[1, A], [1, B], [2, A], [2, B]]
+~~~
+
+多维List
 
 ```groovy
 def multi = [[0, 1], [2, 3]]     
 assert multi[1][0] == 2          
 ```
 
-- 定义数字列表
 
-- 访问最顶层列表的第二个元素和内部列表的第一个元素
 
-  
+
 
 ## Array
 
 **Groovy 使用了 List 的表示法来表示数组，但是要创建数组，您需要通过强制或类型声明来显式定义数组的类型。**
 
 ```groovy
-String[] arrStr = ['Ananas', 'Banana', 'Kiwi']  
-def numArr = [1, 2, 3] as int[]      
+String[] arrStr = ['Ananas', 'Banana', 'Kiwi']  // 直接指定类型
+def numArr = [1, 2, 3] as int[]  // 通过as转换
+def primes = new int[] {2, 3, 5, 7, 11} // 通过java风格来创建
+def primes = new int[5]
+int[] arr = {1, 2, 3, 4, 5}
 ```
-
-
-
-您还可以创建多维数组：
-
-```groovy
-def matrix3 = new Integer[3][3]         
-
-Integer[][] matrix2                     
-matrix2 = [[1, 2], [3, 4]]
-```
-
-
 
 对数组元素的访问遵循与列表相同的表示法：
 
@@ -642,14 +703,12 @@ names[2] = 'Blackdrag'
 
 
 
-### Java风格的数组初始化
-
-你也可以使用Java语法来创建数组
+您还可以创建多维数组：
 
 ```groovy
-def primes = new int[] {2, 3, 5, 7, 11}
+def matrix3 = new Integer[3][3]         
 
-def pets = new String[] {'cat', 'dog'}
+Integer[][] matrix2 = [[1, 2], [3, 4]]
 ```
 
 
@@ -661,32 +720,16 @@ def pets = new String[] {'cat', 'dog'}
 默认情况下,  key为String类型, 可以不写引号
 
 ```groovy
-// 定义map
-def colors = [red: '#FF0000', green: '#00FF00', blue: '#0000FF'] 
-// 定义空map
-def emptyMap = [:]
-
-// 访问元素, 如果没有对应的key, 那么返回null
-assert colors['red'] == '#FF0000'    
-assert colors.green  == '#00FF00'    
-assert colors.black  == null
-
-// 设置或者追加元素
-colors['pink'] = '#FF00FF'           
-colors.yellow  = '#FFFF00'           
+def colors = [red: '#FF0000', green: '#00FF00', blue: '#0000FF'] // 定义map
+def emptyMap = [:] // 定义空map    
 ```
 
-
-
-您也可以使用其他类型的值作为键：
+您也可使用其他类型的值作为键：
 
 ```groovy
 def numbers = [1: 'one', 2: 'two']
-
 assert numbers[1] == 'one'
 ```
-
-
 
 注意, 如果你想要将一个变量作为key, 那么需要加上括号
 
@@ -696,7 +739,80 @@ def person = [name: 'Guillaume'] // key就是字符串的name, 而不是zhangsan
 person = [(name): 'Guillaume'] // key 是name对应的变量
 ~~~
 
+map常用操作
 
+~~~groovy
+// 获取元素, 如果没有对应的key, 那么返回null
+def hex = colors['red']
+def hex = colors.red
+
+// 修改或者追加元素
+colors['pink'] = '#FF00FF'           
+colors.yellow  = '#FFFF00'
+colors.put('black', '#aabbccdd')
+
+// 删除
+colors.remove("red")
+colors -= "red"
+def newColor = colors - "red" // 不修改原来的
+
+// 是否存在
+println colors.contains("red")
+println "red" in colors // true
+println "red" !in colors // false
+
+// map不支持结构赋值
+~~~
+
+遍历:
+
+~~~groovy
+// Java 风格
+for (Map.Entry entry : map.entrySet()) {
+    println "key=${entry.key}, value=${entry.value}"
+}
+
+// Groovy风格
+map.each { key, value -> println "$key -> $value" }
+
+map.eachWithIndex { entry, i -> println "${i}: ${entry.key} = ${entry.value}" }
+
+for (entry in map) {
+    println "key=${entry.key}, value=${entry.value}"
+}
+
+for (key, value in map) { // 解构赋值
+    println "key=${key}, value=${value}"
+}
+
+// 获取所有的键和值
+for (k in map.keySet()) {
+    println "key: $k"
+}
+
+for (v in map.values()) {
+    println "value: $v"
+}
+~~~
+
+
+
+
+
+高级操作:
+
+~~~groovy
+// 查找
+def result = map.find { key, value -> key == 'city' }
+def filtered = map.findAll { k, v -> v.toString().contains('a') }
+
+~~~
+
+
+
+
+
+​      
 
 
 
@@ -1121,6 +1237,7 @@ as 可以进行强制类型转换
 
 ~~~groovy
 String input = '42'
+// 类似Java的强制类型转换, 只有具有继承关系的才可以这么做
 Integer num = (Integer) input // 报错
 Integer num = input as Integer   // 隐式调用input.asType(Integer.class)
 ~~~
@@ -1245,9 +1362,10 @@ if可以判断多种类型
 
 6. 数字: 非0为true
 
-7. 引用类型: 非null为true
+7. 引用类型: 
 
-8. 其他: 调用其`asBoolean()`方法来判断真假
+   - 如果没有实现`asBoolean`方法, 那么null为false, 非null为true
+   - 如果实现了`asBoolean`方法, 那么null为false, 非null调用`asBoolean`
 
    ~~~java
    class Color {
@@ -1256,7 +1374,8 @@ if可以判断多种类型
            name == 'green' ? true : false 
        }
    }
-   if (new Color(name: 'green')){ // true }
+   if (new Color(name: 'green')){ // true 
+   }
    ~~~
 
    
@@ -1496,6 +1615,8 @@ def p = new Person() // 实例化
 
 3. 可以使用`groovy.transform.TupleConstructor`来添加一个构造函数, 类似于Java中的Lombok
 
+   他会为所有的属性创建一个构造函数, 类似`@AllArgsConstructor`
+
    ~~~groovy
    import groovy.transform.TupleConstructor
    @TupleConstructor
@@ -1545,7 +1666,7 @@ def p = new Person() // 实例化
    Person map = [firstName:'Ada', lastName:'Lovelace', age: 24]  // 会编译报错
    ~~~
 
-5. 如果类有一个无参构造函数, 或者第一个参数为map的构造函数, 那么就支持通过命名参数的形式创建实例
+6. 如果类有一个无参构造函数, 或者第一个参数为map的构造函数, 那么就支持通过命名参数的形式创建实例
 
    ~~~groovy
    class PersonWOConstructor {                                  
@@ -1572,8 +1693,8 @@ def p = new Person() // 实例化
    Person p2 = new Person(first: "hello")
    ~~~
 
-6. 可以使用`groovy.transform.MapConstructor`来生成一个接受Map作为参数的构造函数
-   
+7. 可以使用`groovy.transform.MapConstructor`来生成一个接受Map作为参数的构造函数
+
    ~~~groovy
    @groovy.transform.MapConstructor
    class Person {
@@ -1583,19 +1704,19 @@ def p = new Person() // 实例化
    
    def person = new Person(name: "Alice", age: 30)
    ~~~
-   
+
    参数选项
-   
+
    `@MapConstructor(includes = ["field1", "field2"])`：只生成包含指定字段的构造函数。
-   
+
    `@MapConstructor(excludes = ["field1"])`：排除指定字段，不在构造函数中初始化。
-   
+
    `@MapConstructor(includeFields = true)`：是否包含类的字段（包括私有字段）。
-   
+
    `@MapConstructor(callSuper = true)`：是否调用父类的构造函数。
-   
+
    `@MapConstructor(force = true)`：即使类中已经有构造函数，仍然生成一个额外的基于 Map 的构造函数。
-   
+
    `@MapConstructor(noArg = true)`：同时生成一个无参构造函数。
 
 ### 方法
@@ -1737,9 +1858,9 @@ p.groovy = true
 
 
 
-### 使用多重赋值进行对象解构
+### 结构赋值
 
-在运算符中, 我们描述了下标运算符,  对一个对象取下标, 实际上就是调用他的getAt() / putAt() 方法
+在运算符中, 我们描述了下标运算符,  对一个对象取下标, 实际上就是调用他的`getAt() / putAt()` 方法
 
 通过这种技术，我们可以实现对象解构。
 
@@ -1803,12 +1924,6 @@ class Concrete extends Abstract {
     }
 }
 ~~~
-
-
-
-
-
-
 
 
 
@@ -1933,310 +2048,153 @@ Named named = {"hello"} // 创建一个实现Named的子类, 然后调用其构�
 def n1 = {"hello"} as Named // 使用as进行类型转换
 ~~~
 
+### 动态代码
 
+你可以在特质中调用任何的没有的方法和属性, 
 
+- 如果子类中有, 那么会转而调用他们, 
+- 如果子类中没有, 那么会调用`methodMissing`和`propertyMissing`, `setProperty`这两个方法
 
-
-
-
-### 鸭子类型与特质
-
-#### 动态代码
-
-Traits 可以调用任何动态代码，就像普通的 Groovy 类一样。这意味着 **您可以在方法主体中调用应该存在于实现类中的方法，而无需在接口中显式声明它们**。这意味着特质与鸭子类型完全兼容：
-
-    trait SpeakingDuck {
-        String speak() { quack() }                      
+```groovy
+trait DynamicObject {                               
+    private Map props = [:]
+    // 调用d.bbb() 会转而调用这个方法
+    def methodMissing(String name, args) {
+        name.toUpperCase()
     }
-    class Duck implements SpeakingDuck {
-        String methodMissing(String name, args) {
-            "${name.capitalize()}!"                     
-        }
+    // 调用 def a = d.aaa 会转而调用这个方法
+    def propertyMissing(String name) {
+        props.get(name)
     }
-    def d = new Duck()
-    assert d.speak() == 'Quack!'                        
-
--   SpeakingDuck 期望定义 quack 方法
-
--   Duck 类 实现了 methodMissing 方法方法
-
--   调用 speak 方法会触发对 quack 的调用，该调用由 methodMissing 处理
-
-#### 特质中的动态方法
-
-特质还可以实现 MOP 方法，例如 methodMissing 或 propertyMissing ，在这种情况下，实现类将从特质继承行为，如下例所示：
-
-    trait DynamicObject {                               
-        private Map props = [:]
-        def methodMissing(String name, args) {
-            name.toUpperCase()
-        }
-        def propertyMissing(String name) {
-            props.get(name)
-        }
-        void setProperty(String name, Object value) {
-            props.put(name, value)
-        }
+    // 调用 d.aaa = bbb 会转而调用这个方法
+    void setProperty(String name, Object value) {
+        props.put(name, value)
     }
-    
-    class Dynamic implements DynamicObject {
-        String existingProperty = 'ok'                  
-        String existingMethod() { 'ok' }                
-    }
-    def d = new Dynamic()
-    assert d.existingProperty == 'ok'                   
-    assert d.foo == null                                
-    d.foo = 'bar'                                       
-    assert d.foo == 'bar'                               
-    assert d.existingMethod() == 'ok'                   
-    assert d.someMethod() == 'SOMEMETHOD'               
+}
 
--   创建一个实现多个 MOP 方法的特质
+class Dynamic implements DynamicObject {
+    String existingProperty = 'ok'                  
+    String existingMethod() { 'ok' }                
+}
+def d = new Dynamic()
+assert d.existingProperty == 'ok'// 子类已经有了, 所以直接调用子类的属性
+assert d.foo == null                                
+d.foo = 'bar'                                       
+assert d.foo == 'bar'                               
+assert d.existingMethod() == 'ok'                   
+assert d.someMethod() == 'SOMEMETHOD'               
+```
 
--   Dynamic 类定义一个属性
 
--   Dynamic 类定义了一个方法
-
--   调用现有属性将调用 Dynamic 中的方法
-
--   调用不存在的属性将调用特质中的方法
-
--   将调用特质上定义的 setProperty
-
--   将调用特质上定义的 getProperty
-
--   调用 Dynamic 上的现有方法
-
--   但由于 methodMissing 特性而调用不存在的方法
 
 ### 多重继承的冲突
 
-#### 默认冲突解决方案
+1. 默认情况下, 同一个继承等级, 右边的优先
 
-一个类可以实现多个特质。如果某个特质定义的方法与另一个特质中的方法具有相同的签名，则会发生冲突：
+   ~~~groovy
+   trait A {
+       String exec() { 'A' }               
+   }
+   trait B {
+       String exec() { 'B' }               
+   }
+   class C implements A,B {}   
+   def c = new C()
+   assert c.exec() == 'B'
+   ~~~
 
-    trait A {
-        String exec() { 'A' }               
-    }
-    trait B {
-        String exec() { 'B' }               
-    }
-    class C implements A,B {}               
+2. 你也可以显示指定要调用的父类的方法
 
--   Trait A 定义了一个名为 exec 的方法，返回一个 String
+   ~~~groovy
+   class C implements A,B {
+       String exec() { A.super.exec() }    
+   }
+   def c = new C()
+   assert c.exec() == 'A'  
+   ~~~
 
--   特质 B 定义了完全相同的方法
-
--   类 C 实现了这两个特质
-
-在这种情况下，默认行为是 implements 子句中最后声明的特质中的方法获胜。这里， B 是在 A 之后声明的，因此 B 中的方法将被选取：
-
-    def c = new C()
-    assert c.exec() == 'B'
-
-#### User conflict resolution
-
-如果这种行为不是您想要的，您可以使用 Trait.super.foo 语法显式选择要调用的方法。在上面的示例中，我们可以通过编写以下内容来确保调用特质 A 中的方法：
-
-    class C implements A,B {
-        String exec() { A.super.exec() }    
-    }
-    def c = new C()
-    assert c.exec() == 'A'                  
-
--   从特质 A 显式调用 exec
-
--   调用 A 中的版本，而不是使用默认的 B 中的版本
+   
 
 ### 特质的运行时实现
 
-#### 在运行时实现特质
+你可以在运行时让一个对象实现某个特质
 
-Groovy 还支持在运行时动态实现特质。它允许您使用特质"装饰"现有对象。作为一个例子，让我们从这个特质和下面的类开始：
-
-    trait Extra {
-        String extra() { "I'm an extra method" }            
-    }
-    class Something {                                       
-        String doSomething() { 'Something' }                
-    }
-
--   Extra 特质定义了 extra 方法
-
--   Something 类未实现 Extra 特质
-
--   Something 只定义了一个方法 doSomething
-
-那么如果我们这样做：
-
-    def s = new Something()
-    s.extra()
-
-对 extra 的调用将失败，因为 Something 未实现 Extra 。可以使用以下语法在运行时执行此操作：
-
-    def s = new Something() as Extra                        
-    s.extra()                                               
-    s.doSomething()                                         
-
--   使用 as 关键字在运行时将对象强制为特质
-
--   然后可以在对象上调用 extra
-
--   并且 doSomething 仍然可以调用
-
-当将对象强制为特质时，操作的结果与原来的实例不是同一个实例。被强制的对象将实现原始对象实现的特质和接口，但不会是原始类的实例。
-
-#### 一次实现多个特质
+~~~java
+trait Extra {
+    String extra() { "I'm an extra method" }            
+}
+class Something {                                       
+    String doSomething() { 'Something' }                
+}
+def s = new Something()
+s.extra() // 保存, 没有这个方法
+def s = new Something() as Extra // 这会强制Something实现Extra特质, 然后在new一个对象给s, 所以s和new出来的something不是一个对象
+s.extra()                                               
+s.doSomething()   
+~~~
 
 如果您需要一次实现多个特质，您可以使用 withTraits 方法而不是 as 关键字：
 
-    trait A { void methodFromA() {} }
-    trait B { void methodFromB() {} }
-    
-    class C {}
-    
-    def c = new C()
-    c.methodFromA()                     
-    c.methodFromB()                     
-    def d = c.withTraits A, B           
-    d.methodFromA()                     
-    d.methodFromB()                     
+```groovy
+trait A { void methodFromA() {} }
+trait B { void methodFromB() {} }
 
--   调用 methodFromA 将失败，因为 C 未实现 A
+class C {}
 
--   调用 methodFromB 将失败，因为 C 未实现 B
+def c = new C()
+c.methodFromA()  // 报错                   
+c.methodFromB()  // 保存            
+def d = c.withTraits A, B  // 强制C实现AB, 然后new一个对象给d
+d.methodFromA()                     
+d.methodFromB()                     
+```
 
--   withTrait 将把 c 包装成实现 A 和 B 的东西
 
--   methodFromA 现在将通过，因为 d 实现了 A
 
--   methodFromB 现在将通过，因为 d 也实现了 B
+### 特质的堆叠
 
-当将一个对象强制为多个特质时，操作的结果与原来的实例不是同一个实例。被强制的对象将实现原始对象实现的特质和接口，但不会是原始类的实例。
+如果一个类的父类中, 有多个相同的方法, 那么在调用super的时候, 会堆叠
 
-### 链式行为
-
-Groovy 支持可堆叠特质的概念。这个想法是，如果当前特质无法处理消息，则将一个特质委托给另一个特质。为了说明这一点，让我们想象一个像这样的消息处理程序接口：
-
-    interface MessageHandler {
-        void on(String message, Map payload)
+~~~groovy
+interface MessageHandler {
+    void on(String message, Map payload)
+}
+trait DefaultHandler implements MessageHandler {
+    void on(String message, Map payload) {
+        println "Received $message with payload $payload"
+        // 这里没有将行为传递给上一个方法, 所以堆叠会在这里断掉
     }
-
-然后，您可以通过应用小行为来编写消息处理程序。例如，让我们以特质的形式定义一个默认处理程序：
-
-    trait DefaultHandler implements MessageHandler {
-        void on(String message, Map payload) {
-            println "Received $message with payload $payload"
+}
+trait LoggingHandler implements MessageHandler {                            
+    void on(String message, Map payload) {
+        println "Seeing $message with payload $payload"                     
+        super.on(message, payload) // 将行为传递给上一个方法                 
+    }
+}
+trait SayHandler implements MessageHandler {
+    void on(String message, Map payload) {
+        if (message.startsWith("say")) {                                    
+            println "I say ${message - 'say'}!"
+        } else {
+            super.on(message, payload)                                      
         }
     }
+}
+// 堆叠会按照方法的优先级来执行, 即同等级右边的获胜
+class Handler implements DefaultHandler, SayHandler, LoggingHandler {}
+def h = new Handler()
+h.on('foo', [:])
+h.on('sayHello', [:]) 
+~~~
 
-然后任何类都可以通过实现该特质来继承默认处理程序的行为：
 
-    class SimpleHandler implements DefaultHandler {}
-
-现在，如果您想记录除了默认处理程序之外的所有消息怎么办？一种选择是这样写：
-
-    class SimpleHandlerWithLogging implements DefaultHandler {
-        void on(String message, Map payload) {                                  
-            println "Seeing $message with payload $payload"                     
-            DefaultHandler.super.on(message, payload)                           
-        }
-    }
-
--   显式实现 on 方法
-
--   执行日志记录
-
--   继续执行 DefaultHandler 特质中的行为
-
-这是可行的，但这种方法有缺点：
-
-1.  日志逻辑绑定到"具体"处理程序
-
-2.  我们在 on 方法中显式引用了 DefaultHandler ，这意味着如果我们碰巧更改了类实现的特质，代码将会被破坏
-
-作为替代方案，我们可以编写另一个特质，其责任仅限于日志记录：
-
-    trait LoggingHandler implements MessageHandler {                            
-        void on(String message, Map payload) {
-            println "Seeing $message with payload $payload"                     
-            super.on(message, payload)                                          
-        }
-    }
-
--   日志处理程序本身就是一个处理程序
-
--   打印收到的消息
-
--   然后 super 使其将调用委托给链中的下一个特质
-
-那么我们的类可以重写为：
-
-    class HandlerWithLogger implements DefaultHandler, LoggingHandler {}
-    def loggingHandler = new HandlerWithLogger()
-    loggingHandler.on('test logging', [:])
-
-这将打印：
-
-    Seeing test logging with payload [:]
-    Received test logging with payload [:]
-
-由于优先级规则意味着 LoggerHandler 获胜，因为它是最后声明的，因此对 on 的调用将使用 LoggingHandler 的实现。但后者调用了 super ，这意味着链中的下一个特质。在这里，下一个特质是 DefaultHandler 因此两者都会被调用：
-
-如果我们添加第三个处理程序，该处理程序负责处理以 say 开头的消息，那么这种方法的好处就变得更加明显：
-
-    trait SayHandler implements MessageHandler {
-        void on(String message, Map payload) {
-            if (message.startsWith("say")) {                                    
-                println "I say ${message - 'say'}!"
-            } else {
-                super.on(message, payload)                                      
-            }
-        }
-    }
-
--   处理程序特定的先决条件
-
--   如果不满足前提条件，则将消息传递给链中的下一个处理程序
-
-然后我们的最终处理程序如下所示：
-
-    class Handler implements DefaultHandler, SayHandler, LoggingHandler {}
-    def h = new Handler()
-    h.on('foo', [:])
-    h.on('sayHello', [:])
-
-这意味着
-
--   消息将首先通过日志处理程序
-
--   日志处理程序调用 super ，它将委托给下一个处理程序，即 SayHandler
-
--   如果消息以 say 开头，则处理程序将使用该消息
-
--   如果没有， say 处理程序将委托给链中的下一个处理程序
-
-这种方法非常强大，因为它允许您编写彼此不认识的处理程序，但又可以按照您想要的顺序组合它们。例如，如果我们执行代码，它将打印：
 
     Seeing foo with payload [:]
     Received foo with payload [:]
     Seeing sayHello with payload [:]
     I say Hello!
 
-但是如果我们将日志处理程序移至链中的第二个，则输出会有所不同：
 
-    class AlternateHandler implements DefaultHandler, LoggingHandler, SayHandler {}
-    h = new AlternateHandler()
-    h.on('foo', [:])
-    h.on('sayHello', [:])
-
-打印:
-
-    Seeing foo with payload [:]
-    Received foo with payload [:]
-    I say Hello!
-
-原因是，现在，由于 SayHandler 在不调用 super 的情况下使用消息，因此不再调用日志记录处理程序。
 
 #### Trait 内 super 的语义
 
@@ -2248,36 +2206,24 @@ Groovy 支持可堆叠特质的概念。这个想法是，如果当前特质无�
 
 例如，由于以下行为，可以装饰最终类：
 
-    trait Filtering {                                       
-        StringBuilder append(String str) {                  
-            def subst = str.replace('o','')                 
-            super.append(subst)                             
-        }
-        String toString() { super.toString() }              
+```groovy
+trait Filtering {                                       
+    StringBuilder append(String str) {                  
+        def subst = str.replace('o','')                 
+        super.append(subst) // 委托给下一个特质, 如果没有的话, 就调用this.append                      
     }
-    def sb = new StringBuilder().withTraits Filtering       
-    sb.append('Groovy')
-    assert sb.toString() == 'Grvy'                          
+    String toString() { super.toString() }              
+}
+def sb = new StringBuilder().withTraits Filtering       
+sb.append('Groovy') // 根据优先级, 会调用Filtering中的append
+assert sb.toString() == 'Grvy'                          
+```
 
--   定义一个名为 Filtering 的特质，应该在运行时应用于 StringBuilder
 
--   重新定义 append 方法
-
--   删除字符串中的所有"o"
-
--   然后委托给 super
-
--   如果调用 toString ，则委托给 super.toString
-
--   StringBuilder 实例上 Filtering 特质的运行时实现
-
--   已附加的字符串不再包含字母 o
 
 在这个例子中，当遇到 super.append 时，目标对象没有实现其他trait，所以调用的方法是原来的 append 方法，也就是说来自 StringBuilder 。同样的技巧也用于 toString ，以便生成的代理对象的字符串表示形式委托给 StringBuilder 实例的 toString 。
 
-### 高级功能
-
-#### 与 Java 8 默认方法的差异
+### 与 Java 8 默认方法的差异
 
 在 Java 8 中，接口可以具有default方法。如果一个类实现了一个接口并且没有重写该default方法，则会使用接口的default方法。特质与此类似，但有一个主要区别：**如果特质和父类上有相同的方法, 那么默认使用特质上的**.
 
@@ -2521,51 +2467,40 @@ Mixins 在概念上存在一些差异，因为它们在 Groovy 中可用。请�
 
 有时您会想编写一个只能应用于某种类型的特质。例如，您可能希望在一个类上应用一个特质，该特质扩展了另一个超出您控制范围的类，并且仍然能够调用这些方法。为了说明这一点，让我们从这个例子开始：
 
-    class CommunicationService {
-        static void sendMessage(String from, String to, String message) {       
-            println "$from sent [$message] to $to"
-        }
+```groovy
+class CommunicationService {
+    static void sendMessage(String from, String to, String message) {       
+        println "$from sent [$message] to $to"
     }
-    
-    class Device { String id }                                                  
-    
-    trait Communicating {
-        void sendMessage(Device to, String message) {
-            CommunicationService.sendMessage(id, to.id, message)                
-        }
+}
+
+class Device { String id }                                                  
+
+trait Communicating {
+    void sendMessage(Device to, String message) {
+        // 这里的id是动态解析的, 只有Device有id这个属性, 所以Communicating只应该应用于Device
+        CommunicationService.sendMessage(id, to.id, message)                
     }
-    
-    class MyDevice extends Device implements Communicating {}                   
-    
-    def bob = new MyDevice(id:'Bob')
-    def alice = new MyDevice(id:'Alice')
-    bob.sendMessage(alice,'secret')                                             
+}
 
--   A `Service` class, beyond your control (in a library, ...​) defines a `sendMessage` method
+class MyDevice extends Device implements Communicating {}                   
 
--   A `Device` class, beyond your control (in a library, ...​)
+def bob = new MyDevice(id:'Bob')
+def alice = new MyDevice(id:'Alice')
+bob.sendMessage(alice,'secret')                                             
+```
 
--   Defines a communicating trait for devices that can call the service
+上面的代码运转的很好, 因为id这个属性是动态解析的, 只要子类有这个属性即可
 
--   Defines `MyDevice` as a communicating device
+问题是没有什么可以阻止该特质应用于任何不是 Device 的类。任何具有 id 属性的类都可以工作，而任何不具有 id 属性的类都会导致运行时错误。
 
--   The method from the trait is called, and `id` is resolved
+你可能会想在特质上标注`@CompileStatic`, 来开启静态编译(关闭所有的动态运行时功能), 但是这会导致类型检查器会报错说它找不到 id 属性。
 
-很明显， Communicating 特质只能应用于 Device 。然而，没有明确的契约表明这一点，因为特质不能扩展类。然而，代码编译并运行得很好，因为特质方法中的 id 将被动态解析。问题是没有什么可以阻止该特质应用于任何不是 Device 的类。任何具有 id 属性的类都可以工作，而任何不具有 id 属性的类都会导致运行时错误。
 
-如果您想启用类型检查或在特质上应用 \@CompileStatic ，问题会更加复杂：因为特质不知道自己是 Device ，类型检查器会抱怨说它找不到 id 属性。
-
-一种可能性是在特质中显式添加 getId 方法，但这并不能解决所有问题。如果一个方法需要 this 作为参数，并且实际上要求它是 Device 该怎么办？
-
-    class SecurityService {
-        static void check(Device d) { if (d.id==null) throw new SecurityException() }
-    }
-
-如果您希望能够在特质中调用 this ，那么您将明确需要将 this 转换为 Device 。如果到处显式转换为 this ，这很快就会变得不可读。
 
 #### @SelfType注解
 
-为了使这个契约明确，并使类型检查器了解其自身的类型，Groovy 提供了一个 @SelfType 注解，它将：
+为了限制能够继承特质的子类，Groovy 提供了一个 @SelfType 注解，它将：
 
 -   让您声明实现此特质的类必须继承或实现的类型
 
@@ -2573,14 +2508,16 @@ Mixins 在概念上存在一些差异，因为它们在 Groovy 中可用。请�
 
 因此，在前面的示例中，我们可以使用 \@groovy.transform.SelfType 注解来修复该特质：
 
-    @SelfType(Device)
-    @CompileStatic
-    trait Communicating {
-        void sendMessage(Device to, String message) {
-            SecurityService.check(this)
-            CommunicationService.sendMessage(id, to.id, message)
-        }
+```groovy
+@SelfType(Device) // 要想继承Communicating, 那么就必须是Device, 或者他的子类
+@CompileStatic
+trait Communicating {
+    void sendMessage(Device to, String message) {
+        SecurityService.check(this)
+        CommunicationService.sendMessage(id, to.id, message)
     }
+}
+```
 
 现在，如果您尝试在不是 Device 的类上实现此特质，则会出现编译时错误：
 
@@ -2590,58 +2527,69 @@ Mixins 在概念上存在一些差异，因为它们在 Groovy 中可用。请�
 
     class 'MyDevice' implements trait 'Communicating' but does not extend self type class 'Device'
 
-总之，自我类型是声明对特质的约束的有效方式，而不必直接在特质中声明契约或必须在各处使用强制转换，从而保持关注点的分离尽可能紧密。
+
 
 #### 与 Sealed 注解（孵化中）的差异
 
-Both `@Sealed` and `@SelfType` restrict classes which use a trait but in orthogonal ways. Consider the following example:
+`@Sealed` 和 `@SelfType` 都用于**限制哪些类可以使用某个 trait**，但它们的作用方式是**正交的**（互不重叠，各有侧重）。来看下面这个例子：
 
-    interface HasHeight { double getHeight() }
-    interface HasArea { double getArea() }
-    
-    @SelfType([HasHeight, HasArea])                       
-    @Sealed(permittedSubclasses=[UnitCylinder,UnitCube])  
-    trait HasVolume {
-        double getVolume() { height * area }
-    }
-    
-    final class UnitCube implements HasVolume, HasHeight, HasArea {
-        // for the purposes of this example: h=1, w=1, l=1
-        double height = 1d
-        double area = 1d
-    }
-    
-    final class UnitCylinder implements HasVolume, HasHeight, HasArea {
-        // for the purposes of this example: h=1, diameter=1
-        // radius=diameter/2, area=PI * r^2
-        double height = 1d
-        double area = Math.PI * 0.5d**2
-    }
-    
-    assert new UnitCube().volume == 1d
-    assert new UnitCylinder().volume == 0.7853981633974483d
+```groovy
+interface HasHeight { double getHeight() }
+interface HasArea { double getArea() }
 
--   All usages of the `HasVolume` trait must implement or extend both `HasHeight` and `HasArea`
+@SelfType([HasHeight, HasArea]) // 这里的语义是: 要想继承HasVolume, 就必须继承HasHeight和HasArea
+@Sealed(permittedSubclasses = [UnitCylinder, UnitCube])// 这里的语音是, 只能UnitCylinder和UnitCube实现HasVolume
+trait HasVolume {
+    double getVolume() { height * area }
+}
 
--   Only `UnitCube` or `UnitCylinder` can use the trait
+final class UnitCube implements HasVolume, HasHeight, HasArea {
+    // 示例用：h=1，w=1，l=1
+    double height = 1d
+    double area = 1d
+}
 
-For the degenerate case where a single class implements a trait, e.g.:
+final class UnitCylinder implements HasVolume, HasHeight, HasArea {
+    // 示例用：h=1，直径=1
+    // 半径=直径/2，面积=PI * r^2
+    double height = 1d
+    double area = Math.PI * 0.5d**2
+}
 
-    final class Foo implements FooTrait {}
+assert new UnitCube().volume == 1d
+assert new UnitCylinder().volume == 0.7853981633974483d
+```
 
-Then, either:
+- 所有使用 `HasVolume` trait 的类必须同时实现或继承 `HasHeight` 和 `HasArea` 接口（由 `@SelfType` 限制）；
+- 只有 `UnitCube` 和 `UnitCylinder` 这两个类被允许使用该 trait（由 `@Sealed` 限制）。
 
-    @SelfType(Foo)
-    trait FooTrait {}
 
-or:
 
-    @Sealed(permittedSubclasses='Foo') 
-    trait FooTrait {}
+对于一种简化场景 —— 只有一个类实现某个 trait，例如：
 
--   Or just `@Sealed` if `Foo` and `FooTrait` are in the same source file
+```
+final class Foo implements FooTrait {}
+```
 
-could express this constraint. Generally, the former of these is preferred.
+你可以使用以下方式来表达这个限制：
+
+```
+@SelfType(Foo)
+trait FooTrait {}
+```
+
+或者：
+
+```
+@Sealed(permittedSubclasses = 'Foo')
+trait FooTrait {}
+```
+
+- 如果 `Foo` 和 `FooTrait` 定义在**同一个源文件中**，你甚至可以只使用 `@Sealed` 来表达限制。
+
+> 一般来说，推荐使用第一种方式（`@SelfType`），因为它更明确地表达了类型依赖的契约。
+
+
 
 ### 局限性
 
@@ -3318,6 +3266,251 @@ assert add(4, 2, 2) == ncurry(4)
 
 
 
+# 异常
+
+## try / catch / finally
+
+```groovy
+try {
+    1/0
+} catch ( IOException | NullPointerException e ) {
+    // 捕获多个类型的异常
+} catch ( e ) { 
+    // 捕获任何类型的异常
+} finally{
+    // 一定会执行
+}
+```
+
+
+
+## try with resource
+
+groovy支持java中的try with resource语法
+
+~~~groovy
+try(
+    def file = new File() // 会自动调用close方法
+) {
+    
+}catch (e) {
+    
+}
+~~~
+
+
+
+# 注解
+
+### 定义注解
+
+groovy中的注解与Java中的注解类似
+
+~~~groovy
+@interface SomeAnnotation {} // 定义注解
+~~~
+
+
+
+### 注解使用的位置
+
+可以使用`java.lang.annotation.Target` 来指定注解可以使用的位置
+
+如果没有指定, 那么任何位置都可以使用
+
+~~~groovy
+import java.lang.annotation.ElementType
+import java.lang.annotation.Target
+
+// 只能使用在类或者方法上
+@Target([ElementType.METHOD, ElementType.TYPE])     
+@interface SomeAnnotation {} 
+~~~
+
+
+
+### 注解的属性
+
+注解的成员类型只能是
+
+-   基础类型
+-   java.lang.String
+-   java.lang.Class
+-   java.lang.Enum
+-   另外一个注解类型
+-   或者以上类型的数组
+
+~~~groovy
+@interface SomeAnnotation {
+    String value() default 'something'      
+}
+@interface SomeAnnotation {
+    int step()                              
+}
+@interface SomeAnnotation {
+    Class appliesTo()                       
+}
+@interface SomeAnnotations {
+    SomeAnnotation[] value()                
+}
+enum DayOfWeek { mon, tue, wed, thu, fri, sat, sun }
+@interface Scheduled {
+    DayOfWeek dayOfWeek()                   
+}
+~~~
+
+如果注解没有默认值, 那么在使用注解的时候一定需要设置
+
+~~~groovy
+@interface Page {
+    int statusCode()
+}
+
+@Page(statusCode=404)
+void notFound() {
+    // ...
+}
+~~~
+
+如果 `value` 是唯一需要被设置的成员，则可以在注解值的声明中省略 `value=` 
+
+~~~groovy
+@interface Page {
+    String value()
+    int statusCode() default 200
+}
+@Page('/users')                         
+void userList() {
+    // ...
+}
+~~~
+
+
+
+### 保留策略
+
+可以使用`java.lang.annotation.Retention` 来定义注解的保留策略
+
+~~~groovy
+import java.lang.annotation.Retention
+import java.lang.annotation.RetentionPolicy
+
+// 只在源码阶段保留
+@Retention(RetentionPolicy.SOURCE)                   
+@interface SomeAnnotation {}    
+~~~
+
+
+
+### 闭包作为注解的值
+
+如果一个注解的属性类型是Class, 那么他可以接收一个闭包作为参数
+
+~~~groovy
+@Retention(RetentionPolicy.RUNTIME)
+@interface OnlyIf {
+    Class value()                    
+}
+
+class Tasks {
+    Set result = []
+    void alwaysExecuted() {
+        result << 1
+    }
+    @OnlyIf({ jdk>=7 && windows })
+    void requiresJDK7AndWindows() {
+        result << 'JDK 7 Windows'
+    }
+}
+
+	// 这个方法用于解析Tasks上的OnlyIf中的闭包
+	static <T> T run(Class<T> taskClass) {
+        def tasks = taskClass.newInstance()                                         
+        def params = [jdk: 6, windows: false]                                       
+        tasks.class.declaredMethods.each { m ->                                     
+            if (Modifier.isPublic(m.modifiers) && m.parameterTypes.length == 0) {   
+                def onlyIf = m.getAnnotation(OnlyIf)                                
+                if (onlyIf) {
+                    Closure cl = onlyIf.value().newInstance(tasks,tasks)
+                    // 设置闭包的代理, 并通过调用闭包来判断是否能够调用这个方法
+                    cl.delegate = params
+                    if (cl()) {                                                     
+                        m.invoke(tasks)
+                    }
+                } else {
+                    m.invoke(tasks)
+                }
+            }
+        }
+        tasks
+    }
+~~~
+
+
+
+### 元注解
+
+元注解，也称为注解别名，是 **在编译时被其他注解替换的注解**
+
+~~~groovy
+@Service                                        
+@Transactional                                  
+@AnnotationCollector // 表示定义元注解                            
+@interface TransactionalService {}
+
+@TransactionalService // 等效于同时使用@Service, @Transactional                       
+class MyTransactionalService {}
+~~~
+
+
+
+元注解可以收集带有参数的注解, 同时还可以覆盖特定的值
+
+~~~groovy
+@Timeout(after=3600)
+@Dangerous(type='explosive')
+@AnnotationCollector // 定义元注解
+public @interface Explosive {}
+
+@Explosive // 等效于@Timeout(after=3600), @Dangerous(type='explosive')  
+class MyTransactionalService {}
+
+@Explosive(after=0) // 覆盖指定的值             
+class Bomb {}
+~~~
+
+
+
+如果两个注解定义了相同的参数名称，则默认处理器会将注解值复制到所有接受该参数的注解
+
+如果两个注解的相同参数, 但是他们的含义是不一样的, 那么可能需要使用@AnnotationCollector 注解的mode 参数
+
+~~~groovy
+public @interface Foo { String value()  }
+public @interface Bar { String value() }
+
+@Foo
+@Bar
+@AnnotationCollector
+public @interface FooBar {} 
+
+@FooBar('a')
+class Joe {}                                        
+assert Joe.getAnnotation(Foo).value() == 'a'        
+println Joe.getAnnotation(Bar).value() == 'a'  
+~~~
+
+
+
+#### 自定义元注解处理器
+
+自定义注解处理器将允许您选择如何将元注解转换为收集后的注解, 只需要
+
+-   创建一个元注解处理器，扩展 org.codehaus.groovy.transform.AnnotationCollectorTransform
+-   声明要在元注解声明中使用的处理器
+
+详细过程百度
+
 
 
 # 脚本
@@ -3865,251 +4058,9 @@ class Mapper<T,U> {
 
 
 
-# 异常
 
-## try / catch / finally
 
-```groovy
-try {
-    1/0
-} catch ( IOException | NullPointerException e ) {
-    // 捕获多个类型的异常
-} catch ( e ) { 
-    // 捕获任何类型的异常
-} finally{
-    // 一定会执行
-}
-```
 
-
-
-## try with resource
-
-groovy支持java中的try with resource语法
-
-~~~groovy
-try(
-    def file = new File() // 会自动调用close方法
-) {
-    
-}catch (e) {
-    
-}
-~~~
-
-
-
-
-
-# 注解
-
-### 定义注解
-
-groovy中的注解与Java中的注解类似
-
-~~~groovy
-@interface SomeAnnotation {} // 定义注解
-~~~
-
-
-
-### 注解使用的位置
-
-可以使用`java.lang.annotation.Target` 来指定注解可以使用的位置
-
-如果没有指定, 那么任何位置都可以使用
-
-~~~groovy
-import java.lang.annotation.ElementType
-import java.lang.annotation.Target
-
-// 只能使用在类或者方法上
-@Target([ElementType.METHOD, ElementType.TYPE])     
-@interface SomeAnnotation {} 
-~~~
-
-
-
-### 注解的属性
-
-注解的成员类型只能是
-
--   基础类型
--   java.lang.String
--   java.lang.Class
--   java.lang.Enum
--   另外一个注解类型
--   或者以上类型的数组
-
-~~~groovy
-@interface SomeAnnotation {
-    String value() default 'something'      
-}
-@interface SomeAnnotation {
-    int step()                              
-}
-@interface SomeAnnotation {
-    Class appliesTo()                       
-}
-@interface SomeAnnotations {
-    SomeAnnotation[] value()                
-}
-enum DayOfWeek { mon, tue, wed, thu, fri, sat, sun }
-@interface Scheduled {
-    DayOfWeek dayOfWeek()                   
-}
-~~~
-
-如果注解没有默认值, 那么在使用注解的时候一定需要设置
-
-~~~groovy
-@interface Page {
-    int statusCode()
-}
-
-@Page(statusCode=404)
-void notFound() {
-    // ...
-}
-~~~
-
-如果 `value` 是唯一需要被设置的成员，则可以在注解值的声明中省略 `value=` 
-
-~~~groovy
-@interface Page {
-    String value()
-    int statusCode() default 200
-}
-@Page('/users')                         
-void userList() {
-    // ...
-}
-~~~
-
-
-
-### 保留策略
-
-可以使用`java.lang.annotation.Retention` 来定义注解的保留策略
-
-~~~groovy
-import java.lang.annotation.Retention
-import java.lang.annotation.RetentionPolicy
-
-// 只在源码阶段保留
-@Retention(RetentionPolicy.SOURCE)                   
-@interface SomeAnnotation {}    
-~~~
-
-
-
-### 闭包作为注解的值
-
-如果一个注解的属性类型是Class, 那么他可以接收一个闭包作为参数
-
-~~~groovy
-@Retention(RetentionPolicy.RUNTIME)
-@interface OnlyIf {
-    Class value()                    
-}
-
-class Tasks {
-    Set result = []
-    void alwaysExecuted() {
-        result << 1
-    }
-    @OnlyIf({ jdk>=7 && windows })
-    void requiresJDK7AndWindows() {
-        result << 'JDK 7 Windows'
-    }
-}
-
-	// 这个方法用于解析Tasks上的OnlyIf中的闭包
-	static <T> T run(Class<T> taskClass) {
-        def tasks = taskClass.newInstance()                                         
-        def params = [jdk: 6, windows: false]                                       
-        tasks.class.declaredMethods.each { m ->                                     
-            if (Modifier.isPublic(m.modifiers) && m.parameterTypes.length == 0) {   
-                def onlyIf = m.getAnnotation(OnlyIf)                                
-                if (onlyIf) {
-                    Closure cl = onlyIf.value().newInstance(tasks,tasks)            
-                    cl.delegate = params                                            
-                    if (cl()) {                                                     
-                        m.invoke(tasks)                                             
-                    }
-                } else {
-                    m.invoke(tasks)                                                 
-                }
-            }
-        }
-        tasks                                                                       
-    }
-~~~
-
-
-
-### 元注解
-
-元注解，也称为注解别名，是 **在编译时被其他注解替换的注解**
-
-~~~groovy
-@Service                                        
-@Transactional                                  
-@AnnotationCollector // 表示定义元注解                            
-@interface TransactionalService {}
-
-@TransactionalService // 等效于同时使用@Service, @Transactional                       
-class MyTransactionalService {}
-~~~
-
-
-
-元注解可以收集带有参数的注解, 同时还可以覆盖特定的值
-
-~~~groovy
-@Timeout(after=3600)
-@Dangerous(type='explosive')
-@AnnotationCollector // 定义元注解
-public @interface Explosive {}
-
-@Explosive // 等效于@Timeout(after=3600), @Dangerous(type='explosive')  
-class MyTransactionalService {}
-
-@Explosive(after=0) // 覆盖指定的值             
-class Bomb {}
-~~~
-
-
-
-如果两个注解定义了相同的参数名称，则默认处理器会将注解值复制到所有接受该参数的注解
-
-如果两个注解的相同参数, 但是他们的含义是不一样的, 那么可能需要使用@AnnotationCollector 注解的mode 参数
-
-~~~groovy
-public @interface Foo { String value()  }
-public @interface Bar { String value() }
-
-@Foo
-@Bar
-@AnnotationCollector
-public @interface FooBar {} 
-
-@FooBar('a')
-class Joe {}                                        
-assert Joe.getAnnotation(Foo).value() == 'a'        
-println Joe.getAnnotation(Bar).value() == 'a'  
-~~~
-
-
-
-#### 自定义元注解处理器
-
-自定义注解处理器将允许您选择如何将元注解转换为收集后的注解, 只需要
-
--   创建一个元注解处理器，扩展 org.codehaus.groovy.transform.AnnotationCollectorTransform
--   声明要在元注解声明中使用的处理器
-
-详细过程百度
 
 
 
@@ -4198,390 +4149,6 @@ class GreetingService {
 
 
 
-
-# Groovy集成机制
-
-// todo 没有看, 没时间翻译
-
-The Groovy language proposes several ways to integrate itself into applications (Java or even Groovy) at runtime, from the most basic, simple code execution to the most complete, integrating caching and compiler customization.
-
-All the examples written in this section are using Groovy, but the same integration mechanisms can be used from Java.
-
-## Eval
-
-The `groovy.util.Eval` class is the simplest way to execute Groovy dynamically at runtime. This can be done by calling the `me` method:
-
-    import groovy.util.Eval
-    
-    assert Eval.me('33*3') == 99
-    assert Eval.me('"foo".toUpperCase()') == 'FOO'
-
-`Eval` supports multiple variants that accept parameters for simple evaluation:
-
-    assert Eval.x(4, '2*x') == 8                
-    assert Eval.me('k', 4, '2*k') == 8          
-    assert Eval.xy(4, 5, 'x*y') == 20           
-    assert Eval.xyz(4, 5, 6, 'x*y+z') == 26     
-
--   Simple evaluation with one bound parameter named `x`
-
--   Same evaluation, with a custom bound parameter named `k`
-
--   Simple evaluation with two bound parameters named `x` and `y`
-
--   Simple evaluation with three bound parameters named `x`, `y` and `z`
-
-The `Eval` class makes it very easy to evaluate simple scripts, but doesn't scale: there is no caching of the script, and it isn't meant to evaluate more than one-liners.
-
-## GroovyShell
-
-### Multiple sources
-
-The `groovy.lang.GroovyShell` class is the preferred way to evaluate scripts with the ability to cache the resulting script instance. Although the `Eval` class returns the result of the execution of the compiled script, the `GroovyShell` class offers more options.
-
-    def shell = new GroovyShell()                           
-    def result = shell.evaluate '3*5'                       
-    def result2 = shell.evaluate(new StringReader('3*5'))   
-    assert result == result2
-    def script = shell.parse '3*5'                          
-    assert script instanceof groovy.lang.Script
-    assert script.run() == 15                               
-
--   create a new `GroovyShell` instance
-
--   can be used as `Eval` with direct execution of the code
-
--   can read from multiple sources (`String`, `Reader`, `File`, `InputStream`)
-
--   can defer execution of the script. `parse` returns a `Script` instance
-
--   `Script` defines a `run` method
-
-### Sharing data between a script and the application
-
-It is possible to share data between the application and the script using a `groovy.lang.Binding`:
-
-    def sharedData = new Binding()                          
-    def shell = new GroovyShell(sharedData)                 
-    def now = new Date()
-    sharedData.setProperty('text', 'I am shared data!')     
-    sharedData.setProperty('date', now)                     
-    
-    String result = shell.evaluate('"At $date, $text"')     
-    
-    assert result == "At $now, I am shared data!"
-
--   create a new `Binding` that will contain shared data
-
--   create a `GroovyShell` using this shared data
-
--   add a string to the binding
-
--   add a date to the binding (you are not limited to simple types)
-
--   evaluate the script
-
-Note that it is also possible to write from the script into the binding:
-
-    def sharedData = new Binding()                          
-    def shell = new GroovyShell(sharedData)                 
-    
-    shell.evaluate('foo=123')                               
-    
-    assert sharedData.getProperty('foo') == 123             
-
--   create a new `Binding` instance
-
--   create a new `GroovyShell` using that shared data
-
--   use an **undeclared** variable to store the result into the binding
-
--   read the result from the caller
-
-It is important to understand that you need to use an undeclared variable if you want to write into the binding. Using `def` or an `explicit` type like in the example below would fail because you would then create a *local variable*:
-
-    def sharedData = new Binding()
-    def shell = new GroovyShell(sharedData)
-    
-    shell.evaluate('int foo=123')
-    
-    try {
-        assert sharedData.getProperty('foo')
-    } catch (MissingPropertyException e) {
-        println "foo is defined as a local variable"
-    }
-
-You must be very careful when using shared data in a multithreaded environment. The `Binding` instance that you pass to `GroovyShell` is **not** thread safe, and shared by all scripts.
-
-It is possible to work around the shared instance of `Binding` by leveraging the `Script` instance which is returned by `parse`:
-
-    def shell = new GroovyShell()
-    
-    def b1 = new Binding(x:3)                       
-    def b2 = new Binding(x:4)                       
-    def script = shell.parse('x = 2*x')
-    script.binding = b1
-    script.run()
-    script.binding = b2
-    script.run()
-    assert b1.getProperty('x') == 6
-    assert b2.getProperty('x') == 8
-    assert b1 != b2
-
--   will store the `x` variable inside `b1`
-
--   will store the `x` variable inside `b2`
-
-However, you must be aware that you are still sharing the **same instance** of a script. So this technique cannot be used if you have two threads working on the same script. In that case, you must make sure of creating two distinct script instances:
-
-    def shell = new GroovyShell()
-    
-    def b1 = new Binding(x:3)
-    def b2 = new Binding(x:4)
-    def script1 = shell.parse('x = 2*x')            
-    def script2 = shell.parse('x = 2*x')            
-    assert script1 != script2
-    script1.binding = b1                            
-    script2.binding = b2                            
-    def t1 = Thread.start { script1.run() }         
-    def t2 = Thread.start { script2.run() }         
-    [t1,t2]*.join()                                 
-    assert b1.getProperty('x') == 6
-    assert b2.getProperty('x') == 8
-    assert b1 != b2
-
--   create an instance of script for thread 1
-
--   create an instance of script for thread 2
-
--   assign first binding to script 1
-
--   assign second binding to script 2
-
--   start first script in a separate thread
-
--   start second script in a separate thread
-
--   wait for completion
-
-In case you need thread safety like here, it is more advisable to use the [GroovyClassLoader](#groovyclassloader) directly instead.
-
-### Custom script class
-
-We have seen that the `parse` method returns an instance of `groovy.lang.Script`, but it is possible to use a custom class, given that it extends `Script` itself. It can be used to provide additional behavior to the script like in the example below:
-
-    abstract class MyScript extends Script {
-        String name
-    
-        String greet() {
-            "Hello, $name!"
-        }
-    }
-
-The custom class defines a property called `name` and a new method called `greet`. This class can be used as the script base class by using a custom configuration:
-
-    import org.codehaus.groovy.control.CompilerConfiguration
-    
-    def config = new CompilerConfiguration()                                    
-    config.scriptBaseClass = 'MyScript'                                         
-    
-    def shell = new GroovyShell(this.class.classLoader, new Binding(), config)  
-    def script = shell.parse('greet()')                                         
-    assert script instanceof MyScript
-    script.setName('Michel')
-    assert script.run() == 'Hello, Michel!'
-
--   create a `CompilerConfiguration` instance
-
--   instruct it to use `MyScript` as the base class for scripts
-
--   then use the compiler configuration when you create the shell
-
--   the script now has access to the new method `greet`
-
-You are not limited to the sole *scriptBaseClass* configuration. You can use any of the compiler configuration tweaks, including the [compilation customizers](core-domain-specific-languages.xml#compilation-customizers).
-
-## GroovyClassLoader
-
-In the [previous section](#integ-groovyshell), we have shown that `GroovyShell` was an easy tool to execute scripts, but it makes it complicated to compile anything but scripts. Internally, it makes use of the `groovy.lang.GroovyClassLoader`, which is at the heart of the compilation and loading of classes at runtime.
-
-By leveraging the `GroovyClassLoader` instead of `GroovyShell`, you will be able to load classes, instead of instances of scripts:
-
-    import groovy.lang.GroovyClassLoader
-    
-    def gcl = new GroovyClassLoader()                                           
-    def clazz = gcl.parseClass('class Foo { void doIt() { println "ok" } }')    
-    assert clazz.name == 'Foo'                                                  
-    def o = clazz.newInstance()                                                 
-    o.doIt()                                                                    
-
--   create a new `GroovyClassLoader`
-
--   `parseClass` will return an instance of `Class`
-
--   you can check that the class which is returns is really the one defined in the script
-
--   and you can create a new instance of the class, which is not a script
-
--   then call any method on it
-
-A GroovyClassLoader keeps a reference of all the classes it created, so it is easy to create a memory leak. In particular, if you execute the same script twice, if it is a String, then you obtain two distinct classes!
-
-    import groovy.lang.GroovyClassLoader
-    
-    def gcl = new GroovyClassLoader()
-    def clazz1 = gcl.parseClass('class Foo { }')                                
-    def clazz2 = gcl.parseClass('class Foo { }')                                
-    assert clazz1.name == 'Foo'                                                 
-    assert clazz2.name == 'Foo'
-    assert clazz1 != clazz2                                                     
-
--   dynamically create a class named \"Foo\"
-
--   create an identical looking class, using a separate `parseClass` call
-
--   make sure both classes have the same name
-
--   but they are actually different!
-
-The reason is that a `GroovyClassLoader` doesn't keep track of the source text. If you want to have the same instance, then the source **must** be a file, like in this example:
-
-    def gcl = new GroovyClassLoader()
-    def clazz1 = gcl.parseClass(file)                                           
-    def clazz2 = gcl.parseClass(new File(file.absolutePath))                    
-    assert clazz1.name == 'Foo'                                                 
-    assert clazz2.name == 'Foo'
-    assert clazz1 == clazz2                                                     
-
--   parse a class from a `File`
-
--   parse a class from a distinct file instance, but pointing to the same physical file
-
--   make sure our classes have the same name
-
--   but now, they are the same instance
-
-Using a `File` as input, the `GroovyClassLoader` is capable of **caching** the generated class file, which avoids creating multiple classes at runtime for the same source.
-
-## GroovyScriptEngine
-
-The `groovy.util.GroovyScriptEngine` class provides a flexible foundation for applications which rely on script reloading and script dependencies. While `GroovyShell` focuses on standalone `Script`s and `GroovyClassLoader` handles dynamic compilation and loading of any Groovy class, the `GroovyScriptEngine` will add a layer on top of `GroovyClassLoader` to handle both script dependencies and reloading.
-
-To illustrate this, we will create a script engine and execute code in an infinite loop. First of all, you need to create a directory with the following script inside:
-
-**ReloadingTest.groovy**
-
-    class Greeter {
-        String sayHello() {
-            def greet = "Hello, world!"
-            greet
-        }
-    }
-    
-    new Greeter()
-
-then you can execute this code using a `GroovyScriptEngine`:
-
-    def binding = new Binding()
-    def engine = new GroovyScriptEngine([tmpDir.toURI().toURL()] as URL[])          
-    
-    while (true) {
-        def greeter = engine.run('ReloadingTest.groovy', binding)                   
-        println greeter.sayHello()                                                  
-        Thread.sleep(1000)
-    }
-
--   create a script engine which will look for sources into our source directory
-
--   execute the script, which will return an instance of `Greeter`
-
--   print the greeting message
-
-At this point, you should see a message printed every second:
-
-    Hello, world!
-    Hello, world!
-    ...
-
-**Without** interrupting the script execution, now replace the contents of the `ReloadingTest` file with:
-
-**ReloadingTest.groovy**
-
-    class Greeter {
-        String sayHello() {
-            def greet = "Hello, Groovy!"
-            greet
-        }
-    }
-    
-    new Greeter()
-
-And the message should change to:
-
-    Hello, world!
-    ...
-    Hello, Groovy!
-    Hello, Groovy!
-    ...
-
-But it is also possible to have a dependency on another script. To illustrate this, create the following file into the same directory, without interrupting the executing script:
-
-**Dependency.groovy**
-
-    class Dependency {
-        String message = 'Hello, dependency 1'
-    }
-
-and update the `ReloadingTest` script like this:
-
-**ReloadingTest.groovy**
-
-    import Dependency
-    
-    class Greeter {
-        String sayHello() {
-            def greet = new Dependency().message
-            greet
-        }
-    }
-    
-    new Greeter()
-
-And this time, the message should change to:
-
-    Hello, Groovy!
-    ...
-    Hello, dependency 1!
-    Hello, dependency 1!
-    ...
-
-And as a last test, you can update the `Dependency.groovy` file without touching the `ReloadingTest` file:
-
-**Dependency.groovy**
-
-    class Dependency {
-        String message = 'Hello, dependency 2'
-    }
-
-And you should observe that the dependent file was reloaded:
-
-    Hello, dependency 1!
-    ...
-    Hello, dependency 2!
-    Hello, dependency 2!
-
-## CompilationUnit
-
-Ultimately, it is possible to perform more operations during compilation by relying directly on the `org.codehaus.groovy.control.CompilationUnit` class. This class is responsible for determining the various steps of compilation and would let you introduce new steps or even stop compilation at various phases. This is for example how stub generation is done, for the joint compiler.
-
-However, overriding `CompilationUnit` is not recommended and should only be done if no other standard solution works.
-
-Unresolved directive in guide-integrating.adoc - include::../../../subprojects/groovy-jsr223/src/spec/doc/\_integrating-jsr223.adoc\[leveloffset=+1\]
-
-
-
-# todo
-
 如果接口或者抽象类或者特质只有一个抽象方法, 那么可以直接将闭包转换为这个接口
 
 ~~~groovy
@@ -4658,4 +4225,518 @@ def iter = map as Iterator
 
 
 
+# Groovy集成机制
 
+// todo 没有看, 没时间翻译
+
+Groovy 语言提供了多种方式，在运行时将自身集成到应用程序中（无论是 Java 应用还是 Groovy 应用），从最基本的代码执行，到带有缓存与编译器自定义功能的完整集成方案。
+
+本节中的所有示例都是使用 Groovy 编写的，但相同的集成机制也可以在 **Java** 中使用。
+
+## Eval（动态执行）
+
+`groovy.util.Eval` 类是运行时动态执行 Groovy 代码最简单的方式。只需调用 `me` 方法即可：
+
+```groovy
+import groovy.util.Eval
+
+assert Eval.me('33*3') == 99
+assert Eval.me('"foo".toUpperCase()') == 'FOO'
+```
+
+`Eval` 提供了多个重载方法，支持传入参数以进行简单求值：
+
+```groovy
+assert Eval.x(4, '2*x') == 8                // 4作为实参, 传递给x
+assert Eval.me('k', 4, '2*k') == 8          // 参数名为k, 值为4
+assert Eval.xy(4, 5, 'x*y') == 20           // 将4和5传递给xy
+assert Eval.xyz(4, 5, 6, 'x*y+z') == 26     // 将456传递给xyz
+```
+
+> `Eval` 类使执行简单的 Groovy 脚本变得非常容易，但它**不适用于大型或频繁执行的脚本场景**，因为：
+>
+> - 它不带有缓存机制，每次都会重新编译执行
+> - 它设计用于“一行表达式”级别的执行，不适合复杂逻辑
+
+
+
+## GroovyShell
+
+
+
+`groovy.lang.GroovyShell` 类是执行脚本时的首选方式，它支持缓存生成的脚本实例。相较于 `Eval` 类只能返回编译后脚本的执行结果，`GroovyShell` 提供了更多功能和灵活性。
+
+```groovy
+def shell = new GroovyShell()                            // 创建一个 GroovyShell 实例
+def result = shell.evaluate '3*5'                        // 像 Eval 一样直接执行代码
+def result2 = shell.evaluate(new StringReader('3*5'))    // 从 Reader 执行代码
+assert result == result2
+
+// parse返回对象, evaluate直接执行
+def script = shell.parse '3*5'                           // 延迟执行：返回 Script 实例
+assert script instanceof groovy.lang.Script
+assert script.run() == 15                                // 调用 Script 的 run 方法执行
+```
+
+
+
+### 在脚本和应用程序之间共享数据
+
+我们可以使用 `groovy.lang.Binding` 在应用程序与脚本之间共享数据：
+
+```groovy
+def sharedData = new Binding()                           // 创建一个 Binding，用于存放共享数据
+def shell = new GroovyShell(sharedData)                  // 使用 Binding 创建 GroovyShell 实例
+def now = new Date()
+sharedData.setProperty('text', 'I am shared data!')      // 添加字符串数据到 binding
+sharedData.setProperty('date', now)                      // 添加日期对象到 binding
+
+String result = shell.evaluate('"At $date, $text"')      // 脚本中访问共享变量
+
+assert result == "At $now, I am shared data!"            // 验证结果
+```
+
+- 使用 `Binding` 可以在脚本中读取应用设置的变量，也可以将结果写回应用：
+
+```groovy
+def sharedData = new Binding()
+def shell = new GroovyShell(sharedData)
+
+shell.evaluate('foo=123')                                // 未声明变量直接赋值 -> 写入 Binding
+
+assert sharedData.getProperty('foo') == 123              // 脚本变量可被外部读取
+```
+
+⚠️ 注意：**只能使用未声明的变量**（如 `foo=123`）才能写入 `Binding`。如果你使用 `def foo=123` 或 `int foo=123`，将会定义为局部变量，不会写入 `Binding`：
+
+```groovy
+def sharedData = new Binding()
+def shell = new GroovyShell(sharedData)
+
+shell.evaluate('int foo=123')                            // 声明了类型，变成局部变量
+
+try {
+    assert sharedData.getProperty('foo')                 // 抛出异常
+} catch (MissingPropertyException e) {
+    println "foo 是局部变量，未写入 binding"
+}
+```
+
+
+
+### 多线程中的共享数据风险与解决方案
+
+在多线程环境中，使用同一个 `Binding` 是 **不安全** 的，因为多个脚本会共享该实例。推荐的替代方式是：**为每个线程使用不同的 `Script` 实例和独立的 `Binding`**。
+
+```groovy
+def shell = new GroovyShell()
+
+def b1 = new Binding(x:3)
+def b2 = new Binding(x:4)
+def script1 = shell.parse('x = 2*x')            // 为线程 1 创建独立 script
+def script2 = shell.parse('x = 2*x')            // 为线程 2 创建独立 script
+assert script1 != script2                       // 确保是两个不同实例
+
+script1.binding = b1
+script2.binding = b2
+
+def t1 = Thread.start { script1.run() }         // 启动线程 1
+def t2 = Thread.start { script2.run() }         // 启动线程 2
+[t1,t2]*.join()                                 // 等待线程完成
+
+assert b1.getProperty('x') == 6
+assert b2.getProperty('x') == 8
+```
+
+- 每个线程绑定不同的数据和脚本实例，避免数据竞争。
+- 如果你真的需要严格的线程安全，建议直接使用 [GroovyClassLoader](#groovyclassloader) 生成类来执行脚本，这种方式更可控。
+
+
+
+### 自定义Script类
+
+我们已经看到 `GroovyShell.parse` 返回的是一个 `groovy.lang.Script` 实例，但你也可以**自定义一个继承自 `Script` 的类**，为脚本添加额外的行为。比如：
+
+```groovy
+abstract class MyScript extends Script {
+    String name
+
+    String greet() {
+        "Hello, $name!"
+    }
+}
+```
+
+
+
+要让 Groovy 脚本使用这个自定义类作为基类，你需要配置一个 `CompilerConfiguration`：
+
+```groovy
+import org.codehaus.groovy.control.CompilerConfiguration
+
+def config = new CompilerConfiguration() // 创建编译器配置对象
+config.scriptBaseClass = 'MyScript' // 指定脚本基类为自定义类
+
+def shell = new GroovyShell(this.class.classLoader, new Binding(), config)  // 用此配置创建 GroovyShell
+def script = shell.parse('greet()')  // 编译脚本：脚本中调用 greet 方法
+
+assert script instanceof MyScript  // 确认脚本类是 MyScript 的子类
+script.setName('Michel')   // 调用MyScript的setName方法
+assert script.run() == 'Hello, Michel!'     
+```
+
+
+
+You are not limited to the sole *scriptBaseClass* configuration. You can use any of the compiler configuration tweaks, including the [compilation customizers](core-domain-specific-languages.xml#compilation-customizers).
+
+## GroovyClassLoader
+
+在前面的 [GroovyShell 章节](#integ-groovyshell) 中我们看到，`GroovyShell` 适合用来执行脚本。但当你需要动态**编译并加载类（Class）**时，使用 `GroovyClassLoader` 更为合适。它是 Groovy 编译和运行时加载的核心机制。
+
+```groovy
+import groovy.lang.GroovyClassLoader
+
+def gcl = new GroovyClassLoader() // 创建 Groovy 类加载器
+def clazz = gcl.parseClass('class Foo { void doIt() { println "ok" } }') // 编译并加载 Foo 类, 这里返回的是Class类型, 而不是Script类型的对象
+assert clazz.name == 'Foo'  // 确认类名
+def o = clazz.newInstance()  // 创建实例
+o.doIt()    // 调用方法，输出 "ok"
+```
+
+GroovyClassLoader会对一个他创建的Class都保存引用, 所以非常容易出现内存泄露
+
+特别是当你将同一段Class文本, 编译加载两次, 那么你会得到两个不同的Class, 即使他们的功能相同
+
+```groovy
+import groovy.lang.GroovyClassLoader
+
+def gcl = new GroovyClassLoader()
+def clazz1 = gcl.parseClass('class Foo { }')                                
+def clazz2 = gcl.parseClass('class Foo { }')                                
+assert clazz1.name == 'Foo'                                                 
+assert clazz2.name == 'Foo'
+assert clazz1 != clazz2  // 类名相同, 但是Class不同
+```
+
+原因是：`GroovyClassLoader` 并不缓存字符串形式的源码，因此每次解析都会生成**新类**
+
+如果你想解析相同的文本多次, 但是返回的是同一个Class, 那么脚本的来源必须是一个文件, 这样`GroovyClassLoader`会缓存同一个文件生成的Class字节码, 这样多次调用都是返回同一个Class
+
+```groovy
+def gcl = new GroovyClassLoader()
+def clazz1 = gcl.parseClass(new File("Foo.groovy"))               
+def clazz2 = gcl.parseClass(new File("Foo.groovy"))               
+
+assert clazz1.name == 'Foo'
+assert clazz2.name == 'Foo'
+assert clazz1 == clazz2        // 同一个类
+```
+
+## GroovyScriptEngine
+
+`groovy.util.GroovyScriptEngine` 是一个灵活的运行时引擎，适用于那些**需要脚本热加载和脚本间依赖**的应用程序。
+
+相比之下：
+
+- ✅ `GroovyShell`：适合执行简单的脚本
+- ✅ `GroovyClassLoader`：适合动态编译加载 Groovy 类
+- ✅ `GroovyScriptEngine`：**支持脚本依赖和热重载**，是在两者之上的更高级封装
+
+
+
+为了说明这一点, 我们需要现在tmp目录下创建一个`ReloadingTest.groovy`, 内容如下
+
+~~~groovy
+class Greeter {
+    String sayHello() {
+        def greet = "Hello, world!"
+        greet
+    }
+}
+
+new Greeter() // 默认将这个值作为返回值
+~~~
+
+然后我们通过`GroovyScriptEngine`来执行这个文件
+
+~~~groovy
+def binding = new Binding()
+def engine = new GroovyScriptEngine([tmpDir.toURI().toURL()] as URL[])          
+
+while (true) {
+    def greeter = engine.run('ReloadingTest.groovy', binding) // 接受返回的Greeter对象
+    println greeter.sayHello()                                                  
+    Thread.sleep(1000)
+}
+~~~
+
+此时会循环打印如下的内容
+
+    Hello, world!
+    Hello, world!
+    ...
+
+下载我们将`ReloadingTest.groovy`的内容替换为如下, 而不终端上面`GroovyScriptEngine`的执行
+
+~~~groovy
+class Greeter {
+    String sayHello() {
+        def greet = "Hello, Groovy!"
+        greet
+    }
+}
+
+new Greeter()
+~~~
+
+此时内容会发生改变
+
+    Hello, world!
+    ...
+    Hello, Groovy!
+    Hello, Groovy!
+    ...
+
+让Greeter去依赖另外一个脚本也是可以的, 此时我们在tmp目录下在创建一个`Dependency.groovy`
+
+~~~groovy
+class Dependency {
+    String message = 'Hello, dependency 1'
+}
+~~~
+
+然后将`ReloadingTest.groovy`修改为如下内容
+
+~~~groovy
+import Dependency
+
+class Greeter {
+    String sayHello() {
+        def greet = new Dependency().message
+        greet
+    }
+}
+
+new Greeter()
+~~~
+
+此时打印会变成如下
+
+    Hello, Groovy!
+    ...
+    Hello, dependency 1!
+    Hello, dependency 1!
+    ...
+
+此时我们如果修改`Dependency.groovy`为如下内容, 那么`GroovyScriptEngine`也是能够检测到变化的
+
+    Hello, dependency 1!
+    ...
+    Hello, dependency 2!
+    Hello, dependency 2!
+
+
+
+
+
+## CompilationUnit(编译单元)
+
+最终，如果你需要在 Groovy **编译过程中执行更底层或更复杂的操作**，可以直接使用 `org.codehaus.groovy.control.CompilationUnit` 类。
+
+这个类负责管理 Groovy 编译的各个阶段，例如：
+
+- 语法解析（Parsing）
+- 抽象语法树构建（AST）
+- 类生成（Class Generation）
+
+你可以通过它：
+
+- 插入自定义的编译步骤
+- 在某个阶段停止编译
+- 实现自定义处理逻辑（例如：AST 转换器、Stub 文件生成器）
+
+ **官方不建议直接使用或重写 `CompilationUnit`**，除非你已经确定标准方式（如 `GroovyClassLoader`、`GroovyShell`、ASTTransform、CompilationCustomizer 等）**无法满足需求**。
+
+Unresolved directive in guide-integrating.adoc - include::../../../subprojects/groovy-jsr223/src/spec/doc/\_integrating-jsr223.adoc\[leveloffset=+1\]
+
+
+
+
+
+# 在maven中使用Groovy
+
+在maven中添加如下代码:
+
+~~~xml
+  <build>
+    <plugins>
+    <!-- 增加 gmavenplus 插件 允许集成Groovy到Maven-->
+      <plugin> 
+        <groupId>org.codehaus.gmavenplus</groupId>  
+        <artifactId>gmavenplus-plugin</artifactId>
+        <version>1.7.1</version>
+        <executions>
+          <execution>
+            <goals>
+              <!-- 将src/main/groovy/**/.groovy添加到源码路径 -->
+              <goal>addSources</goal>
+              <!-- 将src/test/groovy/**/.groovy添加到源码路径 -->
+              <goal>addTestSources</goal>
+              <!-- 为 Groovy 文件生成 Java stub（桩）类，供 Java 编译器使用）-->
+              <goal>generateStubs</goal>
+              <!-- 编译主目录下的 Groovy 源码 -->
+              <goal>compile</goal>
+              <!-- 为测试目录生成 stub 类 -->
+              <goal>generateTestStubs</goal>
+              <!-- 编译测试目录下的 Groovy 测试源码 -->
+              <goal>compileTests</goal>
+              <!-- 编译完成后，删除之前生成的主代码的 stub 类，避免留下无用文件 -->
+              <goal>removeStubs</goal>
+              <!-- 编译完成后，删除测试代码生成的 stub 类 -->
+              <goal>removeTestStubs</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+  <dependencies>
+	<dependency>
+    	<groupId>org.apache.groovy</groupId>
+        <!-- groovy-all 包含所有groovy GDK 中的包, groovy 只包含基础 Groovy 编译需要的包-->
+    	<artifactId>groovy-all</artifactId>
+    	<version>4.0.26</version>
+        <!--指定类型为 pom -->
+    	<type>pom</type>
+</dependency>
+  </dependencies>
+~~~
+
+1. `org.apache.groovy:groovy-all`和`org.apache.groovy:groovy`这两个包有什么区别?
+
+   - `groovy-all` 是一个 聚合包，它把 Groovy 的 核心模块 + 常用扩展模块 都打包在一起，比如：
+
+     - `groovy`
+     - `groovy-json`
+     - `groovy-xml`
+     - `groovy-sql`
+     - `groovy-jsr223`
+     - 等等…
+
+     适合不想单独管理模块的用户使用，比如用 Groovy 脚本做快速开发，或者某些工具类库要用到 JSON/XML 等功能。
+
+     使用时：**你只需要引入一次 `groovy-all`，就相当于引入了完整 Groovy 功能集**。
+
+   - `groovy` 只包含最基础的部分（即 core）：
+
+     - 解释器（GroovyShell）
+     - 基础语法支持（闭包、动态方法等）
+     - 不包含 groovy-json、groovy-xml 等模块
+
+     适合希望精简依赖、自己按需引入模块的场景。比如你只想用 groovy shell 或者嵌入式 DSL，不需要 JSON 等功能。
+
+2. `org.apache.groovy.groovy-all`和`org.apache.groovy.groovy`这两个包要怎么使用
+
+   - 如果你想使用groovy的全部功能, 那么导入`groovy-all`
+
+     ~~~xml
+     <dependency>
+         <groupId>org.apache.groovy</groupId>
+         <artifactId>groovy-all</artifactId>
+         <version>4.0.26</version>
+         <!-- groovy-all实际上是一个聚合包, 所以在导入的时候需要指定类型为pom, 这样会导入他的所有子模块 -->
+         <type>pom</type>
+     </dependency>
+     ~~~
+
+   - 如果你只想要使用groovy的语法支持, 解释器等等, 那么导入`groovy`
+
+     ~~~xml
+     <dependency>
+         <groupId>org.apache.groovy</groupId>
+         <artifactId>groovy</artifactId>
+         <version>4.0.26</version>
+     </dependency>
+     ~~~
+
+3. `org.apache.groovy:groovy-all`和`org.codehaus.groovy:groovy-all`的区别
+
+   Groovy 起源于 Codehaus, 所以早期的Groovy都是`org.codehaus.groovy`的包名, 但是现在已经捐给apache了, 所以改为了apache的包名
+
+   在使用的时候使用apache的包名即可
+
+4. `gmavenplus-plugin`插件中的stub是什么意思
+
+   在Java和Groovy混合使用的过程中, 如果你在Java中使用到了Groovy中的类, 
+
+   ~~~java
+   // Groovy
+   class HelloGroovy {
+       String greet(String name) {
+           return "Hello, $name"
+       }
+   }
+   // Java
+   public class HelloCaller {
+       public static void main(String[] args) {
+           HelloGroovy hg = new HelloGroovy(); // ← Java 不认识这个类
+           System.out.println(hg.greet("World"));
+       }
+   }
+   ~~~
+
+   那么在编译的时候, Java编译器根本就不能识别HelloGroovy这个类, 因为他是Groovy编写的, 但是这个时候Groovy还没有编译
+
+   所以在这个时候, Groovy会先生成一个Java形式的stub文件, 类似如下
+
+   ~~~java
+   // 这是 stub：com/example/HelloGroovy.java（自动生成）
+   public class HelloGroovy {
+       public java.lang.String greet(java.lang.String name) { return null; }
+   }
+   ~~~
+
+   这样Java编译器就能正常编译通过, 即使这个类还没有真正实现逻辑, 之后我们在编译Groovy的时候, 生成了真正的HelloGroovy.class的时候, 就可以将stub文件删除掉了
+
+5. 如何只在测试的时候使用groovy, 而不在业务代码中使用
+
+   1. 将`groovy-all`依赖添加在test scope上
+
+      ~~~xml
+      <dependency>
+        <groupId>org.codehaus.groovy</groupId>
+        <artifactId>groovy-all</artifactId>
+        <version>4.0.6</version>
+        <type>pom</type>
+        <scope>test</scope> <!-- 👈 只用于测试 -->
+      </dependency>
+      
+      ~~~
+
+   2. `gmavenplus-plugin`插件也只配置到测试阶段
+
+      ~~~xml
+      <plugin>
+        <groupId>org.codehaus.gmavenplus</groupId>
+        <artifactId>gmavenplus-plugin</artifactId>
+        <version>1.7.1</version>
+        <executions>
+          <execution>
+            <id>groovy-test</id> 
+            <phase>generate-test-sources</phase>
+            <goals>
+              <goal>addTestSources</goal>
+              <goal>generateTestStubs</goal>
+              <goal>compileTests</goal>
+              <goal>removeTestStubs</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      ~~~
+
+      

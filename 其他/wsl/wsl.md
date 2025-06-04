@@ -328,8 +328,8 @@ wsl -l -v # 列出已经安装的Linux发行版本, 以及状态, 等效于--lis
 
 wsl --install --web-download -d Ubuntu-24.04 --location <Location> --name <Name># 安装指定的发行版本, 指定--web-download从github下载而不是微软商店, --location表示安装到的位置
 
-wsl --shutdown # 关闭WSL和所有正在运行的发行版本
-wsl --terminate <Distribution Name> # 关闭指定的发行版本
+wsl --shutdown # 直接关闭掉wsl整个系统, 和所有的发行版本
+wsl --terminate <Distribution Name> # 关闭指定的发行版本, 但是wsl还在运行, 还会占用内存
 wsl --unregister <Distro> # 卸载已经安装的Linux发行版本
 wsl --uninstall  # 卸载WSL所有更新, 会导致WSL回滚到Windows自带的最初版本, 绝对不要使用!!!!!
 wsl --manage <Distor> --move <Location> # 将分发版移到新位置

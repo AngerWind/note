@@ -3322,7 +3322,7 @@ ThreadLocal中重要的方法有：
 
 ThreadLocalMap与HashMap不同(不继承map接口), 使用`环形数组`保存entry, 初始大小16, 阈值2/3, 每次扩容两倍, 使用`线性探测法`来解决hash冲突
 
-每个Entry都继承自WeekReference
+**每个Entry都继承自WeekReference**
 
 <img src="../分布式与多线程与JVM/img/面试题/image-20220922160037211.png" alt="image-20220922160037211" style="zoom: 33%;" />
 
@@ -3758,7 +3758,7 @@ ThreadLocalMap中的getEntry()
     }
 
     /**
-     * 通过直接计算出来的key找不到对于的value的时候适用这个方法.
+     * 通过直接计算出来的key找不到对应的value的时候适用这个方法.
      */
     private ThreadLocal.ThreadLocalMap.Entry getEntryAfterMiss(ThreadLocal<?> key, int i, ThreadLocal.ThreadLocalMap.Entry e) {
         ThreadLocal.ThreadLocalMap.Entry[] tab = table;
@@ -3776,7 +3776,7 @@ ThreadLocalMap中的getEntry()
                 i = nextIndex(i, len);
             e = tab[i];
         }
-        return null;
+        return null; // 扫描整个表都没有找到对应的key, 说明根本没有这个key, 返回null
     }
 ```
 
@@ -3820,7 +3820,11 @@ public void test(){
 
 事实上，在ThreadLocalMap的set/get中也会通过e.get()==null来判断当前entry是否过期，从而手动释放掉这个entry。
 
-![img](img/JUC/企业微信截图_16045025138073.png)![img](img/JUC/企业微信截图_16045025774716.png)
+![img](img/JUC/企业微信截图_16045025138073.png)
+
+![img](img/JUC/企业微信截图_16045025774716.png)
+
+
 
 ![image-20201105205929710](img/JUC/image-20201105205929710.png)
 

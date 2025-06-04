@@ -416,305 +416,7 @@ Main-Class: com.tiger.MainApp
 
 
 
-## 单例模式
 
-**实现单例模式的重点是在多线程和序列化的时候保持实例的单一**
-
-#### 饿汉式
-
-```java
-public class Singletion {
-
-    /**
-     * 优点:
-     *      用到这个实例的时候就能够立即拿到，而不需要任何等待时间
-     *      由于该实例在类被加载的时候就创建出来了，所以也避免了线程安全问题
-     * 缺点:
-     *      在类被加载的时候对象就会实例化, 这也许会造成不必要的消耗
-     *      如果这个类被多次加载的话也会造成多次实例化
-     *      但是怎么样才会导致一个类被加载两次呢??? 网上也没有, 留一个todu吧
-     */
-    //TODO 如上注释
-    private static Singletion instance = new Singletion();
-
-    private Singletion() {
-
-    }
-
-    public Singletion getInstance() {
-        return instance;
-    }
-}
-```
-
-#### 静态内部类式
-
-```java
-/**
- * 这种方式同样利用了classloder的机制来保证初始化instance时只有一个线程，
- * 它跟饿汉式不同的是（很细微的差别）：
- *      饿汉式是只要Singleton类被装载了，那么instance就会被实例化（没有达到lazy loading效果），
- *      而这种方式是Singleton类被装载了，instance不一定被初始化。
- *      因为SingletonHolder类没有被主动使用，只有显示通过调用getInstance方法时
- *      才会显示装载SingletonHolder类，从而实例化instance。
- *      想象一下，如果实例化instance很消耗资源，我想让他延迟加载，
- *      另外一方面，我不希望在Singleton类加载时就实例化，
- *      因为我不能确保Singleton类还可能在其他的地方被主动使用从而被加载，
- *      那么这个时候实例化instance显然是不合适的。这个时候，这种方式相比饿汉式更加合理。
- */
-public class Singletion {
-
-    private static class SingletonHodler {
-        private static final Singletion INSTANCE = new Singletion();
-    }
-
-    private Singletion(){};
-
-    public static final Singletion getInstance() {
-        return SingletonHodler.INSTANCE;
-    }
-
-}
-```
-
-#### 懒汉式
-
-##### 存在线程安全的模型
-
-```java
-public class Singletion implements Serializable{
-
-    private static Singletion instance;
-
-    private Singletion(){};
-
-    /** 这种懒汉模式存在线程安全 */
-    public static Singletion getInstance1() {
-        if (instance == null) {
-            instance = new Singletion();
-        }
-        return instance;
-    }
-}
-```
-
-##### 线程安全但是效率低下的模型
-
-```java
-public class Singletion implements Serializable{
-
-    private static Singletion instance;
-
-    private Singletion(){};
-
-    /**
-     * 这种写法在多线程中可以很好工作
-     * 但是效率很低下, 因为加锁是整个方法加锁, 该方法的所有操作都是同步进行的
-     * 但是对于非第一次操作, 根本不需要同步操作, 可以直接返回instance
-     *
-     * 但是以上的做法都不能防止序列化和反序列化所带来的危害
-     */
-    public static synchronized Singletion getInstance2() {
-        if (instance == null) {
-            instance = new Singletion();
-        }
-        return instance;
-    }   
-}
-```
-
-##### 双重校验锁
-
-```java
-public class Singletion implements Serializable{
-
-    // 必须使用volatile, 防止指令重排, 和多线程之间的可见性
-    private static volatile Singletion instance;
-
-    private Singletion(){};
-    /**
-     * 双重校验锁的单例模式
-     * 因为java 内存模型, 必须强制线程从主内存区读取
-     * 所有要在instance变量上面加volatile
-     * @return
-     */
-    public static Singletion getInstance() {
-        if (instance == null) {
-            synchronized (Singletion.class) {
-                if (instance == null) {
-                    instance = new Singletion();
-                }
-            }
-        }
-        return instance;
-    }
-}
-```
-
-#### 单例模式与序列化
-
-
-
-看下面案例:
-
-```java
-public static void main(String[] args) throws IOException, ClassNotFoundException {
-        File file = new File("temp");
-        ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(file));
-        oos.writeObject(Singletion.getInstance());
-        ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file));
-        Singletion newSingletion = (Singletion) ois.readObject();
-        System.out.println(newSingletion == Singletion.getInstance()); //false
-    }
-```
-
-这里的单例采用上面的双重校验锁,  将instance序列化后再反序列化, 得到了两个不一样的对象, 这就破坏了单例模式了
-
-
-
-先说怎么解决:
-
-```java
-//在单例模式里面加入这个方法解决序列化问题
-/**
-     * 实现这个方法可以避免序列化的问题, 返回的必须是Object类型
-     * @return
-     */
-    public Object readResolve() {
-        return getInstance();
-    }
-```
-
-
-
-原理:
-
-对象的序列化过程通过ObjectOutputStream和ObjectInputputStream来实现的，那么带着刚刚的问题，分析一下ObjectInputputStream 的`readObject` 方法执行情况到底是怎样的。
-
-为了节省篇幅，这里给出ObjectInputStream的`readObject`的调用栈：
-
-```
-readObject--->readObject0--->readOrdinaryObject--->checkResolve
-```
-
-这里看一下重点代码，`readOrdinaryObject`方法的代码片段
-
-```java
-private Object readOrdinaryObject(boolean unshared)
-        throws IOException
-    {
-        //省略部分代码
-        
-        Object obj;
-        try {
-        /**
-        这里创建的这个obj对象，就是本方法要返回的对象，也可以暂时理解为是ObjectInputStream的readObject返回的对象
-        
-        isInstantiable：如果一个serializable/externalizable的类可以在运行时被实例化，那么该方法就返回true。
-		desc.newInstance：该方法通过反射的方式调用无参构造方法新建一个对象。
-		到目前为止，也就可以解释，为什么序列化可以破坏单例了？
-		序列化会通过反射调用无参数的构造方法创建一个新的对象。
-        */
-            obj = desc.isInstantiable() ? desc.newInstance() : null;
-        } catch (Exception ex) {
-            throw (IOException) new InvalidClassException(
-                desc.forClass().getName(),
-                "unable to create instance").initCause(ex);
-        }
-		//省略部分代码
-
-		/**
-		hasReadResolveMethod:如果实现了serializable 或者 externalizable接口的类中包含readResolve则返回true
-		*/
-        if (obj != null &&
-            handles.lookupException(passHandle) == null &&
-            desc.hasReadResolveMethod())
-        {
-        	//invokeReadResolve:通过反射的方式调用要被反序列化的类的readResolve方法。
-        	//所以，原理也就清楚了，主要在Singleton中定义readResolve方法，并在该方法中指定要返回的对象的生成策略，就可以方式单例被破坏。
-            Object rep = desc.invokeReadResolve(obj);
-            if (unshared && rep.getClass().isArray()) {
-                rep = cloneArray(rep);
-            }
-            if (rep != obj) {
-                // Filter the replacement object
-                if (rep != null) {
-                    if (rep.getClass().isArray()) {
-                        filterCheck(rep.getClass(), Array.getLength(rep));
-                    } else {
-                        filterCheck(rep.getClass(), -1);
-                    }
-                }
-                handles.setObject(passHandle, obj = rep);
-            }
-        }
-
-        return obj;
-    }
-```
-
-#### 使用枚举实现单例
-
-单例的枚举实现在《Effective Java》中有提到，因为其**功能完整、使用简洁、无偿地提供了序列化机制、在面对复杂的序列化或者反射攻击时仍然可以绝对防止多次实例化**等优点，单元素的枚举类型被作者认为是实现Singleton的最佳方法
-
-```java
-//比上面的什么双重校验锁简单多了
-public enum  Singletion {
-    INSTANCE;
-}
-```
-
-下面深入了解一下为什么枚举会满足线程安全、序列化等标准。
-
-在JDK5 中提供了大量的语法糖，枚举就是其中一种。
-所谓 语法糖（Syntactic Sugar），也称糖衣语法，是由英国计算机学家 Peter.J.Landin 发明的一个术语，指在计算机语言中添加的某种语法，这种语法对语言的功能并没有影响，但是但是更方便程序员使用。只是在编译器上做了手脚，却没有提供对应的指令集来处理它。
-
-就拿枚举来说，其实Enum就是一个普通的类，它继承自java.lang.Enum类。
-
-```java
-public enum DataSourceEnum {
-    DATASOURCE;
-}  
-```
-
-把上面枚举编译后的字节码反编译，得到的代码如下：
-
-```java
-public final class DataSourceEnum extends Enum<DataSourceEnum> {
-      public static final DataSourceEnum DATASOURCE;
-      public static DataSourceEnum[] values();
-      public static DataSourceEnum valueOf(String s);
-      static {};
-}
-```
-
-由反编译后的代码可知，DATASOURCE 被声明为 static 的，根据在[【单例深思】饿汉式与类加载](https://blog.csdn.net/gavin_dyson/article/details/69668946)中所描述的类加载过程，可以知道虚拟机会保证一个类的\<clinit>() 方法在多线程环境中被正确的加锁、同步。所以，枚举实现是在实例化时是线程安全。
-
-当一个Java类第一次被真正使用到的时候静态资源被初始化、Java类的加载和初始化过程都是线程安全的（因为虚拟机在加载枚举的类的时候，会使用ClassLoader的loadClass方法，而这个方法使用同步代码块保证了线程安全）。所以，创建一个enum类型是线程安全的。
-
-也就是说，我们定义的一个枚举，在第一次被真正用到的时候，会被虚拟机加载并初始化，而这个初始化过程是线程安全的。而我们知道，解决单例的并发问题，主要解决的就是初始化过程中的线程安全问题。
-
-所以，由于枚举的以上特性，枚举实现的单例是天生线程安全的。
-
-接下来看看序列化问题：
-
-Java规范中规定，每一个枚举类型极其定义的枚举变量在JVM中都是唯一的，因此在枚举类型的序列化和反序列化上，Java做了特殊的规定。
-**在序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过 java.lang.Enum 的 valueOf() 方法来根据名字查找枚举对象。**
-也就是说，以下面枚举为例，序列化的时候只将 DATASOURCE 这个名称输出，反序列化的时候再通过这个名称，查找对于的枚举类型，因此反序列化后的实例也会和之前被序列化的对象实例相同。
-
-参考:
-
-https://mp.weixin.qq.com/s?__biz=MzI3NzE0NjcwMg==&mid=402577543&idx=1&sn=41c4bf5f46d13806668edacce130468b&scene=21#wechat_redirect
-
-https://cloud.tencent.com/developer/article/1341386
-
-https://blog.csdn.net/moakun/article/details/80688851
-
-https://blog.csdn.net/gavin_dyson/article/details/70832185
-
-
-
-- 
 
 
 
@@ -732,250 +434,7 @@ Some code
 
 
 
-## [反射框架reflections](https://github.com/ronmamo/reflections)
 
-> 简介
-
-使用Reflections可以很轻松的获取以下元数据信息：
-
-- 获取某个类型的全部子类
-- 只要类型、构造器、方法，字段上带有特定注解，便能获取带有这个注解的全部信息（类型、构造器、方法，字段）
-- 获取所有能匹配某个正则表达式的资源
-- 获取所有带有特定签名的方法，包括参数，参数注解，返回类型
-- 获取所有方法的名字
-- 获取代码里所有字段、方法名、构造器的使用
-
-> Maven依赖
-
-~~~java
-<dependency>
-    <groupId>org.reflections</groupId>
-    <artifactId>reflections</artifactId>
-    <version>0.9.11</version>
-</dependency>
-~~~
-
-> 实例化
-
-```java
-// 实例化Reflections，指定扫描的包为my.package及其子包，使用默认的scanners（扫描器）
-Reflections reflections = new Reflections("my.package");
-
-// 使用ConfigurationBuilder进行实例化
-new Reflections(new ConfigurationBuilder()
-     .setUrls(ClasspathHelper.forPackage("my.project.prefix"))
-     .setScanners(new SubTypesScanner(), 
-                  new TypeAnnotationsScanner().filterResultsBy(optionalFilter), ...),
-     .filterInputsBy(new FilterBuilder().includePackage("my.project.prefix"))
-     ...);
-```
-
-> 使用
-
-- 扫描子类
-
-  ~~~java
-  //SubTypesScanner
-  Set<Class<? extends Module>> modules = 
-      reflections.getSubTypesOf(com.google.inject.Module.class);
-  ~~~
-
-- 扫描带有某个注解的类
-
-  ~~~java
-  //TypeAnnotationsScanner 
-  Set<Class<?>> singletons = 
-      reflections.getTypesAnnotatedWith(javax.inject.Singleton.class);
-  ~~~
-
-- 扫描资源
-
-  ~~~java
-  //ResourcesScanner
-  Set<String> properties = 
-      reflections.getResources(Pattern.compile(".*\\.properties"));
-  ~~~
-
-- 扫描带有某个注解的方法/构造方法
-
-  ~~~java
-  //MethodAnnotationsScanner
-  Set<Method> resources =
-      reflections.getMethodsAnnotatedWith(javax.ws.rs.Path.class);
-  Set<Constructor> injectables = 
-      reflections.getConstructorsAnnotatedWith(javax.inject.Inject.class);
-  ~~~
-
-- 扫描带有某个注解的字段
-
-  ~~~java
-  //FieldAnnotationsScanner
-  Set<Field> ids = 
-      reflections.getFieldsAnnotatedWith(javax.persistence.Id.class);
-  ~~~
-
-- 扫描特定的方法
-
-  ~~~java
-  //MethodParameterScanner
-  //扫描特定参数类型的方法
-  Set<Method> someMethods =
-      reflections.getMethodsMatchParams(long.class, int.class);
-  //扫描特定返回类型的方法
-  Set<Method> voidMethods =
-      reflections.getMethodsReturn(void.class);
-  //扫描方法参数上带有某个注解的方法
-  Set<Method> pathParamMethods =
-      reflections.getMethodsWithAnyParamAnnotated(PathParam.class);
-  ~~~
-
-- 扫描方法的参数名
-
-  ~~~java
-  //MethodParameterNamesScanner
-  List<String> parameterNames = 
-      reflections.getMethodParamNames(Method.class)
-  ~~~
-
-- 扫描？？？
-
-  ~~~java
-  //MemberUsageScanner
-  Set<Member> usages = 
-      reflections.getMethodUsages(Method.class)
-  ~~~
-
-
-
-
-
-## Janino编译器
-
-
-
-#### 简介
-
-   Janino 是一个极小、极快的 开源Java 编译器（Janino is a super-small, super-fast Java™ compiler.）。Janino 不仅可以像 JAVAC 一样将 Java 源码文件编译为字节码文件，还可以编译内存中的 Java 表达式、块、类和源码文件，加载字节码并在 JVM 中直接执行。Janino 同样可以用于静态代码分析和代码操作。
-
-项目地址：https://github.com/janino-compiler/janino
-
-官网地址：http://janino-compiler.github.io/janino/    <font color=red>官网简单一看即可，更重要的是看javadoc</font>
-
-
-#### ExpressEvaluator
-
-~~~java
- public static void main(String[] args) throws Exception {
-        // Create "ExpressionEvaluator" object.
-        IExpressionEvaluator ee = CompilerFactoryFactory.getDefaultCompilerFactory().newExpressionEvaluator();
-        // 设置返回值类型
-        ee.setExpressionType(double.class);
-        // 设置参数名与类型
-        ee.setParameters(new String[] { "total" }, new Class[] { double.class });
-        // 设置抛出异常的类型
-        ee.setThrownExceptions(new Class[]{Exception.class});
-        // 设置表达式体
-        ee.cook("total*100");
-        // 传入参数并执行表达式体, 没有参数时传入null
-        Double res = (Double)ee.evaluate(new Object[]{7.5D});
-        System.out.println(res);
-
-    }
-~~~
-
-#### ScriptEvaluator
-
-~~~java
-public static void main(String[] args) throws CompileException, InvocationTargetException {
-        // ScriptEvaluator可以用于编译和执行代码块
-        // 如果有return的返回值，则该块必须返回该类型的值。
-        // 作为一项特殊功能，它允许声明方法。方法声明的位置和顺序无关紧要。
-        ScriptEvaluator se = new ScriptEvaluator();
-        se.setParameters(new String[] { "arg1", "arg2" }, new Class[] { String.class, int.class });
-        se.cook(
-                ""
-                        + "System.out.println(arg1);\n"
-                        + "System.out.println(arg2);\n"
-                        + "\n"
-                        + "static void method1() {\n"
-                        + "    System.out.println(\"run in method1()\");\n"
-                        + "}\n"
-                        + "\n"
-                        + "public static void method2() {\n"
-                        + "    System.out.println(\"run in method2()\");\n"
-                        + "}\n"
-                        + "\n"
-                        + "method1();\n"
-                        + "method2();\n"
-                        + "\n"
-
-        );
-        se.evaluate(new Object[]{"aaa",22});
-    }
-~~~
-
-#### ClassBodyEvaluator
-
-ClassBodyEvaluator的作用是编译类的主体，然后生成一个用于反射的Class对象。
-
-![image-20210430194947060](img/java/image-20210430194947060.png)
-
-#### Janino使用Compiler
-
-~~~java
-public static void main(String[] args) throws IOException, CompileException, ClassNotFoundException,
-            NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-
-        ICompiler compiler = new CompilerFactory().newCompiler();
-        // 用于保存编译后的class字节码的map
-        Map<String, byte[]> classes = new HashMap<String, byte[]>();
-        // 设置字节码生产器为MapResourceCreator
-        compiler.setClassFileCreator(new MapResourceCreator(classes));
-
-        // Now compile two units from strings:
-        compiler.compile(new Resource[] {
-            new StringResource("pkg1/A.java",
-                "package pkg1; public class A { public static int meth() { return pkg2.B.meth(); } }"),
-            new StringResource("pkg2/B.java",
-                "package pkg2; public class B { public static int meth() { return 77;            } }"),});
-
-        // Set up a class loader that uses the generated classes.
-        ClassLoader cl = new ResourceFinderClassLoader(new MapResourceFinder(classes), // resourceFinder
-            ClassLoader.getSystemClassLoader() // parent
-        );
-        Assert.assertEquals(77, cl.loadClass("pkg1.A").getDeclaredMethod("meth").invoke(null));
-    }
-~~~
-
-#### Janino使用ClassLoader
-
-~~~java
-ClassLoader cl = new JavaSourceClassLoader(
-    this.getClass().getClassLoader(),  // parentClassLoader
-    new File[] { new File("srcdir") }, // optionalSourcePath
-    (String) null,                     // optionalCharacterEncoding
-    DebuggingInformation.NONE          // debuggingInformation
-);
- 
-// Load class A from "srcdir/pkg1/A.java", and also its superclass
-// B from "srcdir/pkg2/B.java":
-Object o = cl.loadClass("pkg1.A").newInstance();
- 
-// Class "B" implements "Runnable", so we can cast "o" to
-// "Runnable".
-((Runnable) o).run(); 
-~~~
-
-#### Debug
-
-idea貌似可以调试，但是无法看到生成的java文件，所以两样一抹黑
-
-```
-org.codehaus.janino.source_debugging.enable=true\
-org.codehaus.janino.source_debugging.dir=C:\tmp\
-```
-
-![image-20210430195942917](img/java/image-20210430195942917.png)
 
 
 
@@ -1393,227 +852,9 @@ public class VarOrder {
 11:init i=10 n=102
 ```
 
-## 关于ShutdownHook的说明
 
-参考https://www.jb51.net/article/210702.htm
 
-> ShutdownHook的作用
 
-在java程序中，很容易在进程结束时添加一个钩子，即ShutdownHook。通常在程序启动时加入以下代码即可
-
-```java
-Runtime.getRuntime().addShutdownHook(new Thread(){
-    @Override
-    public void run() {
-        System.out.println("I'm shutdown hook...");
-    }
-});
-```
-
-有了ShutdownHook我们可以
-
-- 在进程结束时做一些善后工作，例如释放占用的资源，保存程序状态等
-- 为优雅（平滑）发布提供手段，在程序关闭前摘除流量
-
-> 何时被调用
-
-![image-20210823202420564](img/java/image-20210823202420564.png)
-
-> kill
-
-先说kill的情况，系统启动后加载System类，并调用其静态代码块，静态代码块中native方法将使得jvm调用initializeSystenClass()方法来初始化System类。
-
-![image-20240419182042870](img/java/image-20240419182042870.png)
-
-initialzeSystenClass()方法中调用Terminator.setUp()向Signal类中注册了2个SignalHandler类，分别处理`TERM`，`INT`信号，而这两个信号的handle方法都是调用System.exit()。
-
-`int`: 在ctrl c结束前台进程的时候会接受到该信号
-
-`term`: 在`kill pid`或者`kill -15 pid`时会接受到该信号
-
-`kill`: 在`kill -9 pid`时会接收到该信号, 注意该信号时无法被捕获的,也就是说进程无法执行信号处理程序,会直接发送默认行为,也就是直接退出.这也就是为何`kill -9 pid`一定能杀死程序的原因. 故这也造成了进程被结束前无法清理或者关闭资源等行为,这样时不好的.
-
-<img src="img/java/image-20240419182251988.png" alt="image-20240419182251988" style="zoom:50%;" />
-
-用户使用kill命令发送信号给java程序， jvm接受到signal后调用Signal.dispatch()方法异步调用对应handler.handle()方法。上面说到handle()方法将调用`Shutdown.exit()`。
-
-![image-20240419182558743](img/java/image-20240419182558743.png)
-
-用户可以通过Signal.handle()方法传入对应的handler和其处理的信号， 来覆盖系统预定义的handler
-
-~~~java
-        // 定义一个term的信号， 也就是kill pid发出的信号
-		Signal signal = new Signal("TERM");
-		// 定义信号的处理方法，并注册
-		// 该signal handler将覆盖系统定义的
-		// 这将会导致系统直接忽略term信号
-        SignalHandler oldHandler = Signal.handle(signal, new SignalHandler() {
-            @Override
-            public void handle(Signal sig) {
-                System.out.println("handle sig");
-            }
-        });
-		// 通过代码触发该信号， 也可以
-        Signal.raise(signal);
-~~~
-
-
-
-> 最后一个非守护线程结束
-
-jvm自动调用`Shutdown.shutdown()`方法。
-
-![image-20240419183656812](img/java/image-20240419183656812.png)
-
-> 代码调用
-
-代码调用`Runtime.getRuntime().exit()`底层也是会调用`Shutdown.exit()`
-
-![image-20240419184114770](img/java/image-20240419184114770.png)
-
-或者代码调用`System.exit()`, 底层还是会调用`shutdown.exit()`
-
-![image-20240419184315577](img/java/image-20240419184315577.png)
-
-
-
-
-
-> Shutdown.sequence()
-
-上述三种情况都将调用Shutdown.sequence()方法。该方法将调用runHooks()**同步**执行所有的钩子函数。
-
-这里的hook可以看做是系统级的shutdownHook。
-
-![image-20240419184618459](img/java/image-20240419184618459.png)
-
-![image-20240419184652306](img/java/image-20240419184652306.png)
-
-而应用级别的shutdownHook是ApplicationShutdownHooks在静态代码块中通过调用Shutdown.add()方法注册到Shutdown里面的。
-
-![image-20210824144445681](img/java/image-20210824144445681.png)
-
-我们看下ApplicationShutdownHooks的runHooks()方法， 异步调用所有的自定义的ShutdownHooks。
-
-![image-20210824144706308](img/java/image-20210824144706308.png)
-
-我们可以通过`Runtime.getRuntime().addShutdownHook()`来添加我们的自定义的hook
-
-![image-20210824144909279](img/java/image-20210824144909279.png)
-
-~~~java
-Runtime.getRuntime().addShutdownHook(new Thread(()->{
-            System.out.println("shutdown...");
-        }));
-~~~
-
-
-
-结束Shutdown.sequence()后将调用runAllFinalizers()方法调用所有对象的finalize()方法。（未细看）
-
-> 总结
-
-不管何种关闭形式都将调用Shutdown.sequence()方法， 该方法同步调用系统级hook， 第二个系统级hook即使ApplicationShutdownHook， 该hook将异步调用自定义的shutdownHook。
-
-
-
-
-
-## 双亲委派机制
-
-https://www.zhihu.com/question/466696410
-
-https://blog.csdn.net/qq_39169614/article/details/120557704
-
-https://zhuanlan.zhihu.com/p/651047427
-
-java中有三个类加载器
-
-1. 启动类加载器BoostrapClassLoader: 加载jre/lib/rt.jar中的所有class
-2. 扩展类加载器ExtClassLoader: 加载jre/lib/ext目录中jar包的类
-3. 应用程序类加载器AppClassLoader: 加载classpath下的class
-
-他们的父子关系不是通过继承来实现的, 而是通过组合实现的
-
-jvm加载类的时候, 调用AppClassLoader.loadClass来加载类, 在这个方法中会调用ExtClassLoader.loadClass来加载类, 在这个方法中又会调用BootstrapClassLoader.loadClass来加载类, 如果发现某个类以及加载过了, 就直接返回.
-
-**为什么需要双亲委派机制**
-
-1. 防止核心类被重写
-2. 避免类重复加载
-
-**如何打破双亲委派机制**
-
-除了BootrapClassLoader, 其他两个ClassLoader都继承与ClassLoader, 我们自定义的classloader也要继承ClassLoader
-
-该类的两个方法
-
-- loadclass: 处理双亲委派, 子加载器委托父加载器, 父加载器失败时调用findclass自行加载
-- findclass: 当前类加载器根据路径以及class文件名加载字节码文件, 从class文件中读取字节码数组, 然后调用defineClass方法, 根据字节数组, 返回class对象
-
-所以
-
-1. 自定义类加载器, 继承ClassLoader, 重写findClass
-2. 打破双亲委派, 重写loadClass
-
-**打破双亲委派的案例**
-
-1. JDBC
-
-   我们在使用jdbc的时候, 通过DriverManager获取connection, 但是这个类在java.sql包下, 是又bootstrapClassLoader加载的
-
-   类加载有个规则:  **如果一个类由A加载器加载, 那么他的依赖类也由这个类加载**
-
-   显然bootstrapClassLoader是无法加载到各个厂商的具体的第三方类, 所以导致NoClassDefException
-
-   所以DriverManager的静态代码块中, 会通过ServiceLoader这个类来加载Driver
-
-   ServiceLoader就是查找meta-inf/service下指定的具体实现类, 对他们一一实例化(**如果有多个实现类, 都会实例化, 不能按需加载**)
-
-   ~~~java
-   package com.buhui.ecommerce.jvmjuc.class4;
-   public interface TestInterface {
-       public  void saySPI();
-   }
-   public class TestSPI01 implements TestInterface {
-       @Override
-       public void saySPI() {  System.out.println("spi 01"); }
-   }
-   public class TestSPI02 implements TestInterface {
-       @Override
-       public void saySPI() { System.out.println("spi 02"); }
-   }
-   public class TestSPI03 implements TestInterface {
-       @Override
-       public void saySPI() { System.out.println("spi 03"); }
-   }
-   
-   ~~~
-
-   ![在这里插入图片描述](img/java/61b83a0f1d7b4ee296a43680ba0ccf6b.png)
-
-   ![在这里插入图片描述](img/java/7db03a57f2ae41e9926cb815d77ae85b.png)
-
-   ~~~java
-   public class Test {
-       public static void main(String[] args) {
-   		//加载TestInterface的实现类
-           ServiceLoader<TestInterface>loader=ServiceLoader.load(TestInterface.class);
-           //创建迭代器
-           Iterator<TestInterface>  it=loader.iterator();
-           while(it.hasNext()){
-               //通过迭代器拿到实现类
-               TestInterface testInterface=it.next();
-               //调用实现类的方法
-               testInterface.saySPI();
-           }
-       }
-   }
-   ~~~
-
-2. Tomcat
-
-   部署项目，我们是把war包放到[tomcat](https://www.zhihu.com/search?q=tomcat&search_source=Entity&hybrid_search_source=Entity&hybrid_search_extra={"sourceType"%3A"answer"%2C"sourceId"%3A2219153613})的webapp下，这意味着一个tomcat可以运行多个Web应用程序, Tomcat给每个 Web 应用创建一个类加载器实例 (WebAppClassLoader)该加载器重写了loadClass方法，优先加载当前应用目录下的, 这样就可以隔离各个app的class
 
 
 
@@ -2123,10 +1364,11 @@ public class MethodTest {
 | single line | 单行模式, 整个文本看做一个字符串, 只有一个开头和结尾<br>小数点"."可以匹配包括换行符\n在内的任何字符 |
 | multi line  | 每一行都是一个字符串, 都有开头和结尾<br>**^和$会匹配每一行的开始和结尾**<br>如果需要仅匹配**文本开始和结束**的位置, 可以使用\A和\Z |
 
-| 选择符和分组 | 说明                                    |
-| ------------ | --------------------------------------- |
-| \| 分值结构  | 或, 匹配左边或右边的表达式              |
-| ()           | 捕获组<br>每队括号分配一个编号, 从1开始 |
+| 选择符和分组 | 说明                                                         |
+| ------------ | ------------------------------------------------------------ |
+| \| 分值结构  | 或, 匹配左边或右边的表达式                                   |
+| (?: )        | 非捕获组, 常常与 \| 一起使用, 比如`aa(?:a|b)`会匹配`aaa`和`aab` |
+| ()           | 捕获组<br>每队括号分配一个编号, 从1开始                      |
 
 | 零宽断言(位置匹配、预搜索) | 说明                                                         |
 | -------------------------- | ------------------------------------------------------------ |
@@ -2782,7 +2024,2358 @@ java -p mod1.jar:mod2a.jar:mod2b.jar:mod3.jar:mod4.jar -m mod1/mod1.EventCenter
 
 看上去很完美，不过等一下，如果有多个自动模块，并且它们之间存在分裂包呢？前面提到，自动模块和其它命名模块一样，需要遵循分裂包规则。对于这种情况，如果模块化改造势在必行，要么忍痛割爱精简依赖只保留其中的一个自动模块，要么自己动手丰衣足食 Hack 一个版本。当然，你也可以试试找到这些自动模块的维护者们，让他们 PK 一下决定谁才是这个分裂包的主人。
 
-## 
+
+
+# 工具
+
+## ClassLoader
+
+
+
+### ClassLoader类的方法和属性
+
+ClassLoader类是所有ClassLoader的父类, 并且他是一个抽象类, 不能被实例化
+
+~~~java
+public abstract class ClassLoader {}
+~~~
+
+
+
+#### 属性
+
+- name: 每个ClassLoader都有他们的name, 并且有`getName()`方法
+- parent: 每个ClassLoader都有他们的parent, 并且有getParent
+
+~~~java
+public final ClassLoader getParent(); // 返回parent, 如果为null说明是BootstrapClassLoader
+public String getName() // 返回name
+~~~
+
+
+
+#### 构造函数
+
+~~~java
+protected ClassLoader() // name为null, parent为AppClassLoader
+protected ClassLoader(ClassLoader parent)// name为null, parent为指定的
+protected ClassLoader(String name, ClassLoader parent)// name和parent都是指定的
+~~~
+
+
+
+#### 方法
+
+ClassLoader提供了如下几种能力
+
+1. 加载字节码为Class
+
+   要想加载指定的Class, 我们有两种办法
+
+   1. 调用`Class.forName("com.tiger.Main")`, 实际上就等效于`this.class.getClassLoader().loadClass("com.tiger.Main", true)`来加载类
+   2. 通过一定的方法获取一个ClassLoader, 然后调用他的`loadClass(com.tiger.Main)`方法, 这实际上就等于`loadClass("com.tiger.Main", false)`
+
+   所以我们可以看到, 加载类的实际代码就是loadClass方法, 并且他也是**双亲委派的逻辑来源**
+
+   ~~~java
+   // resolve: 最后没有找到是否报错, 如果不报错就返回null
+   protected Class<?> loadClass(String name, boolean resolve)
+           throws ClassNotFoundException
+       {
+           synchronized (getClassLoadingLock(name)) {
+               Class<?> c = findLoadedClass(name); // 查找已经加载的缓存
+               if (c == null) {
+                   try {
+                       if (parent != null) {
+                           c = parent.loadClass(name, false); // 如果有父类, 通过parent加载
+                       } else {
+                           c = findBootstrapClassOrNull(name); // 如果父类为null, 通过BootstrapClass加载
+                       }
+                   } catch (ClassNotFoundException e) {
+                       // do nothing
+                   }
+                   if (c == null) {
+                       c = findClass(name); // 通过自身的findClass来查找
+                   }
+               }
+               if (resolve) {
+                   resolveClass(c); // 判断c是否为null, 如果为null就报错
+               }
+               return c;
+           }
+       }
+   ~~~
+
+   所以我们如果要实现自定义的ClassLoader, 那么就要在`findClass`方法中
+
+   - 查找对应的文件
+   - 将文件读取为byte[]
+   - 将byte[]通过`defineClass()`转换为Class对象
+
+   
+
+2. 读取jar包中的资源文件
+
+   ~~~java
+   public URL getResource(String name);
+   public InputStream getResourceAsStream(String name);
+   public Enumeration<URL> getResources(String name);
+   
+   public static URL getSystemResource(String name)
+   public static InputStream getSystemResourceAsStream(String name)
+   public static Enumeration<URL> getSystemResources(String name)
+   ~~~
+
+   比如我的项目的有一个`resource/application.yaml`, 那么我可以这样读取
+
+   ~~~java
+   InputStream = ClassLoader.getSystemClassLoader().getResourceAsStream("application.yaml")
+   ~~~
+
+   同时资源的读取也是遵循双亲委派机制的
+
+   ~~~java
+   public URL getResource(String name) {
+           Objects.requireNonNull(name);
+           URL url;
+           if (parent != null) {
+               url = parent.getResource(name);
+           } else {
+               url = BootLoader.findResource(name);
+           }
+           if (url == null) {
+               url = findResource(name);
+           }
+           return url;
+       }
+   ~~~
+
+   如果parent没有找到的话, 就会调用自身的`findResource`来查找, 而默认的`findResource`方法是直接返回null的, 所以如果你想要一个ClassLoader具有读取资源的能力的话, 那么你要自己去实现`findResource`这个方法
+
+
+
+#### 其他的一些方法
+
+ClassLoader中提供了两个静态方法, 方便获取platformClassLoader和appClassLoader
+
+~~~java
+public static ClassLoader getPlatformClassLoader(); // 返回platformClassLoader
+public static ClassLoader getSystemClassLoader() // 返回appClassLoader
+~~~
+
+
+
+然后他还提供了静态的方法, 方便通过appClassLoader来读取资源
+
+~~~java
+public static URL getSystemResource(String name) // 等效于getSystemClassLoader().getResource()
+public static InputStream getSystemResourceAsStream(String name) // 同理
+public static Enumeration<URL> getSystemResources(String name) // 同理
+~~~
+
+
+
+#### 并发加载的ClassLoader
+
+我们注意到, 我们在调用loadClass的时候, 他的内部是会加锁的
+
+~~~java
+// resolve: 最后没有找到是否报错, 如果不报错就返回null
+protected Class<?> loadClass(String name, boolean resolve)
+        throws ClassNotFoundException
+    {
+        synchronized (getClassLoadingLock(name)) { // 加锁
+            Class<?> c = findLoadedClass(name); // 查找已经加载的缓存
+            if (c == null) {
+                try {
+                    if (parent != null) {
+                        c = parent.loadClass(name, false); // 如果有父类, 通过parent加载
+                    } else {
+                        c = findBootstrapClassOrNull(name); // 如果父类为null, 通过BootstrapClass加载
+                    }
+                } catch (ClassNotFoundException e) {
+                    // do nothing
+                }
+                if (c == null) {
+                    c = findClass(name); // 通过自身的findClass来查找
+                }
+            }
+            if (resolve) {
+                resolveClass(c); // 判断c是否为null, 如果为null就报错
+            }
+            return c;
+        }
+    }
+~~~
+
+在默认的情况下, getClassLoadingLock(name)返回的就是ClassLoader的this对象, 这意味着多线程加载不同的类, 会共用同一个锁, 这在很多情况下会是瓶颈
+
+如果我们想要针对不同的name, 返回不同的锁, 那么我们可以这样
+
+~~~java
+public static class MyParallelCapableClassLoader extends ClassLoader {
+        static {
+            // 通过ClassLoader.registerAsParallelCapable()将MyParallelCapableClassLoader标记为可以并发加载的classLoader
+            if (!ClassLoader.registerAsParallelCapable()) {
+                System.out.println("MyPallClassLoader is not parallel capable");
+            }
+        }
+
+        public MyParallelCapableClassLoader(String name) {
+            super();
+        }
+    }
+~~~
+
+之后getClassLoadingLock返回的就是一个name一个锁了, 这样就实现了并发加载
+
+~~~java
+protected Object getClassLoadingLock(String className) {
+        Object lock = this;
+        // 如果你没有不调用registerAsParallelCapable, 那么在ClassLoader的构造函数中, parallelLockMap就是null, 如果你调用了就不是null
+        if (parallelLockMap != null) {
+            Object newLock = new Object();
+            lock = parallelLockMap.putIfAbsent(className, newLock);
+            if (lock == null) {
+                lock = newLock;
+            }
+        }
+        return lock;
+    }
+~~~
+
+> 在`registerAsParallelCapable`的内部, 会判断当前注册的ClassLoader的所有父类是不是都已经注册了, 只有他所有父ClassLoader都已经注册了, 他才能注册成功
+
+
+
+所幸, 在JDK11中, URLClassLoader, AppClassLoader, ClassLoader, PlatformClassLoader, BuiltinClassLoader都已经注册为了并发加载的ClassLoader
+
+
+
+### URLClassLoader的使用
+
+URLClassLoader是JDK提供的一个工具类, 在JDK8的时候, AppClassLoder和ExtClassLoader都继承了他
+
+他提供了很方便的加载Class和加载资源的能力
+
+~~~java
+public static void main(String[] args) {
+        URL[] urls = new URL[0];
+        try {
+            urls = new URL[] {
+                    new URL("file:/path/to/test.jar"),
+                    new URL("file:/path/to/classes"),
+                    new URL("http://localhost:8080/test1.jar"),
+                    new URL("http://localhost:8080/classes"),
+                    new URL("https://example.com/test1.jar"),
+                    new URL("https://example.com/classes")};
+        } catch (MalformedURLException e) {
+            // 1. 没有指定协议
+            // 2. 未知的协议
+            // 3. url解析失败
+            throw new RuntimeException(e);
+        }
+
+        // URLClassLoader实现了Closable接口, 在不使用的时候要关闭
+        // close()并不会卸载类, 而是释放.class文件句柄
+        try (URLClassLoader urlClassLoader = new URLClassLoader("name", urls, ClassLoader.getPlatformClassLoader());) {
+            /*
+             * 会查找如下地址:
+             * 1. file:/path/to/test.jar!/org/example/Main1.class
+             * 2. file:/path/to/classes/org/example/Main1.class
+             * 3. http://localhost:8080/test1.jar!/org/example/Main1.class
+             * 4. http://localhost:8080/classes/org/example/Main1.class
+             * 5. https://example.com/test1.jar!/org/example/Main1.class
+             * 6. https://example.com/classes/org/example/Main1.class
+             */
+            Class<?> aClass = urlClassLoader.loadClass("org.example.Main1");
+            System.out.println(aClass.getClassLoader());
+        } catch (ClassNotFoundException | IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+~~~
+
+同时URLClassLoader也实现了资源查找的能力, 你可以通过他来加载资源文件
+
+假设有一个jar包如下:
+
+~~~java
+test.jar
+├── com/
+│   └── tiger/
+│       └── Main.class
+└── config/
+    └── app.properties
+~~~
+
+~~~java
+URLClassLoader loader = new URLClassLoader(new URL[]{
+    new URL("file:/opt/test.jar")
+});
+
+// 加载资源（注意路径是相对 JAR 根的）
+InputStream in = loader.getResourceAsStream("config/app.properties");
+
+if (in != null) {
+    Properties props = new Properties();
+    props.load(in);
+    System.out.println("app.name = " + props.getProperty("app.name"));
+} else {
+    System.out.println("Resource not found.");
+}
+~~~
+
+
+
+### 自定义ClassLoader
+
+要自定义ClassLoader, 你有两种选择
+
+1. 继承ClassLoader, 并重写findClass方法
+
+   >  默认情况下, ClassLoader.findResource()直接返回null, 你可以选择不重写他, 这就就不能调用getResource()和getResourceAsStream()和getResources()这三个方法了
+
+   下面自定义一个ClassLoader, 他可以从指定地址下面读取所有的jar包, 然后加载其中的资源和class
+
+   ~~~java
+   public class RealtimeJarClassLoader extends ClassLoader {
+   
+       static {
+           ClassLoader.registerAsParallelCapable();
+       }
+   
+       private final List<String> jarPaths;
+   
+       public RealtimeJarClassLoader(File jarDir, String name) {
+           super(name, ClassLoader.getPlatformClassLoader()); // 使用平台线程作为父类, 防止AppClassLoader已经加载了同名的class
+           this.jarPaths = scanJarPaths(jarDir); // 扫描指定地址下所有的jar, 并记录地址
+       }
+   
+       private List<String> scanJarPaths(File dir) {
+           File[] jars = dir.listFiles(f -> f.isFile() && f.getName().endsWith(".jar"));
+           if (jars == null) return List.of();
+           List<String> paths = new ArrayList<>();
+           for (File jar : jars) {
+               paths.add("file:" + jar.getAbsolutePath());
+           }
+           return paths;
+       }
+   
+       @Override
+       protected Class<?> findClass(String name) throws ClassNotFoundException {
+           String entryName = name.replace('.', '/') + ".class";
+           // 尝试从不同的jar中读取class
+           for (String jarPath : jarPaths) {
+               try (JarFile jar = new JarFile(new File(new URI(jarPath)))) {
+                   JarEntry entry = jar.getJarEntry(entryName);
+                   if (entry != null) {
+                       try (InputStream in = jar.getInputStream(entry)) {
+                           byte[] bytes = in.readAllBytes();
+                           return defineClass(name, bytes, 0, bytes.length);
+                       }
+                   }
+               } catch (Exception e) {
+                   // 忽略继续尝试其他 JAR
+               }
+           }
+           throw new ClassNotFoundException(name);
+       }
+   
+       // 这样的话, getResource(String name)和getResourceAsStream(String name)就可用了
+       @Override
+       protected URL findResource(String name) {
+           // 尝试从不同的jar中读取资源
+           for (String jarPath : jarPaths) {
+               try (JarFile jar = new JarFile(new File(new URI(jarPath)))) {
+                   JarEntry entry = jar.getJarEntry(name);
+                   if (entry != null) {
+                       return new URL("jar:" + jarPath + "!/" + name);
+                   }
+               } catch (Exception e) {
+                   // 忽略继续尝试
+               }
+           }
+           return null;
+       }
+   
+       // 这样的话, getResources(String name)就可用了
+       @Override
+       protected Enumeration<URL> findResources(String name) throws IOException {
+           List<URL> result = new ArrayList<>();
+           for (String jarPath : jarPaths) {
+               try (JarFile jar = new JarFile(new File(new URI(jarPath)))) {
+                   if (jar.getJarEntry(name) != null) {
+                       result.add(new URL("jar:" + jarPath + "!/" + name));
+                   }
+               } catch (Exception e) {
+                   // 忽略
+               }
+           }
+           return Collections.enumeration(result);
+       }
+   }
+   ~~~
+
+2. 如果你不想搞得这么复杂, 也可以继承自URLClassLoader
+
+   下面我们实现一个并发加载的, 能够从指定目录下读取所有jar, 然后加载其中的资源和class的ClassLoader
+
+   ~~~java
+   public class OptJarUrlClassLoader extends URLClassLoader {
+   
+       static {
+           ClassLoader.registerAsParallelCapable();
+       }
+       
+       public OptJarUrlClassLoader(File dir) throws IOException {
+           super(scanJarUrls(dir), ClassLoader.getPlatformClassLoader());
+       }
+   
+       private static URL[] scanJarUrls(File dir) throws IOException {
+           File[] jars = dir.listFiles(f -> f.isFile() && f.getName().endsWith(".jar"));
+           if (jars == null) return new URL[0];
+           URL[] urls = new URL[jars.length];
+           for (int i = 0; i < jars.length; i++) {
+               urls[i] = jars[i].toURI().toURL();
+           }
+        return urls;
+       }
+   }
+   ~~~
+   
+   
+
+### 双亲委派机制
+
+双亲委派机制来源于ClassLoader类的loadClass方法
+
+~~~java
+// resolve: 最后没有找到是否报错, 如果不报错就返回null
+protected Class<?> loadClass(String name, boolean resolve)
+        throws ClassNotFoundException
+    {
+        synchronized (getClassLoadingLock(name)) {
+            Class<?> c = findLoadedClass(name); // 查找已经加载的缓存
+            if (c == null) {
+                try {
+                    if (parent != null) {
+                        c = parent.loadClass(name, false); // 如果有父类, 通过parent加载
+                    } else {
+                        c = findBootstrapClassOrNull(name); // 如果父类为null, 通过BootstrapClass加载
+                    }
+                } catch (ClassNotFoundException e) {
+                    // do nothing
+                }
+                if (c == null) {
+                    c = findClass(name); // 通过自身的findClass来查找
+                }
+            }
+            if (resolve) {
+                resolveClass(c); // 判断c是否为null, 如果为null就报错
+            }
+            return c;
+        }
+    }
+~~~
+
+为什么要有双亲委派:
+
+1. 变相的让Class具有优先级
+
+
+
+在JDK8中, 双亲委派机制是
+
+- BootstrapClassLoader: 用于加载`%JAVA_HOME%/lib`下的jar包
+- ExtClassLoader: 用于加载`%JAVA_HOME%/lib/ext`目录下的jar包
+- AppClassLoader: 也被称为SystemClassLoader, 用于加载classpath下的所有类
+
+但是在JDK9中, 因为添加了模块化的东西, 所以双亲委派机制变成了
+
+- BootstrapClassLoader
+- PlatformClassLOader: 用于加载部分JavaSE和JDK模块
+- AppClassLoader
+
+并且在JDK8中, ExtClassLoader和AppClassLoader都继承自URLClassLoader, 但是在JDK11中, 他们不在继承自URLClassLoader, 而是继承自BuiltinClassLoader
+
+
+
+~~~java
+// 对于JDK内部的类, 都是Bootstrap ClassLoader加载的
+        // Thread.class.getClassLoader()返回null, 因为Bootstrap ClassLoader是C++实现的, 没有对应的Java类
+        printClassLoader(Thread.class.getClassLoader()); // BootstrapClassLoader
+        printClassLoader(Object.class.getClassLoader()); // BootstrapClassLoader
+        printClassLoader(Executors.class.getClassLoader()); // BootstrapClassLoader
+
+        // 对于用户自定义的类, 都是AppClassLoader加载的
+        printClassLoader(Main1.class.getClassLoader()); // jdk.internal.loader.ClassLoaders$AppClassLoader
+        printClassLoader(Main1.class.getClassLoader().getParent()); // jdk.internal.loader.ClassLoaders$PlatformClassLoader
+        printClassLoader(Main1.class.getClassLoader().getParent().getParent()); // BootstrapClassLoader
+~~~
+
+
+
+
+
+### 线程的contextClassLoader
+
+对于每一个Thread对象, 都有一个对应的contextClassLoader对象
+
+~~~java
+public ClassLoader getContextClassLoader() 
+public void setContextClassLoader(ClassLoader cl) 
+~~~
+
+对于main线程, 他的contextClassLoader是appClassLoader
+
+对于一个新的Thread, 他的contextClassLoader是父线程的ClassLoader
+
+对于一个线程池中worker线程, 他的ClassLoader是提交任务时, 调用addWorker()时的线程的ClassLoader
+
+~~~java
+public static void main(String[] args) {
+
+        // main线程的contextClassLoader是AppClassLoader
+        printClassLoader(Thread.currentThread().getContextClassLoader()); // jdk.internal.loader.ClassLoaders$AppClassLoader
+
+        // new Thread()的contextClassLoader, 取决于他的父线程, 也就是创建这个Thread的线程
+        new Thread(() -> {
+            ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+            printClassLoader(contextClassLoader); // jdk.internal.loader.ClassLoaders$AppClassLoader
+            System.out.println(contextClassLoader instanceof MyClassLoader); // false
+        }).start();
+
+        // 将线程的contextClassLoader设置为自定义的ClassLoader
+        Thread.currentThread().setContextClassLoader(new MyClassLoader(new URL[]{}, "aaaa"));
+
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(10, 10, 30, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(1000000000));
+
+        // 线程池中的线程的contextClassLoader, 取决于提交任务的时候, 调用addWorker()方法的线程
+        executor.submit(() -> {
+            ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
+            printClassLoader(contextClassLoader); // org.example.Main1$MyClassLoader
+            System.out.println(contextClassLoader instanceof MyClassLoader); // true
+        });
+
+    }
+
+    public static void printClassLoader(ClassLoader classLoader) {
+        System.out.println(classLoader == null ? "BootstrapClassLoader" : classLoader.getClass().getName());
+    }
+
+    public static class MyClassLoader extends URLClassLoader {
+
+        private final String name;
+
+        public MyClassLoader(URL[] urls, String name) {
+            super(urls);
+            this.name = name;
+        }
+    }
+~~~
+
+
+
+### 打破双亲委派机制
+
+如果你想要打破双亲委派机制, 那么就重写loadClass这个方法, 不要去父类中查找, 而是直接到查找自身
+
+~~~java
+// resolve: 最后没有找到是否报错, 如果不报错就返回null
+protected Class<?> loadClass(String name, boolean resolve)
+        throws ClassNotFoundException
+    {
+        synchronized (getClassLoadingLock(name)) {
+            Class<?> c = findLoadedClass(name); // 查找已经加载的缓存
+            if (c == null) {
+                    c = findClass(name); // 通过自身的findClass来查找
+            }
+            if (resolve) {
+                resolveClass(c); // 判断c是否为null, 如果为null就报错
+            }
+            return c;
+        }
+    }
+~~~
+
+
+
+
+
+### SPI与双亲委派
+
+为什么要打破双亲委派, 一个案例是:
+
+JDBC中, Driver通过spi机制来实现对应的Driver,  但是DriverManager是JDK的核心类, 他的ClassLoader是BootstrapManager,  也就是说DriverManger根本就不能查找通过他的ClassLoader来加载`META-INF/services`下的文件,  即使加载了, 他也不能读取到对应的字节码文件
+
+
+
+这样就没办法完成SPI了,  所以JDK里面添加了一个contextClassLoader, 即每个线程都有一个contextClassLoader
+
+当你调用`DriverManger.getConnection()`的时候, 他会调用`ServiceLoader<Driver> loadedDrivers = ServiceLoader.load(Driver.class);`来加载所有的Driver依赖
+
+
+
+而在`load()`方法里面, 它使用的是当前线程的contextClassLoader,  他在默认情况下就是AppClassLoader
+
+~~~java
+    public static <S> ServiceLoader<S> load(Class<S> service) {
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+        return new ServiceLoader<>(Reflection.getCallerClass(), service, cl);
+    }
+~~~
+
+如果ServiceLoader中使用的不是contextClassLoader, 而是使用`DriverManager.class.getClassLoader`的话, 那他就加载不到对应的实现类
+
+
+
+### Class的卸载
+
+类的卸载（unloading）是非常有限的，只在特定条件下发生。简单来说：
+
+要让一个类 `MyClass` 被卸载，必须满足以下三个条件 **全部成立**：
+
+1. **该类由一个可回收的（非根 ClassLoader）ClassLoader 加载**
+2. **该 ClassLoader 实例不再被引用（也能被 GC）**
+3. **该类的所有实例、方法、字段也都不再被引用**
+
+所以BootStrapClassLoader, AppClassLoader加载的类, 永远不会被卸载
+
+只有当:
+
+1. 你自定义的ClassLoader不再被引用
+2. 加载的类的class对象, 这些class创建的对象, 静态字段, 方法引用也不再被引用
+
+此时JVM会gc掉ClassLoader, 并且卸载这个ClassLoader加载的所有类
+
+
+
+如果你自定义的ClassLoader是URLClassLoader, 那么你可以调用他的close方法来关闭自定义的ClassLoader
+
+之后他不能用于加载Class和Resource了, 但是已经加载的Class和Resource还是可以使用的
+
+
+
+你可以在jvm中添加`java -XX:+TraceClassUnloading -XX:+TraceClassLoading`来跟踪类加载, 卸载的情况
+
+如果看到了如下输出
+
+~~~java
+[Unloading class com.example.MyClass 0x00000008000ab000]
+~~~
+
+说明类已经被卸载了
+
+
+
+## Janino编译器
+
+
+
+#### 简介
+
+ Janino 是一个极小、极快的 开源Java 编译器（Janino is a super-small, super-fast Java™ compiler.）。Janino 不仅可以像 JAVAC 一样将 Java 源码文件编译为字节码文件，还可以编译内存中的 Java 表达式、块、类和源码文件，加载字节码并在 JVM 中直接执行。Janino 同样可以用于静态代码分析和代码操作。
+
+项目地址：https://github.com/janino-compiler/janino
+
+官网地址：http://janino-compiler.github.io/janino/    <font color=red>官网简单一看即可，更重要的是看javadoc</font>
+
+
+#### ExpressEvaluator
+
+~~~java
+ public static void main(String[] args) throws Exception {
+        // Create "ExpressionEvaluator" object.
+        IExpressionEvaluator ee = CompilerFactoryFactory.getDefaultCompilerFactory().newExpressionEvaluator();
+        // 设置返回值类型
+        ee.setExpressionType(double.class);
+        // 设置参数名与类型
+        ee.setParameters(new String[] { "total" }, new Class[] { double.class });
+        // 设置抛出异常的类型
+        ee.setThrownExceptions(new Class[]{Exception.class});
+        // 设置表达式体
+        ee.cook("total*100");
+        // 传入参数并执行表达式体, 没有参数时传入null
+        Double res = (Double)ee.evaluate(new Object[]{7.5D});
+        System.out.println(res);
+
+    }
+~~~
+
+#### ScriptEvaluator
+
+~~~java
+public static void main(String[] args) throws CompileException, InvocationTargetException {
+        // ScriptEvaluator可以用于编译和执行代码块
+        // 如果有return的返回值，则该块必须返回该类型的值。
+        // 作为一项特殊功能，它允许声明方法。方法声明的位置和顺序无关紧要。
+        ScriptEvaluator se = new ScriptEvaluator();
+        se.setParameters(new String[] { "arg1", "arg2" }, new Class[] { String.class, int.class });
+        se.cook(
+                ""
+                        + "System.out.println(arg1);\n"
+                        + "System.out.println(arg2);\n"
+                        + "\n"
+                        + "static void method1() {\n"
+                        + "    System.out.println(\"run in method1()\");\n"
+                        + "}\n"
+                        + "\n"
+                        + "public static void method2() {\n"
+                        + "    System.out.println(\"run in method2()\");\n"
+                        + "}\n"
+                        + "\n"
+                        + "method1();\n"
+                        + "method2();\n"
+                        + "\n"
+
+        );
+        se.evaluate(new Object[]{"aaa",22});
+    }
+~~~
+
+#### ClassBodyEvaluator
+
+ClassBodyEvaluator的作用是编译类的主体，然后生成一个用于反射的Class对象。
+
+![image-20210430194947060](img/java/image-20210430194947060.png)
+
+#### Janino使用Compiler
+
+~~~java
+public static void main(String[] args) throws IOException, CompileException, ClassNotFoundException,
+            NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+
+        ICompiler compiler = new CompilerFactory().newCompiler();
+        // 用于保存编译后的class字节码的map
+        Map<String, byte[]> classes = new HashMap<String, byte[]>();
+        // 设置字节码生产器为MapResourceCreator
+        compiler.setClassFileCreator(new MapResourceCreator(classes));
+
+        // Now compile two units from strings:
+        compiler.compile(new Resource[] {
+            new StringResource("pkg1/A.java",
+                "package pkg1; public class A { public static int meth() { return pkg2.B.meth(); } }"),
+            new StringResource("pkg2/B.java",
+                "package pkg2; public class B { public static int meth() { return 77;            } }"),});
+
+        // Set up a class loader that uses the generated classes.
+        ClassLoader cl = new ResourceFinderClassLoader(new MapResourceFinder(classes), // resourceFinder
+            ClassLoader.getSystemClassLoader() // parent
+        );
+        Assert.assertEquals(77, cl.loadClass("pkg1.A").getDeclaredMethod("meth").invoke(null));
+    }
+~~~
+
+#### Janino使用ClassLoader
+
+~~~java
+ClassLoader cl = new JavaSourceClassLoader(
+    this.getClass().getClassLoader(),  // parentClassLoader
+    new File[] { new File("srcdir") }, // optionalSourcePath
+    (String) null,                     // optionalCharacterEncoding
+    DebuggingInformation.NONE          // debuggingInformation
+);
+ 
+// Load class A from "srcdir/pkg1/A.java", and also its superclass
+// B from "srcdir/pkg2/B.java":
+Object o = cl.loadClass("pkg1.A").newInstance();
+ 
+// Class "B" implements "Runnable", so we can cast "o" to
+// "Runnable".
+((Runnable) o).run(); 
+~~~
+
+#### Debug
+
+idea貌似可以调试，但是无法看到生成的java文件，所以两样一抹黑
+
+```
+org.codehaus.janino.source_debugging.enable=true\
+org.codehaus.janino.source_debugging.dir=C:\tmp\
+```
+
+![image-20210430195942917](img/java/image-20210430195942917.png)
+
+## [反射框架reflections](https://github.com/ronmamo/reflections)
+
+> 简介
+
+使用Reflections可以很轻松的获取以下元数据信息：
+
+- 获取某个类型的全部子类
+- 只要类型、构造器、方法，字段上带有特定注解，便能获取带有这个注解的全部信息（类型、构造器、方法，字段）
+- 获取所有能匹配某个正则表达式的资源
+- 获取所有带有特定签名的方法，包括参数，参数注解，返回类型
+- 获取所有方法的名字
+- 获取代码里所有字段、方法名、构造器的使用
+
+> Maven依赖
+
+~~~java
+<dependency>
+    <groupId>org.reflections</groupId>
+    <artifactId>reflections</artifactId>
+    <version>0.9.11</version>
+</dependency>
+~~~
+
+> 实例化
+
+```java
+// 实例化Reflections，指定扫描的包为my.package及其子包，使用默认的scanners（扫描器）
+Reflections reflections = new Reflections("my.package");
+
+// 使用ConfigurationBuilder进行实例化
+new Reflections(new ConfigurationBuilder()
+     .setUrls(ClasspathHelper.forPackage("my.project.prefix"))
+     .setScanners(new SubTypesScanner(), 
+                  new TypeAnnotationsScanner().filterResultsBy(optionalFilter), ...),
+     .filterInputsBy(new FilterBuilder().includePackage("my.project.prefix"))
+     ...);
+```
+
+> 使用
+
+- 扫描子类
+
+  ~~~java
+  //SubTypesScanner
+  Set<Class<? extends Module>> modules = 
+      reflections.getSubTypesOf(com.google.inject.Module.class);
+  ~~~
+
+- 扫描带有某个注解的类
+
+  ~~~java
+  //TypeAnnotationsScanner 
+  Set<Class<?>> singletons = 
+      reflections.getTypesAnnotatedWith(javax.inject.Singleton.class);
+  ~~~
+
+- 扫描资源
+
+  ~~~java
+  //ResourcesScanner
+  Set<String> properties = 
+      reflections.getResources(Pattern.compile(".*\\.properties"));
+  ~~~
+
+- 扫描带有某个注解的方法/构造方法
+
+  ~~~java
+  //MethodAnnotationsScanner
+  Set<Method> resources =
+      reflections.getMethodsAnnotatedWith(javax.ws.rs.Path.class);
+  Set<Constructor> injectables = 
+      reflections.getConstructorsAnnotatedWith(javax.inject.Inject.class);
+  ~~~
+
+- 扫描带有某个注解的字段
+
+  ~~~java
+  //FieldAnnotationsScanner
+  Set<Field> ids = 
+      reflections.getFieldsAnnotatedWith(javax.persistence.Id.class);
+  ~~~
+
+- 扫描特定的方法
+
+  ~~~java
+  //MethodParameterScanner
+  //扫描特定参数类型的方法
+  Set<Method> someMethods =
+      reflections.getMethodsMatchParams(long.class, int.class);
+  //扫描特定返回类型的方法
+  Set<Method> voidMethods =
+      reflections.getMethodsReturn(void.class);
+  //扫描方法参数上带有某个注解的方法
+  Set<Method> pathParamMethods =
+      reflections.getMethodsWithAnyParamAnnotated(PathParam.class);
+  ~~~
+
+- 扫描方法的参数名
+
+  ~~~java
+  //MethodParameterNamesScanner
+  List<String> parameterNames = 
+      reflections.getMethodParamNames(Method.class)
+  ~~~
+
+- 扫描？？？
+
+  ~~~java
+  //MemberUsageScanner
+  Set<Member> usages = 
+      reflections.getMethodUsages(Method.class)
+  ~~~
+
+
+
+## Process
+
+在java中, Process表示一个子程序
+
+他的使用场景是如果我们想执行一个子程序, 那么可以使用他
+
+### 创建Process
+
+要执行一个子程序, 有两种办法
+
+1. 通过`Runtime.getRuntime().exec()`方法
+
+   ~~~java
+           /*
+               三个参数分别是:
+                   1. command: 指定要执行的命令, 
+                   2. envp: 环境变量(每个string都应该是 aaa=bbb 的格式), 
+                   3. dir: 命令执行的工作目录
+            */
+   Process process = Runtime.getRuntime().exec("java HelloWorld", null, new File("F:\\demo\\"));
+   ~~~
+
+2. 通过ProcessBuilder来创建一个builder, 然后调用他的start方法来执行命令
+
+   ~~~java
+           ProcessBuilder builder = new ProcessBuilder("java", "-version");
+           Process process = builder.start();
+   ~~~
+
+   ProcessBuilder有如下可选的方法
+
+   1. 指定命令的工作目录
+
+      ~~~java
+      builder.directory(new File("/path/to/working_dir")); // 设置工作目录
+      ~~~
+
+   2. 指定启动命令时的环境变量
+
+      ~~~java
+      Map<String, String> environment = builder.environment();
+              environment.put("MY_VAR", "my_value"); // 设置环境变量
+      ~~~
+
+   3. 默认情况下, 创建的Process的输入, 输出, 错误流是System.in, System.out, System.out
+
+      当然你也可以重定向他们
+
+      ~~~java
+      builder.redirectErrorStream(); // 将错误流合并到标准输出流
+      
+      // 将输入重定向到文件中
+      builder.redirectInput(ProcessBuilder.Redirect.from(new File("input.txt")));
+      // 标准输入重定向到与父进程相同
+      builder.redirectInput(ProcessBuilder.Redirect.INHERIT); 
+      // 程序的标准输入通过管道连接到当前的进程
+      builder.redirectInput(ProcessBuilder.Redirect.PIPE); 
+      
+      
+      builder.redirectOutput(ProcessBuilder.Redirect.appendTo(new File("error.log"))); // 错误流追加到文件
+      builder.redirectOutput(ProcessBuilder.Redirect.to(new File("out.log"))); // 标准输出重定向到文件
+      builder.redirectOutput(ProcessBuilder.Redirect.INHERIT); // 标准输出重定向到与父进程相同
+      builder.redirectOutput(ProcessBuilder.Redirect.DISCARD);  // 标准输出重定向到黑洞
+      builder.redirectOutput(ProcessBuilder.Redirect.PIPE); // 程序的标准输出通过管道连接到当前的进程
+      
+      // 重定向错误流和重定向输出流一样
+      builder.redirectError(ProcessBuilder.Redirect.appendTo(new File("error.log")));
+      ~~~
+
+      
+
+### Process的各个方法
+
+1. 获取输入, 输出, 错误流
+
+   ~~~java
+   // Stream形式的流
+   InputStream inputStream = process.getInputStream(); // 获取他的输入流
+   InputStream errorStream = process.getErrorStream(); // 获取他的错误输出流
+   OutputStream outputStream = process.getOutputStream(); // 获取他的输出流
+   BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+   String str;
+   while ((str = bufferedReader.readLine()) != null) {
+       System.out.println(str);
+   }
+   
+   // Reader形式的流
+   BufferedReader bufferedReader1 = process.inputReader(StandardCharsets.UTF_8); // 标准输入, 使用UTF-8编码
+   BufferedReader bufferedReader2 = process.errorReader(StandardCharsets.UTF_8); // 标准错误输出, 使用UTF-8编码
+   BufferedWriter bufferedWriter = process.outputWriter(StandardCharsets.UTF_8); // 标准输出, 使用UTF-8编码 
+   if (bufferedReader1.ready()) {
+       String line;
+       while ((line = bufferedReader1.readLine()) != null) {
+           System.out.println(line);
+       }
+   }
+   ~~~
+
+2. 获取程序pid
+
+   ~~~java
+   long pid = process.pid(); // 获取程序的pid
+   ~~~
+
+3. 关闭程序
+
+   ~~~java
+   CompletableFuture<Process> future = process.onExit(); // 返回Process退出的Future
+   future.thenRun(() -> {
+       System.out.println("进程退出");
+   });
+   
+   
+   process.destroy(); // kill -15
+   process.destroyForcibly(); // kill -9
+   boolean alive = process.isAlive(); // 判断进程是否存活
+   process.waitFor(); // 等待进程结束
+   process.waitFor(1000, java.util.concurrent.TimeUnit.MILLISECONDS); // 等待进程结束, 最多等待1000毫秒
+   int exitValue = process.exitValue();// 获取进程的退出值
+   ~~~
+
+4. 句柄相关的函数
+
+   ~~~java
+   ProcessHandle processHandle = process.toHandle();// 获取进程的句柄
+   Stream<ProcessHandle> children = process.children(); // 获取进程的子进程句柄
+   Optional<ProcessHandle> parent = processHandle.parent(); // 获取当前进程的父进程的句柄
+   int same = processHandle.compareTo(processHandle);// 比较两个进程的句柄
+   ~~~
+
+   
+
+## JavaCompiler
+
+JavaCompiler的功能是动态的从文件, 内存中编译Java类为字节码文件
+
+要想使用他, 有两种方式
+
+1. 一种是简单的编译, 适合你只想要编译java文件的清空
+
+2. 一种是复杂的编译, 可以定制化的功能多
+
+   
+
+### 简单编译
+
+~~~java
+public static void main(String[] args) throws IOException, InterruptedException {
+        JavaCompiler systemJavaCompiler = ToolProvider.getSystemJavaCompiler();
+        if (systemJavaCompiler == null) {
+            // JavaCompiler只在jdk中可用, 在jre中不可用
+            throw new RuntimeException("JDK required (JRE is not sufficient)");
+        }
+
+        /*
+            四个参数分别是:
+                1. 标准输入: 如果为null, 则使用System.in, 一般都为null, 因为javac几乎不会从标准输入读取内容, 保留这个参数只是为了与其他Tool类保持一致
+                2. 标准输出: 如果为null, 则使用System.out
+                3. 标准错误输出: 如果为null, 则使用System.err
+                4. 传递给javac的参数
+                        -d target/classes: 指定输出后的目录
+                        -cp : 指定类路径
+                        -encoding utf-8: 指定编码
+                        -source 17: 指定源代码的版本
+                        -target 17: 指定编译后的字节码的版本
+                        com.tiger.HelloWorld.java: 指定要编译的类
+         */
+        String[] arguments = {
+                "-d", "target/java-compiler",
+                "-cp", "F:\\demo\\",
+                "-encoding", "utf-8",
+                "-source", "17",
+                "-target", "17",
+            "C:\\Users\\Administrator\\Desktop\\untitled\\src\\main\\resources\\HelloWorld.java"
+        };
+        // 编译成功返回0, 编译失败返回非0
+        // 你可以从错误流, 输出流中获取报错原因
+        int success = systemJavaCompiler.run(System.in, System.out, System.err, arguments);
+        if (success == 0) {
+            System.out.println("编译成功");
+        } else {
+            System.out.println("编译失败"); return;
+        }
+    }
+~~~
+
+### 复杂的情况
+
+除了上面简单的直接编译本地文件外, JavaCompiler还提供了一整套编译流程, 下面要讲解几个相关的类
+
+#### JavaFileObject
+
+他表示一个 `.java`的源文件,  或者一个`.class`的字节码文件,  或者一个`.html`的javadoc文件, 或者一个其他类型的资源文件
+
+他内部有一个Kind属性
+
+~~~java
+public interface JavaFileObject extends FileObject {
+    // JavaFileObject表示的文件的枚举
+    enum Kind {
+        SOURCE(".java"), // java源文件
+        CLASS(".class"), // java字节码文件
+        HTML(".html"), // javadoc文件
+        OTHER(""); // 其他的资源文件
+        public final String extension; // 文件的扩展名
+        Kind(String extension) {
+            this.extension = Objects.requireNonNull(extension);
+        }
+    }
+    Kind getKind(); // 返回当前JavaFileObject表示的文件类型
+}
+~~~
+
+#### SimpleJavaFileObject
+
+他是JavaFileObject的一个子类, 如果我们想要自定义各种类型的Java文件, 那么最好是继承他
+
+他有两个属性
+
+~~~java
+// 当前SimpleJavaFileObject表示的文件的uri
+protected final URI uri; 
+protected final Kind kind; // 表示的文件的类型
+~~~
+
+他的内部有好几个可以重写的方法
+
+~~~java
+// 获取文件的输入流, 通常用于Kind为CLASS的时候, 编译器读取java字节码的内容的时候调用
+public InputStream openInputStream() throws IOException
+// 获取文件的输出流, 通常用于Kind为CLASS的时候, 编译器写Java字节码到文件中的调用
+public OutputStream openOutputStream() throws IOException 
+    
+// 返回文件的内容, 通常用于Kind为SOURCE的时候, 编译器读取java源文件的内容
+public CharSequence getCharContent(boolean ignoreEncodingErrors) 
+~~~
+
+
+
+比如我可以重写他来表示一个内存中字符串组成的Java源码文件
+
+~~~java
+class JavaSourceFromString extends SimpleJavaFileObject {
+    private final String code;
+    private final String className;
+
+    JavaSourceFromString(String className, String code) {
+        super(URI.create("string:///" + className.replace('.', '/') + Kind.SOURCE.extension), Kind.SOURCE);
+        this.code = code;
+        this.className = className;
+    }
+
+    // 编译器会调用这个方法, 来获取Java源文件的内容
+    @Override
+    public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+        return code;
+    }
+    public String getClassName() {
+        return className;
+    }
+}
+~~~
+
+也可以重写他, 来表示一个等待写入字节码的Java字节码文件
+
+~~~java
+class JavaClassObject extends SimpleJavaFileObject {
+    private final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+    JavaClassObject(String className) {
+        super(URI.create("mem:///" + className.replace('.', '/') + Kind.CLASS.extension), Kind.CLASS);
+    }
+
+    @Override
+    public OutputStream openOutputStream() {
+        return outputStream; // 编译器会调用这个方法, 获取OutputStream, 然后将编译后的字节码文件写入到OutputStream
+    }
+
+    public byte[] getBytes() {
+        return outputStream.toByteArray();
+    }
+}
+~~~
+
+也可以重写他, 来表示一个内存中的Java字节码文件
+
+~~~java
+import javax.tools.SimpleJavaFileObject;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
+
+public class MemoryByteCodeJavaFileObject extends SimpleJavaFileObject {
+
+    private final String className;
+    private final byte[] bytes;
+
+    public MemoryByteCodeJavaFileObject(String className, byte[] bytes) {
+        super(URI.create("mem:///" + className.replace('.', '/') + Kind.CLASS.extensions), Kind.CLASS);
+        this.className = className;
+        this.bytes = bytes;
+    }
+
+    @Override
+    public InputStream openInputStream() {
+        // 编译器会调用这个方法, 来获取Java字节码文件的内容
+        return new java.io.ByteArrayInputStream(getBytes());
+    }
+
+    public byte[] getBytes() {
+        return bytes;
+    }
+
+    public String getClassName() {
+        return className;
+    }
+}
+~~~
+
+#### JavaFileManager
+
+`JavaFileManager` 主要用于处理 Java 文件（如 `.java` 和 `.class`）的读取、写入、路径定位等操作。它是连接文件系统和编译器之间的桥梁。
+
+
+
+JavaCompiler在编译过程中, 会调用JavaFileManager中的方法, 来查找对应的`.java/.class`文件, 并且在JavaCompiler在输出的时候, 与会调用JavaFileManger中特定的方法, 来输出字节码文件
+
+所以在JavaFileManager中, 有一些方法是编译器来调用的, 有一些方法是我们手动可以调用的
+
+
+
+| 方法名                       | 被谁调用           | 什么时候调用                            | 作用                                                         |
+| ---------------------------- | ------------------ | --------------------------------------- | ------------------------------------------------------------ |
+| `getJavaFileForInput`        | 编译器             | 查找依赖类或增量编译                    | 读取已有的 `.java` 或 `.class`                               |
+| `getJavaFileForOutput`       | 编译器             | 输出 `.class` 文件时                    | 获取一个用于写 `.class` 的目标                               |
+| `getFileForInput`            | 编译器或注解处理器 | 读取资源文件时（如 `@PropertySource`）  | 读任意非 `.java` 的文件资源                                  |
+| `getFileForOutput`           | 编译器或注解处理器 | 生成资源文件时                          | 写资源文件（如 `META-INF/services/...`）                     |
+| `list(...)`                  | 编译器             | 自动扫描某 package 下的类或源码         | 枚举 `.java` 或 `.class` 文件                                |
+| `inferBinaryName(...)`       | 编译器             | list 时返回的 `JavaFileObject` 需要类名 | `list(location, packageName, ...)` 返回一堆 `JavaFileObject` 后，<br>编译器会依次调用 `inferBinaryName(location, javaFileObject)` 来知道这些类的完整类名。 |
+| `inferModuleName(...)`       |                    |                                         |                                                              |
+| `hasLocation(...)`           | 编译器或你         | 判断是否设置过某个路径                  | 避免空指针异常等                                             |
+| `isSameFile(...)`            | 编译器             | 判断两个 `JavaFileObject` 是否等价      | 常用于避免重复编译                                           |
+| `handleOption(...)`          | 编译器             | 处理命令行参数如 `-d`, `-classpath` 等  | 转给 `JavaFileManager`                                       |
+| `flush()`                    | 编译器             | 编译中间阶段刷新文件流                  | 保证数据写入磁盘或内存                                       |
+| `close()`                    | 编译器或你         | 编译结束时                              | 清理资源（流、临时文件等）                                   |
+| `getClassLoader(...)`        | 编译器或你         | 想要加载 `.class` 文件为 Class 时       | 获取对应 `Location` 的 `ClassLoader`                         |
+| `listLocationForModules(..)` |                    |                                         | 列出模块的所有位置                                           |
+| `containes(...)`             |                    |                                         | 判断某个FileObject是否在指定的Location中                     |
+| `getServiceLoader(...)`      |                    |                                         | 获取一个ServiceLoader                                        |
+| `getLocationForModule(...)`  |                    |                                         | 获取模块的位置                                               |
+
+
+
+#### StandardJavaFileManager
+
+`StandardJavaFileManager` 是`JavaFileManager`的标准实现类, 并且他还提供了更多的方法, 
+
+- 让你可以自主控制编译的源码路径, 输出路径, 类路径等等
+- 把本地文件（如 `.java`）转换成 `JavaFileObject`，供编译器使用；
+
+他的常见api如下
+
+1. 创建
+
+   ~~~java
+   JavaCompiler systemJavaCompiler = ToolProvider.getSystemJavaCompiler();
+   if (systemJavaCompiler == null) {
+   	throw new RuntimeException("JDK required (JRE is not sufficient)");
+   }
+   DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+   try (
+       /*
+        三个参数分别为:
+         1. 诊断信息收集器: 用于收集信息
+         2. 区域化信息: 格式化信息的时候, 要使用的区域信息, 一般为null, 使用默认的区域
+         3. 文件编码
+        */
+       StandardJavaFileManager stdFileManager = compiler.getStandardFileManager(diagnostics, null, null);
+   ) {
+       
+   }
+   ~~~
+
+2. 从本地文件中读取文件, 转换为JavaFileObject, 供java编译器使用
+
+   <font color=red>下面所有的方法都不能指定目录地址, 必须是真实的文件地址</font>
+
+   ~~~java
+   // 将File指定的文件转换为JavaFileObject
+   Iterable<? extends JavaFileObject> getJavaFileObjectsFromFiles(Iterable<? extends File> files);
+   Iterable<? extends JavaFileObject> getJavaFileObjects(File... files);
+   Iterable<? extends JavaFileObject> getJavaFileObjects(String... names); // 通过string指定文件的文件名
+   Iterable<? extends JavaFileObject> getJavaFileObjectsFromStrings(Iterable<String> names);
+   
+   
+   // 通过Path来指定要转换为JavaFileObject的文件的路径
+   Iterable<? extends JavaFileObject> getJavaFileObjectsFromPaths(Iterable<? extends Path> paths)
+   Iterable<? extends JavaFileObject> getJavaFileObjectsFromPaths( Collection<? extends Path> paths);
+   Iterable<? extends JavaFileObject> getJavaFileObjects(Path... paths)
+   ~~~
+
+3. `setLocation(...)` / `getLocation(...)` 是用来配置和获取 JavaCompiler能够使用的各种路径
+
+   这些是 Java 编译器必须知道的路径信息，用于编译时查找依赖、生成字节码、写入输出目录等。
+
+   ~~~java
+   // 设置某个位置（如类路径或输出路径）对应的文件目录
+   setLocation(Location location, Iterable<? extends File> files)	
+   setLocationFromPaths(Location location, Collection<? extends Path> paths)	
+       
+   // 针对 Java 模块（JPMS）设置某个模块的路径
+   setLocationForModule(Location location, String moduleName, Collection<? extends Path> paths)	
+   
+   getLocation(Location location)	 // 获取当前为某个位置设置的路径, 返回File
+   getLocationAsPaths(Location location) // 同上, 返回Path
+   ~~~
+
+   能够设置和获取的Location有
+
+   ~~~java
+   StandardLocation.CLASS_PATH // Java 类路径（查找依赖）
+   StandardLocation.SOURCE_PATH // Java 源码路径（查找源码）
+   StandardLocation.CLASS_OUTPUT // .class 文件的输出目录
+   StandardLocation.SOURCE_OUTPUT // .java 文件生成输出目录
+   StandardLocation.MODULE_PATH  // 模块路径（Java 9+）
+   StandardLocation.SYSTEM_MODULES // 	JDK 自带的模块
+   StandardLocation.ANNOTATION_PROCESSOR_PATH // 注解处理器类路径
+   ~~~
+
+
+
+#### ForwardingJavaFileManager
+
+ForwardingJavaFileManager采用的是装饰器模式, 他也实现了JavaFileManager接口, 他可以对已有的 `JavaFileManager` 实现进行“包装”或“代理”，从而可以扩展或修改其行为，而无需完全从零实现接口。
+
+
+
+他内部有一个属性`fileManager`
+
+- **“转发”所有方法调用** 给内部持有的 `fileManager`实例；
+- 你可以 **选择性地覆盖某些方法**，以改变行为，比如把 `.class` 文件输出到内存而不是磁盘；
+- 适合用于：**自定义内存编译**、**拦截文件写入**、**注入类加载逻辑** 等场景。
+
+~~~java
+public class ForwardingJavaFileManager<M extends JavaFileManager> implements JavaFileManager {
+    protected final M fileManager;
+
+    protected ForwardingJavaFileManager(M fileManager) {
+        this.fileManager = fileManager;
+    }
+
+    // 所有 JavaFileManager 方法默认都转发给 this.fileManager
+}
+~~~
+
+
+
+#### DiagnosticCollector
+
+你可以在编译代码的时候, 传递一个`DiagnosticListener<T>`给JavaCompiler, 他主要用于在编译代码的时候, 收集编译时的各种信息, 包括
+
+1. 编译错误
+2. 编译警告
+3. 提示信息
+
+他的使用比较简单, 就是在编译代码的时候, 将其传递给JavaCompiler, 等编译完了, 就可以通过for循环来获取编译产生的信息了
+
+~~~java
+for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics.getDiagnostics()) {
+    JavaFileObject javaFileObject = diagnostic.getSource(); // 获取产生信息的Java文件对象
+    String source = diagnostic.getSource().toUri().toString(); // 获取信息的源文件路径
+                
+    Diagnostic.Kind kind = diagnostic.getKind(); // 获取信息的类型, ERROR, WARNING, NOTE
+                
+    long lineNumber = diagnostic.getLineNumber(); // 获取信息的行号
+    long columnNumber = diagnostic.getColumnNumber(); // 获取信息的列号
+                
+    String message = diagnostic.getMessage(Locale.getDefault()); // 获取信息的内容
+    long startPosition = diagnostic.getStartPosition(); // 产生信息的代码的起始位置
+    long endPosition = diagnostic.getEndPosition(); // 产生信息的代码的结束位置
+    long position = diagnostic.getPosition(); // 产生信息的代码的位置
+                
+    String code = diagnostic.getCode(); // 产生信息的代码
+}
+~~~
+
+
+
+
+
+#### 案例1: 编译本地的文件
+
+~~~java
+    /**
+     * 编译本地文件
+     */
+    public static void main(String[] args) throws IOException, InterruptedException {
+
+
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        if (compiler == null) {
+            // JavaCompiler只在JDK中可用, 在JRE中不可用
+            throw new RuntimeException("JDK required (JRE is not sufficient)");
+        }
+
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+
+        try (
+                /*
+                    三个参数分别为:
+                        1. 诊断信息收集器: 用于收集信息
+                        2. 区域化信息: 格式化信息的时候, 要使用的区域信息, 一般为null, 使用默认的区域
+                        3. 文件编码
+                 */
+                StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, null);
+        ) {
+
+            // 获取要编译的Java文件
+            Iterable<? extends JavaFileObject> compilationUnits = fileManager.getJavaFileObjectsFromFiles(Arrays.asList(
+                    new File("C:\\Users\\Administrator\\Desktop\\untitled\\src\\main\\resources\\HelloWorld.java")));
+
+            // 设置编译选项
+            List<String> options = Arrays.asList(
+                    // "-d", "target/java-compiler11", // 指定输出后的目录, 不必事先存在
+                    // "-cp", "F:\\", // 指定classpath
+                    "-encoding", "utf-8",
+                    "-source", "17",
+                    "-target", "17"
+            );
+
+            // 通过fileManager也可以指定output, classpath等等
+            fileManager.setLocation(StandardLocation.CLASS_OUTPUT, Arrays.asList(new File("target/java-compiler"))); // 目录需要事先存在
+            fileManager.setLocation(StandardLocation.CLASS_PATH, Arrays.asList(new File("F:\\")));
+            fileManager.setLocation(StandardLocation.SOURCE_OUTPUT, Arrays.asList(new File("target/java-compiler11"))); // 目录需要事先存在
+            fileManager.setLocation(StandardLocation.SOURCE_PATH, Arrays.asList(new File("F:\\")));
+            fileManager.setLocation(StandardLocation.ANNOTATION_PROCESSOR_PATH, Arrays.asList(new File("F:\\")));
+            
+            // 创建编译任务
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,  // 标准输出
+                    fileManager, // 文件管理器
+                    diagnostics, // 诊断信息收集器
+                    options, // 编译选项
+                    null, // 需要注解处理器处理的类
+                    compilationUnits // 要编译的Java文件
+            );
+
+            // 执行编译
+            boolean success = task.call();
+
+            // 处理诊断信息
+            for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics.getDiagnostics()) {
+                System.out.format(
+                        "Error on line %d in %s%n",
+                        diagnostic.getLineNumber(),
+                        diagnostic.getSource().toUri()
+                );
+            }
+
+            if (success) {
+                System.out.println("编译成功");
+            } else {
+                System.out.println("编译失败"); return;
+            }
+
+        }
+    }
+~~~
+
+
+
+#### 案例2: 编译字符串
+
+~~~java
+    // 创建一个自定义的JavaFileObject, 用来表示内容为字符串的java源码文件
+    static class StringJavaFileObject extends SimpleJavaFileObject {
+        final String code; // 具体的代码
+
+        // 这里的string没有特别的含义, 仅仅作为标识
+        // 常用的标识有 string:/// 字符串表示的文件
+        //             file:/// 磁盘上的文件
+        //             mem:///  内存中的文件
+        StringJavaFileObject(String code) {
+            super(URI.create("string:///" + name.replace('.', '/') + Kind.SOURCE.extension), Kind.SOURCE);
+            this.code = code;
+        }
+
+        @Override
+        public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+            // 返回源文件的内容
+            return code;
+        }
+    }
+
+    // 再创建一个自定义的JavaFileObject, 用来存储编译后的字节码内容
+    static class MemoryClassJavaFileObject extends SimpleJavaFileObject {
+        private final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+
+        MemoryClassJavaFileObject(String name) {
+            super(URI.create("mem:///" + name.replace('.', '/') + Kind.CLASS.extension), Kind.CLASS);
+        }
+
+        // java编译器会调用这个方法, 来获取outputStream, 然后将字节码写入到outputStream中
+        @Override
+        public OutputStream openOutputStream() {
+            return outputStream;
+        }
+        
+        @Override
+        public InputStream openInputStream() {
+            return new ByteArrayInputStream(outputStream.toByteArray());
+        }
+
+        public byte[] getBytes() {
+            return outputStream.toByteArray();
+        }
+    }
+
+    // 自定义一个JavaFileManager, 并且重写他的getJavaFileForOutput方法
+    public static class MemoryJavaFileManager extends ForwardingJavaFileManager<StandardJavaFileManager> {
+        private final Map<String, MemoryClassJavaFileObject> classBytes = new HashMap<>();
+
+        MemoryJavaFileManager(StandardJavaFileManager fileManager) {
+            super(fileManager);
+        }
+
+        // 当编译器要生成文件内容的时候, 会调用这个方法来获得一个JavaFileObject
+        // 然后调用JavaFileObject的openOutputStream方法来获取一个OutputStream, 用于写入内容
+        @Override
+        public JavaFileObject getJavaFileForOutput(
+                Location location, String className, JavaFileObject.Kind kind, FileObject sibling) throws IOException {
+            // 只处理生成的文件是class文件的情况
+            if (kind == JavaFileObject.Kind.CLASS) {
+                // 生成的内容输出到MemoryClassJavaFileObject中
+                MemoryClassJavaFileObject fileObject = new MemoryClassJavaFileObject(className);
+                classBytes.put(className, fileObject);
+                return fileObject;
+            }
+            return super.getJavaFileForOutput(location, className, kind, sibling);
+        }
+
+        public Map<String, byte[]> getClassBytes() {
+            Map<String, byte[]> result = new HashMap<>();
+            for (Map.Entry<String, MemoryClassJavaFileObject> entry : classBytes.entrySet()) {
+                result.put(entry.getKey(), entry.getValue().getBytes());
+            }
+            return result;
+        }
+
+    }
+
+    // Step 4: 自定义类加载器从内存中加载字节码, parent是AppClassLoader
+    static class MemoryClassLoader extends ClassLoader {
+        private final Map<String, byte[]> classBytes = new ConcurrentHashMap<>();
+        private final Map<String, Class<?>> alreadyLoadedClasses = new ConcurrentHashMap<>();
+
+        public void addClass(String className, byte[] bytes) {
+            classBytes.put(className, bytes);
+        }
+
+        @Override
+        protected Class<?> findClass(String name) throws ClassNotFoundException {
+            if (alreadyLoadedClasses.containsKey(name)) {
+                return alreadyLoadedClasses.get(name);
+            }
+            byte[] bytes = classBytes.get(name);
+            if (bytes == null) {
+                return null;
+            }
+            Class<?> aClass = defineClass(name, bytes, 0, bytes.length);
+            alreadyLoadedClasses.put(name, aClass);
+            return aClass;
+        }
+    }
+
+public static void main(String[] args) throws Exception {
+        String className = "Hello";
+        String codeStr = """
+                    public class Hello {
+                        public void sayHello() {
+                            System.out.println("Hello, dynamic Java!");
+                        }
+                    }
+                """;
+
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+        if (compiler == null) {
+            throw new RuntimeException("JDK required (JRE is not sufficient)");
+        }
+        try (
+                StandardJavaFileManager stdFileManager =
+                        compiler.getStandardFileManager(diagnostics, null, null);
+                MemoryJavaFileManager fileManager = new MemoryJavaFileManager(stdFileManager);
+        ) {
+            // 封装源码
+            JavaFileObject source = new StringJavaFileObject(className, codeStr);
+
+            // 设置编译选项
+            List<String> options = Arrays.asList(
+                    // "-d", "target/java-compiler11", // 指定输出后的目录, 不必事先存在
+                    // "-cp", "F:\\", // 指定classpath
+                    "-encoding", "utf-8",
+                    "-source", "17",
+                    "-target", "17"
+            );
+            
+            // 通过fileManager也可以指定output, classpath等等
+            fileManager.setLocation(StandardLocation.CLASS_OUTPUT, Arrays.asList(new File("target/java-compiler"))); // 目录需要事先存在
+            fileManager.setLocation(StandardLocation.CLASS_PATH, Arrays.asList(new File("F:\\")));
+            fileManager.setLocation(StandardLocation.SOURCE_OUTPUT, Arrays.asList(new File("target/java-compiler11"))); // 目录需要事先存在
+            fileManager.setLocation(StandardLocation.SOURCE_PATH, Arrays.asList(new File("F:\\")));
+            fileManager.setLocation(StandardLocation.ANNOTATION_PROCESSOR_PATH, Arrays.asList(new File("F:\\")));
+
+            
+            // 准备编译任务
+            Iterable<? extends JavaFileObject> compilationUnits = List.of(source);
+            JavaCompiler.CompilationTask task = compiler.getTask(
+                    null,  // 标准输出
+                    fileManager, // 文件管理器
+                    diagnostics, // 诊断信息收集器
+                    options, // 编译选项
+                    null, // 需要注解处理器处理的类
+                    compilationUnits // 要编译的Java文件
+            );
+
+            boolean success = task.call();
+
+            // 输出编译信息
+            for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics.getDiagnostics()) {
+                JavaFileObject javaFileObject = diagnostic.getSource(); // 获取产生信息的Java文件对象
+                String sourcePath = diagnostic.getSource().toUri().toString(); // 获取信息的源文件路径
+
+                Diagnostic.Kind kind = diagnostic.getKind(); // 获取信息的类型, ERROR, WARNING, NOTE
+
+                long lineNumber = diagnostic.getLineNumber(); // 获取信息的行号
+                long columnNumber = diagnostic.getColumnNumber(); // 获取信息的列号
+
+                String message = diagnostic.getMessage(Locale.getDefault()); // 获取信息的内容
+                long startPosition = diagnostic.getStartPosition(); // 产生信息的代码的起始位置
+                long endPosition = diagnostic.getEndPosition(); // 产生信息的代码的结束位置
+                long position = diagnostic.getPosition(); // 产生信息的代码的位置
+
+                String code = diagnostic.getCode(); // 产生信息的代码
+            }
+
+            if (!success) {
+                System.out.println("编译失败");
+            } else {
+                // 读取编译后的字节码, 将其加载为Class
+                Map<String, byte[]> classBytes = fileManager.getClassBytes();
+                MemoryClassLoader memoryClassLoader = new MemoryClassLoader();
+                classBytes.forEach((s, b) -> {
+                            memoryClassLoader.addClass(s, b);
+                });
+
+                // 加载类
+                Class<?> aClass = memoryClassLoader.loadClass(className);
+                // 调用其中的方法
+                aClass.getMethod("sayHello").invoke(aClass.newInstance());
+            }
+        }
+~~~
+
+
+
+
+
+## 在线编译和解释执行scala
+
+首先要知道的是, 你可以像java一样来使用scala, 也可以编写一个scala脚本来解释执行, 类似groovy一样, 不需要main函数就直接执行
+
+所以我们在使用java编译scala的时候, 也有两种方式
+
+1. 像java一样, 编译, 然后执行, 这个时候你不能写脚本代码, 所有要执行的代码都要写在main函数中
+
+   ~~~scala
+   class Hello {
+     def greet(): String = "Hello from compiled class!"
+   }
+   object Hello {
+     var count: Int = 0
+     def main(args: Array[String]): Unit = {
+       println("Hello, Scala!")
+       println(s"Arguments: ${args.mkString(", ")}")
+     }
+   }
+   ~~~
+
+2. 像groovy一样, 一边编译一遍执行, 这个时候可以写脚本代码
+
+   ~~~scala
+   class Hello {
+      def greet(): String = "Hello from compiled class!"
+    }
+   object Hello {
+     var count: Int = 0
+   }
+   
+   val hello = new Hello
+   println(hello.greet())
+   println(Hello.count)        
+   ~~~
+
+
+
+scala提供了两个工具类: 
+
+- `Global.Run`:  直接编译scala, 无法编译脚本
+- `IMain`: 解释执行scala,  也可以指定解释器生成的classes的位置
+
+上面两个工具类都可以用来编译scala并输出到指定的地方, 只不过`Global.Run`是正经编译的,
+
+ `IMain`是解释执行的时候, 指定将编译的class放在指定的目录,  编译产物相对来说是副产物
+
+所以我们还是推荐使用`Global.Run`来编译, `IMain`来解释执行
+
+
+
+### 导入依赖
+
+~~~xml
+    <dependencies>
+        <!-- 运行scala代码需要的类库 -->
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala-library</artifactId>
+            <version>2.12.10</version>
+        </dependency>
+        <!-- 编译scala需要的类库 -->
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala-compiler</artifactId>
+            <version>2.12.10</version>
+        </dependency>
+        <!-- scala的反射支持库 -->
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>scala-reflect</artifactId>
+            <version>2.12.10</version>
+        </dependency>
+    </dependencies>
+~~~
+
+
+
+
+
+### 使用Global.Run编译scala
+
+~~~java
+package com.tiger;
+
+import scala.collection.JavaConverters;
+import scala.tools.nsc.Global;
+import scala.tools.nsc.Settings;
+import scala.tools.nsc.reporters.ConsoleReporter;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.util.Collections;
+
+import scala.collection.immutable.List;
+
+public class ScalaCompilerDemo {
+    
+    private static class ErrorHandler extends AbstractFunction1<String, BoxedUnit> {
+
+        // 假如你在设置Settings对象的时候, 传入的参数不正确
+        // 比如参数只能传 none/all 的时候, 你传了一个hello
+        // 那么编译器会将错误信息传递到这里
+        @Override
+        public BoxedUnit apply(String msg) {
+            System.err.printf("Interpreter error: %s", msg);
+            return BoxedUnit.UNIT; // BoxedUnit.UNIT是java中的void
+        }
+    }
+    public static void main(String[] args) throws Exception {
+        // 1. 写入 Scala 源文件
+        // 因为我们是进行编译, 所以这里不能写scala脚本了, 只能写类
+        String scalaCode = """
+            class Hello {
+              def greet(): String = "Hello from compiled class!"
+            }
+           object Hello {
+             var count: Int = 0
+           }
+           """;
+        File sourceFile = new File("com/tiger/Hello.scala");
+        File parentDir = sourceFile.getParentFile();
+        if (!parentDir.exists()) {
+            parentDir.mkdirs();  // 确保父目录存在, 自动创建 com/tiger/
+        }
+        try (FileWriter writer = new FileWriter(sourceFile)) {
+            writer.write(scalaCode);
+        }
+
+        // 2. 配置编译器 Settings
+        String outputDir = "./out-classes";
+
+        // 配置 Scala Settings, 通过settings.xxx.tryToSetFromPropertyValue("xxx")来设置
+        Settings settings = new Settings(new ErrorHandler());
+        settings.usejavacp().tryToSetFromPropertyValue("true"); // 设置使用 当前JVM 的 classpath
+        settings.outdir().tryToSetFromPropertyValue(outputDir); // 设置输出的目录
+
+        // 3. 创建 Global 编译器并运行
+        //      ConsoleReporter 用于输出日志在控制台
+        //      你也可以创建一个PrintWriter, 来将日志打印到指定的地方
+        Global.Run run;
+        try (Global global = new Global(settings, new ConsoleReporter(settings))) {
+            run = global.new Run();
+            java.util.List<String> javaList1 = Collections.singletonList(sourceFile.getPath());
+            List<String> scalaList1 = JavaConverters.asScalaBuffer(javaList1).toList();
+            run.compile(scalaList1);
+
+            System.out.println("✅ 编译完成，输出在: " + outputDir);
+        }
+    }
+}
+~~~
+
+
+
+### 使用IMain编译和解释执行scala
+
+~~~java
+package com.tiger;
+
+
+import scala.runtime.AbstractFunction1;
+import scala.runtime.BoxedUnit;
+import scala.tools.nsc.GenericRunnerSettings;
+import scala.tools.nsc.Settings;
+import scala.tools.nsc.interpreter.IMain;
+import scala.tools.nsc.interpreter.Results;
+
+import java.io.File;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+
+
+public class ScalaIMainFromJava {
+
+    private static class ErrorHandler extends AbstractFunction1<String, BoxedUnit> {
+
+        // 假如你在设置Settings对象的时候, 传入的参数不正确
+        // 比如参数只能传 none/all 的时候, 你传了一个hello
+        // 那么编译器会将错误信息传递到这里
+        @Override
+        public BoxedUnit apply(String msg) {
+            System.err.printf("Interpreter error: %s", msg);
+            return BoxedUnit.UNIT; // BoxedUnit.UNIT是java中的void
+        }
+    }
+
+    public static void main(String[] args) {
+        // 输出目录
+        String outputDir = "./out-classes";
+
+        // 配置 Scala Settings, 通过settings.xxx.tryToSetFromPropertyValue("xxx")来设置
+        // GenericRunnerSettings是Settigns的子类, 专门用于配置解释执行的, 具有更多的参数
+        GenericRunnerSettings settings = new GenericRunnerSettings(new ErrorHandler());
+
+
+        // settings.classpath().tryToSetFromPropertyValue(""); // 设置classpath
+        // settings.verbose().tryToSetFromPropertyValue(""); // 设置打印详细信息
+        settings.usejavacp().tryToSetFromPropertyValue("true"); // 设置使用 当前JVM 的 classpath
+        // settings.outdir().tryToSetFromPropertyValue(outputDir); // outdir对于IMain来说没用, 因为他是解释器执行的, 而不是编译器
+        settings.Yreploutdir().tryToSetFromPropertyValue(outputDir); // 指定脚本编译后的class的输出目录, 默认情况下他是不输出到磁盘上的
+
+
+        // 解释执行的时候, 解释器也会输出一些内容, 默认情况下会打印在控制台
+        // 你也可以将其重定向到/dev/null中
+        PrintWriter nullWriter = new PrintWriter(OutputStream.nullOutputStream());
+
+        // 创建解释器
+        // IMain interpreter = new IMain(settings); // 不传入PrintWriter, 默认输出到控制台
+        IMain interpreter = new IMain(settings, nullWriter);
+
+
+        // 开始解释执行代码, 并且会将解释过程中产生的class文件输出到指定的目录
+        Results.Result result = interpreter.interpret("""
+            class Hello {
+              def greet(): String = "Hello from compiled class!"
+            }
+           object Hello {
+             var count: Int = 0
+           }
+           
+           val hello = new Hello
+           println(hello.greet())
+           println(Hello.count)
+           """); // 代码被识别为脚本, 被编译为$eval和$read两个文件, 放在out-classes/$line1目录下
+        interpreter.interpret("Hello.count += 1"); // 代码被识别为脚本, 被编译为$eval和$read两个文件, 放在out-classes/$line2目录下
+        interpreter.interpret("println(Hello.count)"); // 代码被识别为脚本, 被编译为$eval和$read两个文件, 放在out-classes/$line3目录下
+        interpreter.interpret("println(\"hello world\")");// 代码被识别为脚本, 被编译为$eval和$read两个文件, 放在out-classes/$line4目录下
+        interpreter.interpret("""
+            class HelloWorld2 {
+              def greet(): String = "Hello from compiled class!"
+            }
+            """); // 代码被识别为类, 被编译为HelloWorld2.class文件, 放在out-classes目录下
+        
+        
+        // 解释代码, 但是不执行
+        // 虽然这样也能编译代码到指定的目录, 但是缺点是他本质还是通过解释器来编译的
+        // 会在output目录下生成一个$repl_$init文件
+        // 而使用Global.Run来编译的话, 因为是是通过编译器来执行, 所以不会有$repl_$init文件
+        // 所以如果你要编译scala的话, 推荐使用Global.Run, 尽管这种方式也能达成目的
+        interpreter.compileString("""
+            class HelloWorld {
+              def greet(): String = "Hello from compiled class!"
+            }
+            """); // 代码被识别为类, 被编译为HelloWorld.class文件, 放在out-classes目录下
+        
+
+        if (result instanceof Results.Success$) {
+            System.out.println("✅ 执行成功！");
+        } else if (result instanceof Results.Error$) {
+            System.out.println("❌ 执行出错！");
+            System.out.println(((Results.Error$) result));
+        } else if (result instanceof Results.Incomplete$) {
+            System.out.println("⚠️ 代码不完整！");
+        }
+        interpreter.close();
+    }
+}
+~~~
+
+
+
+
+
+
+
+
+
+
+
+# 其他
+
+## 关于ShutdownHook的说明
+
+参考https://www.jb51.net/article/210702.htm
+
+> ShutdownHook的作用
+
+在java程序中，很容易在进程结束时添加一个钩子，即ShutdownHook。通常在程序启动时加入以下代码即可
+
+```java
+Runtime.getRuntime().addShutdownHook(new Thread(){
+    @Override
+    public void run() {
+        System.out.println("I'm shutdown hook...");
+    }
+});
+```
+
+有了ShutdownHook我们可以
+
+- 在进程结束时做一些善后工作，例如释放占用的资源，保存程序状态等
+- 为优雅（平滑）发布提供手段，在程序关闭前摘除流量
+
+> 何时被调用
+
+![image-20210823202420564](img/java/image-20210823202420564.png)
+
+> kill
+
+先说kill的情况，系统启动后加载System类，并调用其静态代码块，静态代码块中native方法将使得jvm调用initializeSystenClass()方法来初始化System类。
+
+![image-20240419182042870](img/java/image-20240419182042870.png)
+
+initialzeSystenClass()方法中调用Terminator.setUp()向Signal类中注册了2个SignalHandler类，分别处理`TERM`，`INT`信号，而这两个信号的handle方法都是调用System.exit()。
+
+`int`: 在ctrl c结束前台进程的时候会接受到该信号
+
+`term`: 在`kill pid`或者`kill -15 pid`时会接受到该信号
+
+`kill`: 在`kill -9 pid`时会接收到该信号, 注意该信号时无法被捕获的,也就是说进程无法执行信号处理程序,会直接发送默认行为,也就是直接退出.这也就是为何`kill -9 pid`一定能杀死程序的原因. 故这也造成了进程被结束前无法清理或者关闭资源等行为,这样时不好的.
+
+<img src="img/java/image-20240419182251988.png" alt="image-20240419182251988" style="zoom:50%;" />
+
+用户使用kill命令发送信号给java程序， jvm接受到signal后调用Signal.dispatch()方法异步调用对应handler.handle()方法。上面说到handle()方法将调用`Shutdown.exit()`。
+
+![image-20240419182558743](img/java/image-20240419182558743.png)
+
+用户可以通过Signal.handle()方法传入对应的handler和其处理的信号， 来覆盖系统预定义的handler
+
+~~~java
+        // 定义一个term的信号， 也就是kill pid发出的信号
+		Signal signal = new Signal("TERM");
+		// 定义信号的处理方法，并注册
+		// 该signal handler将覆盖系统定义的
+		// 这将会导致系统直接忽略term信号
+        SignalHandler oldHandler = Signal.handle(signal, new SignalHandler() {
+            @Override
+            public void handle(Signal sig) {
+                System.out.println("handle sig");
+            }
+        });
+		// 通过代码触发该信号， 也可以
+        Signal.raise(signal);
+~~~
+
+
+
+> 最后一个非守护线程结束
+
+jvm自动调用`Shutdown.shutdown()`方法。
+
+![image-20240419183656812](img/java/image-20240419183656812.png)
+
+> 代码调用
+
+代码调用`Runtime.getRuntime().exit()`底层也是会调用`Shutdown.exit()`
+
+![image-20240419184114770](img/java/image-20240419184114770.png)
+
+或者代码调用`System.exit()`, 底层还是会调用`shutdown.exit()`
+
+![image-20240419184315577](img/java/image-20240419184315577.png)
+
+
+
+
+
+> Shutdown.sequence()
+
+上述三种情况都将调用Shutdown.sequence()方法。该方法将调用runHooks()**同步**执行所有的钩子函数。
+
+这里的hook可以看做是系统级的shutdownHook。
+
+![image-20240419184618459](img/java/image-20240419184618459.png)
+
+![image-20240419184652306](img/java/image-20240419184652306.png)
+
+而应用级别的shutdownHook是ApplicationShutdownHooks在静态代码块中通过调用Shutdown.add()方法注册到Shutdown里面的。
+
+![image-20210824144445681](img/java/image-20210824144445681.png)
+
+我们看下ApplicationShutdownHooks的runHooks()方法， 异步调用所有的自定义的ShutdownHooks。
+
+![image-20210824144706308](img/java/image-20210824144706308.png)
+
+我们可以通过`Runtime.getRuntime().addShutdownHook()`来添加我们的自定义的hook
+
+![image-20210824144909279](img/java/image-20210824144909279.png)
+
+~~~java
+Runtime.getRuntime().addShutdownHook(new Thread(()->{
+            System.out.println("shutdown...");
+        }));
+~~~
+
+
+
+结束Shutdown.sequence()后将调用runAllFinalizers()方法调用所有对象的finalize()方法。（未细看）
+
+> 总结
+
+不管何种关闭形式都将调用Shutdown.sequence()方法， 该方法同步调用系统级hook， 第二个系统级hook即使ApplicationShutdownHook， 该hook将异步调用自定义的shutdownHook。
+
+
+
+
+
+## 单例模式
+
+**实现单例模式的重点是在多线程和序列化的时候保持实例的单一**
+
+#### 饿汉式
+
+```java
+public class Singletion {
+
+    /**
+     * 优点:
+     *      用到这个实例的时候就能够立即拿到，而不需要任何等待时间
+     *      由于该实例在类被加载的时候就创建出来了，所以也避免了线程安全问题
+     * 缺点:
+     *      在类被加载的时候对象就会实例化, 这也许会造成不必要的消耗
+     *      如果这个类被多次加载的话也会造成多次实例化
+     *      但是怎么样才会导致一个类被加载两次呢??? 网上也没有, 留一个todu吧
+     */
+    //TODO 如上注释
+    private static Singletion instance = new Singletion();
+
+    private Singletion() {
+
+    }
+
+    public Singletion getInstance() {
+        return instance;
+    }
+}
+```
+
+#### 静态内部类式
+
+```java
+/**
+ * 这种方式同样利用了classloder的机制来保证初始化instance时只有一个线程，
+ * 它跟饿汉式不同的是（很细微的差别）：
+ *      饿汉式是只要Singleton类被装载了，那么instance就会被实例化（没有达到lazy loading效果），
+ *      而这种方式是Singleton类被装载了，instance不一定被初始化。
+ *      因为SingletonHolder类没有被主动使用，只有显示通过调用getInstance方法时
+ *      才会显示装载SingletonHolder类，从而实例化instance。
+ *      想象一下，如果实例化instance很消耗资源，我想让他延迟加载，
+ *      另外一方面，我不希望在Singleton类加载时就实例化，
+ *      因为我不能确保Singleton类还可能在其他的地方被主动使用从而被加载，
+ *      那么这个时候实例化instance显然是不合适的。这个时候，这种方式相比饿汉式更加合理。
+ */
+public class Singletion {
+
+    private static class SingletonHodler {
+        private static final Singletion INSTANCE = new Singletion();
+    }
+
+    private Singletion(){};
+
+    public static final Singletion getInstance() {
+        return SingletonHodler.INSTANCE;
+    }
+
+}
+```
+
+#### 懒汉式
+
+##### 存在线程安全的模型
+
+```java
+public class Singletion implements Serializable{
+
+    private static Singletion instance;
+
+    private Singletion(){};
+
+    /** 这种懒汉模式存在线程安全 */
+    public static Singletion getInstance1() {
+        if (instance == null) {
+            instance = new Singletion();
+        }
+        return instance;
+    }
+}
+```
+
+##### 线程安全但是效率低下的模型
+
+```java
+public class Singletion implements Serializable{
+
+    private static Singletion instance;
+
+    private Singletion(){};
+
+    /**
+     * 这种写法在多线程中可以很好工作
+     * 但是效率很低下, 因为加锁是整个方法加锁, 该方法的所有操作都是同步进行的
+     * 但是对于非第一次操作, 根本不需要同步操作, 可以直接返回instance
+     *
+     * 但是以上的做法都不能防止序列化和反序列化所带来的危害
+     */
+    public static synchronized Singletion getInstance2() {
+        if (instance == null) {
+            instance = new Singletion();
+        }
+        return instance;
+    }   
+}
+```
+
+##### 双重校验锁
+
+```java
+public class Singletion implements Serializable{
+
+    // 必须使用volatile, 防止指令重排, 和多线程之间的可见性
+    private static volatile Singletion instance;
+
+    private Singletion(){};
+    /**
+     * 双重校验锁的单例模式
+     * 因为java 内存模型, 必须强制线程从主内存区读取
+     * 所有要在instance变量上面加volatile
+     * @return
+     */
+    public static Singletion getInstance() {
+        if (instance == null) {
+            synchronized (Singletion.class) {
+                if (instance == null) {
+                    instance = new Singletion();
+                }
+            }
+        }
+        return instance;
+    }
+}
+```
+
+#### 单例模式与序列化
+
+
+
+看下面案例:
+
+```java
+public static void main(String[] args) throws IOException, ClassNotFoundException {
+        File file = new File("temp");
+        ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(file));
+        oos.writeObject(Singletion.getInstance());
+        ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file));
+        Singletion newSingletion = (Singletion) ois.readObject();
+        System.out.println(newSingletion == Singletion.getInstance()); //false
+    }
+```
+
+这里的单例采用上面的双重校验锁,  将instance序列化后再反序列化, 得到了两个不一样的对象, 这就破坏了单例模式了
+
+
+
+先说怎么解决:
+
+```java
+//在单例模式里面加入这个方法解决序列化问题
+/**
+     * 实现这个方法可以避免序列化的问题, 返回的必须是Object类型
+     * @return
+     */
+    public Object readResolve() {
+        return getInstance();
+    }
+```
+
+
+
+原理:
+
+对象的序列化过程通过ObjectOutputStream和ObjectInputputStream来实现的，那么带着刚刚的问题，分析一下ObjectInputputStream 的`readObject` 方法执行情况到底是怎样的。
+
+为了节省篇幅，这里给出ObjectInputStream的`readObject`的调用栈：
+
+```
+readObject--->readObject0--->readOrdinaryObject--->checkResolve
+```
+
+这里看一下重点代码，`readOrdinaryObject`方法的代码片段
+
+```java
+private Object readOrdinaryObject(boolean unshared)
+        throws IOException
+    {
+        //省略部分代码
+        
+        Object obj;
+        try {
+        /**
+        这里创建的这个obj对象，就是本方法要返回的对象，也可以暂时理解为是ObjectInputStream的readObject返回的对象
+        
+        isInstantiable：如果一个serializable/externalizable的类可以在运行时被实例化，那么该方法就返回true。
+		desc.newInstance：该方法通过反射的方式调用无参构造方法新建一个对象。
+		到目前为止，也就可以解释，为什么序列化可以破坏单例了？
+		序列化会通过反射调用无参数的构造方法创建一个新的对象。
+        */
+            obj = desc.isInstantiable() ? desc.newInstance() : null;
+        } catch (Exception ex) {
+            throw (IOException) new InvalidClassException(
+                desc.forClass().getName(),
+                "unable to create instance").initCause(ex);
+        }
+		//省略部分代码
+
+		/**
+		hasReadResolveMethod:如果实现了serializable 或者 externalizable接口的类中包含readResolve则返回true
+		*/
+        if (obj != null &&
+            handles.lookupException(passHandle) == null &&
+            desc.hasReadResolveMethod())
+        {
+        	//invokeReadResolve:通过反射的方式调用要被反序列化的类的readResolve方法。
+        	//所以，原理也就清楚了，主要在Singleton中定义readResolve方法，并在该方法中指定要返回的对象的生成策略，就可以方式单例被破坏。
+            Object rep = desc.invokeReadResolve(obj);
+            if (unshared && rep.getClass().isArray()) {
+                rep = cloneArray(rep);
+            }
+            if (rep != obj) {
+                // Filter the replacement object
+                if (rep != null) {
+                    if (rep.getClass().isArray()) {
+                        filterCheck(rep.getClass(), Array.getLength(rep));
+                    } else {
+                        filterCheck(rep.getClass(), -1);
+                    }
+                }
+                handles.setObject(passHandle, obj = rep);
+            }
+        }
+
+        return obj;
+    }
+```
+
+#### 使用枚举实现单例
+
+单例的枚举实现在《Effective Java》中有提到，因为其**功能完整、使用简洁、无偿地提供了序列化机制、在面对复杂的序列化或者反射攻击时仍然可以绝对防止多次实例化**等优点，单元素的枚举类型被作者认为是实现Singleton的最佳方法
+
+```java
+//比上面的什么双重校验锁简单多了
+public enum  Singletion {
+    INSTANCE;
+}
+```
+
+下面深入了解一下为什么枚举会满足线程安全、序列化等标准。
+
+在JDK5 中提供了大量的语法糖，枚举就是其中一种。
+所谓 语法糖（Syntactic Sugar），也称糖衣语法，是由英国计算机学家 Peter.J.Landin 发明的一个术语，指在计算机语言中添加的某种语法，这种语法对语言的功能并没有影响，但是但是更方便程序员使用。只是在编译器上做了手脚，却没有提供对应的指令集来处理它。
+
+就拿枚举来说，其实Enum就是一个普通的类，它继承自java.lang.Enum类。
+
+```java
+public enum DataSourceEnum {
+    DATASOURCE;
+}  
+```
+
+把上面枚举编译后的字节码反编译，得到的代码如下：
+
+```java
+public final class DataSourceEnum extends Enum<DataSourceEnum> {
+      public static final DataSourceEnum DATASOURCE;
+      public static DataSourceEnum[] values();
+      public static DataSourceEnum valueOf(String s);
+      static {};
+}
+```
+
+由反编译后的代码可知，DATASOURCE 被声明为 static 的，根据在[【单例深思】饿汉式与类加载](https://blog.csdn.net/gavin_dyson/article/details/69668946)中所描述的类加载过程，可以知道虚拟机会保证一个类的\<clinit>() 方法在多线程环境中被正确的加锁、同步。所以，枚举实现是在实例化时是线程安全。
+
+当一个Java类第一次被真正使用到的时候静态资源被初始化、Java类的加载和初始化过程都是线程安全的（因为虚拟机在加载枚举的类的时候，会使用ClassLoader的loadClass方法，而这个方法使用同步代码块保证了线程安全）。所以，创建一个enum类型是线程安全的。
+
+也就是说，我们定义的一个枚举，在第一次被真正用到的时候，会被虚拟机加载并初始化，而这个初始化过程是线程安全的。而我们知道，解决单例的并发问题，主要解决的就是初始化过程中的线程安全问题。
+
+所以，由于枚举的以上特性，枚举实现的单例是天生线程安全的。
+
+接下来看看序列化问题：
+
+Java规范中规定，每一个枚举类型极其定义的枚举变量在JVM中都是唯一的，因此在枚举类型的序列化和反序列化上，Java做了特殊的规定。
+**在序列化的时候Java仅仅是将枚举对象的name属性输出到结果中，反序列化的时候则是通过 java.lang.Enum 的 valueOf() 方法来根据名字查找枚举对象。**
+也就是说，以下面枚举为例，序列化的时候只将 DATASOURCE 这个名称输出，反序列化的时候再通过这个名称，查找对于的枚举类型，因此反序列化后的实例也会和之前被序列化的对象实例相同。
+
+参考:
+
+https://mp.weixin.qq.com/s?__biz=MzI3NzE0NjcwMg==&mid=402577543&idx=1&sn=41c4bf5f46d13806668edacce130468b&scene=21#wechat_redirect
+
+https://cloud.tencent.com/developer/article/1341386
+
+https://blog.csdn.net/moakun/article/details/80688851
+
+https://blog.csdn.net/gavin_dyson/article/details/70832185
 
 
 

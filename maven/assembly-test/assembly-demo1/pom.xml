@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>assembly-test</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>assembly-demo1</artifactId>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>make-assembly</id>
+                        <!-- single goal没有默认的phase, 所以要指定 -->
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <!--
+                                打包好的文件的文件名默认为: ${finalName}-${assemblyId}.${format}
+                                finalName默认为: ${project.build.finalName}
+                                assemblyId在assembly.xml中定义
+                                format在assembly.xml中定义, tar, zip, tar.gz等等格式
+                             -->
+                            <finalName>nima</finalName>
+                            <!-- 是否要将assemblyId添加到打包文件上, 如果为false, 那么打包文件名的格式就是${finalName}.${format}
+                                 如果你会生成多种格式的打包文件, 比如demo-jar-with-dependencies.zip, demo-bin.zip, demo-src.zip, 那么还是设置为true好,
+                                 如果你只要一个打包文件, 那么设置为false好
+                             -->
+                            <appendAssemblyId>true</appendAssemblyId>
+
+                            <!-- 打包好的文件, 是否要跟install和deploy phase一起安装到本地或者远程仓库
+                                 如果你只想生成一个打包文件在本地供自己使用, 那么设置为false  -->
+                            <attach>true</attach>
+
+                            <!-- 如果项目是一个多项目模块, 那么assembly插件在每个模块都会执行一遍, 每个模块都生成一个打包文件
+	                             如果设置为true, 那么assembly只会在项目的根目录进行一次打包, 适合你只想生成一个包文件的情况 -->
+                            <runOnlyAtExecutionRoot>false</runOnlyAtExecutionRoot>
+
+                            <!-- 详细控制归档（压缩包/jar包）细节的配置项，
+                                 比如： manifest 文件 文件权限 文件名编码 是否添加特定注释
+                                 实际上，archive 是引用了 Maven Archiver 的配置能力。 -->
+                            <archive>
+                                <!-- 这里面能写的所有配置项, 都和maven archiver一样
+                                     文档可以查看https://maven.apache.org/shared/maven-archiver/index.html
+                                     -->
+                            </archive>
+
+                            <!-- 插件中自带了四个打包描述文件, 你可以直接使用, 这几个文件的定义可以在maven-plugin-plugin.jar中找到 -->
+                            <descriptorRefs>
+                                <!-- 打包为jar包, 并带上所有的依赖 -->
+                                <descriptorRef>jar-with-dependencies</descriptorRef>
+                                <!-- 会将bin目录下的文件打包 -->
+                                <descriptorRef>bin</descriptorRef>
+                                <!-- 会将src下的所有源码进行打包 -->
+                                <descriptorRef>src</descriptorRef>
+                                <!-- 将这个project进行打包, 常常用来制作源码包 -->
+                                <descriptorRef>project</descriptorRef>
+                            </descriptorRefs>
+
+                            <!-- 一般来说插件中自带的打包描述文件不满足我们的要求, 所以这里可以指定自定义的打包描述文件 -->
+                            <descriptors>
+                                <!-- 可以指定多个文件, 这样就会生成多个打包文件 -->
+                                <descriptor>src/main/assembly/assembly.xml</descriptor>
+                            </descriptors>
+
+                            <!-- filters 参数允许你指定一组额外的 properties 文件，
+	                             在打包过程中，用来替换文件里的占位符。 -->
+                            <filters>
+                                <filter>${basedir}/src/main/filters/myfilter.properties</filter>
+                                <filter>${basedir}/src/main/filters/env.properties</filter>
+                            </filters>
+                            <!-- 和上面一样, 只不过是手动定义在这里 -->
+                            <additionalProperties>
+                                <key1>value1</key1>
+                                <key2>value2</key2>
+                            </additionalProperties>
+                            <!-- 定义占位符的前缀和后缀 -->
+                            <delimiters>
+                                <!-- 前缀为${  或者为 } -->
+                                <delimiter>${*}</delimiter>
+                                <!-- 前缀和后缀都是@ -->
+                                <delimiter>@</delimiter>
+                            </delimiters>
+
+                        </configuration>
+
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

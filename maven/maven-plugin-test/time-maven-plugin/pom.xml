@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>maven-plugin-test</artifactId>
+        <version>1.0-SNAPSHOT</version>
+    </parent>
+
+    <!-- archetype为: org.apache.maven.archetypes:maven-archetype-plugin -->
+
+    <!--
+    按照官方的文档, maven官方的插件artifactId叫做maven-xxx-plugin, 而我们自定义的maven插件artifactId叫做xxx-mave-plugin
+    如果你遵守这个约定, 那么在执行goal的时候, 就可以直接通过 mvn xxx:goal 来执行你的插件
+    否则的话, 你就必须在maven-plugin-plugin的configuration中配置goalPrefix来指定你插件的简写
+   -->
+    <artifactId>time-maven-plugin</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <!-- 这里指定打包为maven插件, 之后maven会自动帮你导入maven-plugin-plugin这个插件 -->
+    <packaging>maven-plugin</packaging>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- 两个核心模块 -->
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-plugin-api</artifactId>
+            <version>3.9.9</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven.plugin-tools</groupId>
+            <artifactId>maven-plugin-annotations</artifactId>
+            <version>3.15.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <!--
+            plexus-utils是一个专用于maven插件开发的工具类, 他里面提供了很多在maven中常用的工具
+               📂 文件操作	   拷贝文件、解压 ZIP、递归删除目录等（FileUtils）
+               🧵 字符串处理	   字符串替换、格式化、token 替换等（StringUtils, InterpolationUtils）
+               🔁 XML 操作	   解析、合并 DOM（Xpp3DomUtils）
+               🧭 CLI 支持	   命令行参数解析（CliRequest, Commandline）
+               🧪 其他	       路径处理、系统属性操作、IO 工具等
+         -->
+        <dependency>
+            <groupId>org.codehaus.plexus</groupId>
+            <artifactId>plexus-utils</artifactId>
+            <version>3.0.8</version>
+        </dependency>
+        <!-- maven中, 跟io有关的工具类 -->
+        <dependency>
+            <groupId>org.codehaus.plexus</groupId>
+            <artifactId>plexus-io</artifactId>
+            <version>3.5.1</version>
+        </dependency>
+        <!-- maven中, 跟归档有关的工具类 -->
+        <dependency>
+            <groupId>org.codehaus.plexus</groupId>
+            <artifactId>plexus-archiver</artifactId>
+            <version>4.10.0</version>
+        </dependency>
+        <!-- maven中, 跟编译有关的工具类 -->
+        <dependency>
+            <groupId>org.codehaus.plexus</groupId>
+            <artifactId>plexus-compiler-javac</artifactId>
+            <version>2.15.0</version>
+        </dependency>
+
+
+        <!-- 如果想要使用maven的核心组件(MavenSession, MavenProject, MojoExecution等等), 那么必须导入这个包 -->
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-core</artifactId>
+            <version>3.8.1</version>
+        </dependency>
+
+
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.38</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <!--
+                    这个插件即使你不导入的话, maven发现你的packaging是maven-plugin, 那么就会帮你自动导入
+                    这个插件你不需要指定版本(最好还是指定一下, 因为默认用的比较老的版本), 也不需要指定groupId
+
+                    在打包后这个插件会自动生成一个META-INF/maven/plugin.xml文件, 用来描述这个插件中有哪些goal, 每个goal的配置项是什么
+                    这个插件会自动生成一个META-INF/maven/plugin.xml文件, 用来描述这个插件中有哪些goal, 每个goal的配置项是什么, 每个goal默认绑定的phase
+                 -->
+                <artifactId>maven-plugin-plugin</artifactId>
+                <version>3.15.1</version>
+                <configuration>
+                    <!-- 用来配置插件的简写, 如果插件的artifactId没有按照xxx-maven-plugin的格式, 那么就必须在这里通过globalPrefix来配置
+                         之后就可以通过 mvn xxx:goal 来执行你的插件
+                         执行插件的全类名是: mvn groupId:artifactId[:version]:goal
+                     -->
+                    <goalPrefix>time</goalPrefix>
+                    <skipErrorNoDescriptorsFound>true</skipErrorNoDescriptorsFound>
+                    <!-- <aaa>111</aaa> -->
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>mojo-descriptor</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>descriptor</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>help-goal</id>
+                        <goals>
+                            <!-- 这个helpmojo会帮助你生成一个名为help的goal
+                                 你执行mvn time:help就会打印当前这个插件的帮助信息 -->
+                            <goal>helpmojo</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>8</source>
+                    <target>8</target>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+    <profiles>
+        <profile>
+            <id>run-its</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <!--
+                            你只需要将使用到了插件的项目, 放到src/it目录下(这个目录是默认的, 可以配置)
+                         -->
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-invoker-plugin</artifactId>
+                        <version>3.9.0</version>
+
+                        <configuration>
+
+                            <!-- 项目被调用前, 将他clone到指定的目录, 在clone后的项目中调用项目
+                                 如果不设置的话, 就在项目的原始根目录下执行
+                                 (如果运行 invoker 插件的是一个 maven-plugin 类型的项目,
+                                 那么无论有没有设置 clone 目录，IT 项目都会默认被克隆到并在 target/its/ 目录下执行)
+
+                                 最好还是设置一下
+                             -->
+                            <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
+                            <!-- 要克隆的项目, 默认情况下是所有的项目, 但是你可以手动制定 -->
+                            <collectedProjects>
+                                <collectedProject>../use-plugin</collectedProject>
+                            </collectedProjects>
+                            <!-- 在执行项目的时候, 需要调用的goals, 默认是package -->
+                            <goals>
+                                <goal>clean</goal>
+                                <goal>test-compile</goal>
+                            </goals>
+                            <!-- 可以在文件中定义调用项目时, 使用到的一些配置
+                                  文件中的配置优先级比这里高 -->
+                            <invokerPropertiesFile>src/it/invoker.properties</invokerPropertiesFile>
+
+                            <!-- 要执行的测试, 逗号分割, 不执行测试使用! -->
+                            <invokerTest>SimpleTest,Comp*Test,!Compare*</invokerTest>
+                            <!-- 定义一个本地存储库, 默认情况下会使用maven仓库,强烈建议指定一个独立存储库（例如 ${project.build.directory}/it-repo ）的路径。
+                                 否则，系统将使用您的普通本地存储库，这可能会导致损坏的工件污染该存储库。  -->
+                            <localRepositoryPath>${project.build.directory}/it-repo</localRepositoryPath>
+
+                            <!-- 默认情况下, 项目的测试日志会被保存在项目根目录的build.log中,
+                                 可以通过这个参数来指定保存到其他位置 -->
+                            <!-- <logDirect></logDirect> -->
+
+
+                            <!-- 需要调用和排除的项目的pom文件, 默认是${projectsDirectory}/*/pom.xml -->
+                            <pomIncludes>
+                                <pomInclude>*/pom.xml</pomInclude>
+                            </pomIncludes>
+                            <pomExcludes>
+                                <pomExclude>*/pom.xml</pomExclude>
+                            </pomExcludes>
+                            <!-- 搜索要调用项目的目录, 默认值${basedir}/src/it/ -->
+                            <projectsDirectory>${basedir}/src/it/</projectsDirectory>
+
+
+                            <!-- 执行构建后要运行的清理/验证钩子脚本的相对路径, 可以指定.bash和.groovy文件
+                                 如果省略文件后缀, 默认使用.bash和.groovy来匹配
+                                 比如verify等效于verify.bash和verify.groovy -->
+                            <postBuildHookScript>verify</postBuildHookScript>
+                            <!-- 同上, 在项目构建前要执行的脚本 -->
+                            <preBuildHookScript>clean</preBuildHookScript>
+                            <!-- 在构建项目的时候, 要指定的profile-->
+                            <profiles>
+                                <profile>dev</profile>
+                                <profile>web</profile>
+                            </profiles>
+                            <!-- 在构建项目的时候, 要通过-D传递的参数 -->
+                            <properties>
+                                <key1>value1</key1>
+                                <key2>value2</key2>
+                            </properties>
+                            <!-- 所有构建报告写入的基目录。每次执行集成测试都会生成一个 XML 文件，其中包含该构建作业成功或失败的信息
+                                 默认值是${project.build.directory}/invoker-reports
+                                 使用默认值就好 -->
+                            <reportsDirectory>${project.build.directory}/invoker-reports</reportsDirectory>
+                            <!-- 调用项目时, 指定使用的settigns.xml文件
+                                 (文件中的<localRepository>会被忽略, 参数 localRepositoryPath 指定的路径将占主导地位) -->
+                            <settingsFile>src/it/settings.xml</settingsFile>
+
+
+
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>integration-test</id>
+                                <goals>
+                                    <goal>install</goal>
+                                    <goal>integration-test</goal>
+                                    <goal>verify</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+
+            </build>
+        </profile>
+    </profiles>
+
+</project>

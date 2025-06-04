@@ -350,7 +350,7 @@ Traits 可以调用任何动态代码，就像普通的 Groovy 类一样。这�
         }
     }
     def d = new Duck()
-    assert d.speak() == 'Quack!'                        
+    assert d.speak() == 'Quack!' 
 
 -   SpeakingDuck 期望定义 quack 方法
 

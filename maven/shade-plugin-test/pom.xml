@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>org.example</groupId>
+    <artifactId>shade-plugin-test</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.34</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <!-- shade这个插件能够让你将一些依赖项打包进jar包里面, 这样别的项目使用这个jar包, 就不需要导入其他jar包了 -->
+                            <!-- 默认情况下, 在打包的时候会进行传递依赖, 如果有多个同名的jar包, 只会打包一个, 按照maven的jar包优先级 -->
+
+                            <!-- 默认情况下, 他会将 jar:jar 创建的jar包, 重命名为`original-xxx.jar`
+                                 然后创建一个${finalName}-${version}.jar 的uber jar-->
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <!-- uber包的artifact, 默认是${project.artifactId}, 使用默认的就好 -->
+                            <finalName>${project.artifactId}</finalName>
+                            <!-- uber包的artifactId, 默认是${project.artifactId}, 使用默认的就好 -->
+                            <shadedArtifactId>${project.artifactId}</shadedArtifactId>
+                            <!-- 是否应该将shadedClassifierName添加到fat的名字中,
+                                 如果为true, 那么fat的名字就是${finalName}-${version}-${shadedClassifierName}.jar, 并且生成的不带依赖的jar包不会重命名为original-xxx.jar
+                                 如果为false, 那么fat的名字就是${finalName}-${version}.jar, 并且生成的不带依赖的jar包会重命名为original-xxx.jar
+                                 推荐设置为true
+                                 -->
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <!-- uber包使用的classifier, 使用默认的就好 -->
+                            <shadedClassifierName>shade</shadedClassifierName>
+
+                            <!-- uber包的地址, 默认为${project.build.directory}, 使用默认的就好 -->
+                            <outputDirectory>${project.build.directory}</outputDirectory>
+                            <!-- 强制指定fat的名称, 忽略finalName, shadedArtifactAttached, shadedClassifierName, createDependencyReducedPom属性
+                                 最好不要使用这个属性 -->
+                            <!-- <outputFile>xxx.jar</outputFile> -->
+
+
+                            <!-- 需要包含和不包含的jar, 格式为groupId:artifactId:type:classifier, 可以使用*作为通配符
+                              groupId 语法等同于 groupId:*:*:*
+                              groupId:artifactId 等同于 groupId:artifactId:*:*
+                              groupId:artifactId:classifier 等同于 groupId:artifactId:*:classifier-->
+                            <artifactSet>
+                                <excludes>
+                                    <exclude>junit:junit</exclude>
+                                    <exclude>jmock:*</exclude>
+                                    <exclude>*:xml-apis</exclude>
+                                    <exclude>org.apache.maven:lib:tests</exclude>
+                                    <exclude>log4j:log4j:jar:</exclude>
+                                </excludes>
+                                <includes>
+                                    <!-- 不写就是include所有 -->
+                                    <!-- <include></include> -->
+                                </includes>
+                            </artifactSet>
+                            <!-- 明确指出, 哪些jar要包含哪些文件 -->
+                            <filters>
+                                <filter>
+                                    <artifact>commons-logging:commons-logging</artifact>
+                                    <includes>
+                                        <include>**</include>
+                                    </includes>
+                                </filter>
+                                <filter>
+                                    <artifact>foo:bar</artifact>
+                                    <excludeDefaults>false</excludeDefaults>
+                                    <includes>
+                                        <include>foo/Bar.class</include>
+                                    </includes>
+                                </filter>
+                            </filters>
+
+                            <!-- 是否为uber包生成简化的 POM。 在该pom中, 会将已经打包在uber包中的依赖, 从<dependencies>中移除
+                                 生成的POM名称为 dependency-reduced-pom.xml, 并放在dependencyReducedPomLocation指定的目录中
+                                 dependencyReducedPomLocation默认为${project.basedir}
+                                 如果keepDependenciesWithProvidedScope为true, 那么不会将已经打包在uber包中的依赖, 从<dependencies>中移除, 而是设置scope为runtime
+                                 使用默认的就好 -->
+                            <createDependencyReducedPom>true</createDependencyReducedPom>
+                            <dependencyReducedPomLocation>${project.basedir}</dependencyReducedPomLocation>
+                            <keepDependenciesWithProvidedScope>false</keepDependenciesWithProvidedScope>
+                            <!-- 在打包的时候, 将上面生成的pom添加到jar中, 而不是使用原始的pom
+                                 推荐设置为true -->
+                            <useDependencyReducedPomInJar>true</useDependencyReducedPomInJar>
+
+                            <!-- 将已经打包在uber包中的依赖, 的传递依赖, 提升为当前uber包的直接依赖
+                                 你原来项目里依赖 A, A又依赖B, 现在你用 Maven Shade，把 A 打到你的胖 jar 里了（并且移除了对A的依赖）。
+                                 但 B 是 A 的传递依赖，如果你不设置为true, 可能别人用你的 jar 时会找不到 B。-->
+                            <promoteTransitiveDependencies>true</promoteTransitiveDependencies>
+
+                            <!-- 是否创建一个soruce jar和test jar, 都设置为false就好 -->
+                            <createSourcesJar>false</createSourcesJar>
+                            <createTestSourcesJar>false</createTestSourcesJar>
+
+
+                            <!-- 额外要打包的依赖, 不进行传递依赖 -->
+                            <extraArtifacts>
+                                <extraArtifact>com.mysql:mysql-connector-j:9.2.0</extraArtifact>
+                            </extraArtifacts>
+                            <!-- 额外需要打包的本地jar包, 文件必须存在 -->
+                            <extraJars>
+                                <extraJar>src/main/resources/extra.jar</extraJar>
+                            </extraJars>
+
+                            <transformers>
+
+                                <!-- 用于合并来自多个jar的资源, 特别是多个jar的spi文件
+                                     即如果a.jar有一个com.tiger.AFactory的spi文件, b也有一个, 那么在打包的时候, 会将两个文件的内容合并, 防止找不到对应的实现类 -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+
+                                <!-- 这个transformer可以设置 mainfest 中的内容 -->
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.tiger.Job1</mainClass>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

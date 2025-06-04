@@ -2196,10 +2196,9 @@ FROM table_reference
         select * from temp1
     )
     select * from temp2
-    
     ~~~
-
     
+
 
 # 第 7 章 分区表和分桶表
 
@@ -2210,6 +2209,12 @@ FROM table_reference
 而分区表就是分目录, 将每个分区的数据保存到`db_location/table_name/partition`文件夹下
 
 在查询时通过 WHERE 子句中的表达式选择查询所需要的指定的分区，这样的查询效率 会提高很多。
+
+
+
+### Hello World
+
+---
 
 
 

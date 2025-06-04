@@ -4,11 +4,6 @@
 
    ~~~xml
    <dependency>
-       <groupId>ch.qos.logback</groupId>
-       <artifactId>logback-core</artifactId>
-       <version>1.3.5</version>
-   </dependency>
-   <dependency>
        <groupId>org.slf4j</groupId>
        <artifactId>slf4j-api</artifactId>
        <version>2.0.4</version>
@@ -19,7 +14,7 @@
        <version>1.3.5</version>
    </dependency>
    ~~~
-
+   
 2. 输出日志
 
    ~~~java

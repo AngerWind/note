@@ -25,7 +25,7 @@
 
 ## gradle设置下载源
 
-### 全局设置
+### 全局设置(init脚本)
 
 gradle会在`构建的最开始按照顺序执行如下地方的的gradle脚本`, 所以可以在这些地方配置maven仓库
 
@@ -394,18 +394,19 @@ Task中除了Action外的代码段都在配置阶段执行；（属性配置，�
 
 初始化阶段
 
-1. 在settings.gradle执行完后, 会回调Gradle对象的`settingsEvaluated`方法
-2. 在创建完所有模块的Project对象化, 即初始化阶段完毕后, 会调用Gradle对象的`projectsLoaded  `
+1. 在settings.gradle执行完后, 创建了Settings对象后, 会回调Gradle对象的`settingsEvaluated`方法
+2. 在根据`include xxx`创建完所有模块的Project对象化, 即初始化阶段完毕后, 会调用Gradle对象的`projectsLoaded  `
 
 Gradle 配置阶段:
 
-1. Gradle 会循环执行每个工程的 build.gradle 脚本文件
+1. Gradle 会循环执行每个工程的 `build.gradle` 脚本文件
 
 2. 在执行当前工程 `build.gradle` 前,会回调 Gradle 对象的 `beforeProject` 方法和当前 Project 对象的`beforeEvaluate `方法
    
-
-虽然 `beforeEvalute` 属于 `project` 的生命周期, 但是此时 `buildscript` 尚未被加载, 所以 beforeEvaluate 的设置依然要在 `init.gradle`或 `setting.gradle`中进行,不要在 `build.gradle` 中使用 `project.beforeEvaluate` 方法。
-
+   虽然 `beforeEvalute` 属于 `project` 的生命周期, 但是此时 project对应的`build.gradle` 尚未被执行, 所以 beforeEvaluate 的设置依然要在 `init.gradle`或 `setting.gradle`中进行,不要在 `build.gradle` 中使用 `project.beforeEvaluate` 方法。
+   
+   
+   
 3. 在执行当前工程 `build.gradle` 后,会回调 Gradle 对象的 `afterProject` 方法和当前 Project 对象的 `afterEvaluate` 方法
 
 4. 在所有工程的 `build.gradle` 执行完毕后，会回调 Gradle 对象的 `projectsEvaluated `方法
@@ -426,7 +427,7 @@ Gradle 执行阶段:
 gradle.settingsEvaluated(new Action<Settings>() {
     @Override
     void execute(Settings settings) {
-        // 1. 在执行完settings.gradle文件后执行
+        // 1. 在执行完settings.gradle文件并创建了Settings对象后执行
         println "settingsEvaluated"
     }
 })

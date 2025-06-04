@@ -1,0 +1,288 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<assembly xmlns="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.0
+                    http://maven.apache.org/xsd/assembly-1.1.0.xsd">
+    <id>demo</id>
+
+    <formats>
+        <!-- 要生成的打包文件的格式, 可选值有: jar, tar.gz, zip, dir, gz, tar, tar.bz2
+             注意: dir表示打包为一个目录, 而不是压缩包, 一般用于调试, 可以方便的查看打包后的文件结构 -->
+        <format>dir</format>
+
+    </formats>
+
+    <!-- 打包出来的文件是否有一个顶级目录, 默认是true, 但是一般设置为false,
+         因为如果为true的话, 那么解压后的文件夹里面还有一个根文件夹, 相当于有两层 -->
+    <includeBaseDirectory>false</includeBaseDirectory>
+    <!-- 顶级目录的名称, 只有在includeBaseDirectory为true的时候才有效 -->
+    <baseDirectory>${project.build.finalName}</baseDirectory>
+
+    <!-- 不知道有什么屌用 -->
+<!--     <containerDescriptorHandlers>
+        <containerDescriptorHandler>
+            <handlerName>xxx</handlerName>
+        </containerDescriptorHandler>
+        <containerDescriptorHandler>
+            <handlerName>xxx1</handlerName>
+        </containerDescriptorHandler>
+    </containerDescriptorHandlers> -->
+
+
+
+    <moduleSets>
+        <!-- 用于maven多项目模块, 他允许你通过 <moduleSet> 来收集模块的源码和打包好的二进制文件。
+             我打一个总的 zip 包，要把每个子模块编译后的 jar 文件都打进去。
+             或者，把所有模块的源代码都收集到一个 tar 包里，打源码包。
+        -->
+        <moduleSet>
+            <!-- 是否要递归处理所有的子模块, 如果设置为false, 那么只会处理顶级子模块, 保存为true就好 -->
+            <includeSubModules>true</includeSubModules>
+            <!-- 明确包含哪些模块, 格式为groupId:artifactId, 不写就是全部 -->
+            <includes>
+                <include>com.tiger:demo1</include>
+            </includes>
+            <excludes>
+                <exclude>com.tiger:demo2</exclude>
+            </excludes>
+            <!-- 配置如何收集源码到最终打包里 -->
+            <sources>
+                <!-- 指定要包含模块中的哪些文件, 参考fileSets -->
+                <fileSets>
+                    <fileSet></fileSet>
+                </fileSets>
+
+                <!-- 是否包含模块的根目录, 使用默认的true就好 -->
+                <includeModuleDirectory>true</includeModuleDirectory>
+                <excludeSubModuleDirectories>true</excludeSubModuleDirectories>
+                <outputDirectoryMapping>${module.artifactId}</outputDirectoryMapping>
+                <useStrictFiltering>false</useStrictFiltering>
+                <useDefaultExcludes>true</useDefaultExcludes>
+                <outputDirectory>xxxxx</outputDirectory>
+                <includes>
+                    <include>**/*</include>
+                </includes>
+                <excludes>
+                    <exclude>**/*.java</exclude>
+                </excludes>
+                <fileMode>0644</fileMode>
+                <directoryMode>0755</directoryMode>
+            </sources>
+            <!-- 处理二进制文件，配置如何收集编译后的 jar/war/ear 等 -->
+            <binaries>
+                <!-- 只打某个 classifier 的附件 -->
+                <attachmentClassifier>xxx</attachmentClassifier>
+                <!-- 是否同时包含模块依赖的jar -->
+                <includeDependencies>true</includeDependencies>
+                <!-- 参考dependencySets -->
+                <dependencySets>
+                    <dependencySet>
+                        <outputFileNameMapping>${artifact.artifactId}-${artifact.version}${dashClassifier?}.${artifact.extension}</outputFileNameMapping>
+                        <unpack>false</unpack>
+                        <unpackOptions>
+                            <includes>
+                                <include>**/*</include>
+                            </includes>
+                            <excludes>
+                                <exclude>**/*.java</exclude>
+                            </excludes>
+                            <filtered>false</filtered>
+                        </unpackOptions>
+                        <scope>runtime</scope>
+                        <useProjectArtifact>true</useProjectArtifact>
+                        <useProjectAttachments>false</useProjectAttachments>
+                        <useTransitiveDependencies>true</useTransitiveDependencies>
+                        <useTransitiveFiltering>false</useTransitiveFiltering>
+                        <useStrictFiltering>false</useStrictFiltering>
+                        <useDefaultExcludes>true</useDefaultExcludes>
+                        <outputDirectory>xxx</outputDirectory>
+                        <includes>
+                            <include>**/*</include>
+                        </includes>
+                        <excludes>
+                            <exclude>**/*.java</exclude>
+                        </excludes>
+                        <fileMode>0644</fileMode>
+                        <directoryMode>0755</directoryMode>
+                    </dependencySet>
+                </dependencySets>
+                <!-- 是否将依赖进行解压 -->
+                <unpack>true</unpack>
+                <unpackOptions>
+                    <includes>
+                        <include>**/*</include>
+                    </includes>
+                    <excludes>
+                        <exclude>**/*.java</exclude>
+                    </excludes>
+                    <filtered>false</filtered>
+                </unpackOptions>
+                <outputFileNameMapping>${module.artifactId}-${module.version}${dashClassifier?}.${module.extension}</outputFileNameMapping>
+                <useStrictFiltering>false</useStrictFiltering>
+                <useDefaultExcludes>true</useDefaultExcludes>
+                <outputDirectory>/modules</outputDirectory>
+                <includes>
+                    <include>**/*</include>
+                </includes>
+                <excludes>
+                    <exclude>**/*.java</exclude>
+                </excludes>
+                <fileMode>0644</fileMode>
+                <directoryMode>0755</directoryMode>
+            </binaries>
+
+        </moduleSet>
+        <moduleSet>
+
+        </moduleSet>
+    </moduleSets>
+
+    <fileSets>
+        <!-- 将文件夹添加到打包文件中, 可以有多个fileSet -->
+        <fileSet>
+            <!-- 要打包的目录 -->
+            <directory>${project.build.directory}/classes</directory>
+            <!-- 打包后文件的换行符, 使用unix就好 -->
+            <!-- keep, unix, lf, dos, crlf -->
+            <lineEnding>unix</lineEnding>
+            <!-- 是否要对文件夹中的内容进行资源替换 -->
+            <filtered>false</filtered>
+            <!-- 在进行占位符替换的时候, 如果为严格模式, 那么如果有的占位符没有对应的值替换, 会构建失败, 设置为false就不会 -->
+            <useStrictFiltering>false</useStrictFiltering>
+            <!-- 是否使用默认排除, 如果设置为true, 那么他会排除掉 .git .svn node_modules 等文件夹, 设置为true就好-->
+            <useDefaultExcludes>true</useDefaultExcludes>
+            <!-- 要放在打包文件的哪个位置 -->
+            <outputDirectory>/</outputDirectory>
+            <!-- 要包含哪些文件, 如果不写includes, 默认包含文件夹中的所有文件 -->
+            <includes>
+                <include>**/*.class</include>
+            </includes>
+            <!-- 要排除掉哪些文件, 如果不写excludes, 就是不排除文件 -->
+            <excludes>
+                <exclude>${project.build.directory}/classes/test/**/*.txt</exclude>
+            </excludes>
+            <!-- 打包后文件夹和文件的权限, 使用默认的就好 -->
+            <fileMode>0644</fileMode>
+            <directoryMode>0755</directoryMode>
+        </fileSet>
+    </fileSets>
+
+    <files>
+        <!-- 添加文件到打包文件中 , 可以有多个file -->
+        <file>
+            <!-- 文件的地址 -->
+            <source>xxx</source>
+            <!-- 打包后的地址 -->
+            <outputDirectory>xxx</outputDirectory>
+            <!-- 打包后的文件名, 不用配置就好, 保存原来的文件名 -->
+            <destName>xxx</destName>
+            <!-- 打包后的行分隔符, 设置为unix就好 -->
+            <lineEnding>unix</lineEnding>
+            <!-- 是否要对文件进行占位符替换 -->
+            <filtered>false</filtered>
+            <!-- 打包后的文件权限 -->
+            <fileMode>0644</fileMode>
+        </file>
+    </files>
+
+    <dependencySets>
+
+        <!-- 需要打包的依赖项, 可以有多个dependencySet -->
+        <dependencySet>
+            <!-- 使用默认的就好, 不知道有什么用 -->
+            <outputFileNameMapping>${artifact.artifactId}-${artifact.version}${dashClassifier?}.${artifact.extension}</outputFileNameMapping>
+            <!-- 是否先解压依赖, 然后将他们放到 outputDirectory 中, 默认设置为false就好
+                 能解压的文件有: jar, zip, tar.gz, and tar.bz -->
+            <unpack>false</unpack>
+            <unpackOptions>
+                <!-- 依赖解压后, 要包含其中的哪些文件 -->
+                <includes>
+                    <include>**/*</include>
+                </includes>
+                <excludes>
+                    <exclude>**/*.java</exclude>
+                </excludes>
+                <!-- 是否进行占位符替换 -->
+                <filtered>false</filtered>
+            </unpackOptions>
+            <!-- 指定打包哪些scope的依赖, compile, runtime, test, provided, 默认是runtime -->
+            <scope>runtime</scope>
+            <!-- 是否包含自己项目构建出来的jar包, 使用默认的就好 -->
+            <useProjectArtifact>true</useProjectArtifact>
+            <!-- 是否包含自己项目构建出来的附加artifacts, 比如源码包, Javadoc文档包, 使用默认的false就好 -->
+            <useProjectAttachments>false</useProjectAttachments>
+            <!-- 是否包含传递依赖, 使用默认的就好 -->
+            <useTransitiveDependencies>true</useTransitiveDependencies>
+            <!-- 是否使用默认排除, 如果设置为true, 那么他会排除掉 .git .svn node_modules 等文件夹, 设置为true就好-->
+            <useDefaultExcludes>true</useDefaultExcludes>
+            <!-- 依赖要放在哪里 -->
+            <outputDirectory>/lib</outputDirectory>
+
+            <!-- 这两个参数不知道干什么用的, 保持默认就好, 不是什么重要的参数 -->
+            <useTransitiveFiltering>false</useTransitiveFiltering>
+            <useStrictFiltering>false</useStrictFiltering>
+
+            <!-- 包含哪些依赖包, 不写就是scope中全部的依赖包 -->
+            <includes>
+                <include>*:*</include>
+            </includes>
+            <!-- 排除掉哪些依赖包 -->
+            <excludes>
+                <exclude>commons-logging:commons-logging</exclude>
+            </excludes>
+            <fileMode>0644</fileMode>
+            <directoryMode>0755</directoryMode>
+        </dependencySet>
+    </dependencySets>
+
+    <repositories>
+        <!-- 他的作用是可以将scope中的依赖, 打包为一个maven仓库的结构, 这样你就可以将这个文件发送给别人了, 别人可以直接使用这个文件作为本地仓库 -->
+        <!-- 适合内部部署和分发 -->
+        <repository>
+            <!-- 是否在仓库中生成 Maven Metadata（maven-metadata.xml），让这个仓库可以当作“远程仓库”使用
+                 通常如果只是离线打包可以设为 false，如果要支持上传到 Nexus 仓库，就设为 true -->
+            <includeMetadata>false</includeMetadata>
+
+            <!-- 要打进仓库的依赖的作用域, 默认为runtime, 可以设置为compile, runtime, test -->
+            <scope>runtime</scope>
+
+            <!-- 你可以这个标签来统一一组依赖所使用的版本 -->
+            <groupVersionAlignments>
+                <groupVersionAlignment>
+                    <!-- 让groupId为com.tiger的依赖, 除了com.tiger:demo, 都使用1.0.0的版本 -->
+                    <id>com.tiger</id>
+                    <version>1.0.0</version>
+                    <excludes>
+                        <exclude>demo</exclude>
+                    </excludes>
+                </groupVersionAlignment>
+            </groupVersionAlignments>
+
+            <!-- 如果某个 include 或 exclude 没有真正匹配任何 Artifact，是否报错 -->
+            <useStrictFiltering>false</useStrictFiltering>
+            <!-- 是否启用默认排除规则，比如跳过 git/SVN 目录 -->
+            <useDefaultExcludes>true</useDefaultExcludes>
+            <!-- 打出来的仓库目录位置（相对于最终包的根目录） -->
+            <outputDirectory>/</outputDirectory>
+
+            <!-- 要打包哪些依赖, 不写就是scope中全部的依赖 -->
+            <includes>
+                <include>com.example:*</include>
+            </includes>
+            <!-- 要排除哪些依赖 -->
+            <excludes>
+                <exclude>org.slf4j:*</exclude>
+            </excludes>
+            <!-- 打包后的文件和目录的权限 -->
+            <fileMode>0644</fileMode>
+            <directoryMode>0755</directoryMode>
+        </repository>
+    </repositories>
+    <componentDescriptors>
+        <!-- 在写大一点的打包逻辑的时候, assembly.xml往往很长, 所以可以把一些公共的定义拆出来, 放到独立的xml中
+             然后在这里引用这些xml, 这样可以提高可读性, 也可以减少重复的代码
+         -->
+        <componentDescriptor>src/assembly/components/files.xml</componentDescriptor>
+        <componentDescriptor>src/assembly/components/libs.xml</componentDescriptor>
+    </componentDescriptors>
+</assembly>
