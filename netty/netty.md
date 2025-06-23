@@ -8,21 +8,7 @@ https://www.bilibili.com/video/BV1py4y1E7oA?p=154&spm_id_from=pageDriver&vd_sour
 
 ## NIO和BIO
 
-### stream vs channel
 
-* stream 不会自动缓冲数据，channel 会利用系统提供的发送缓冲区、接收缓冲区（更为底层）
-* stream 仅支持阻塞 API，channel 同时支持阻塞、非阻塞 API，网络 channel 可配合 selector 实现多路复用
-* 二者均为全双工，即读写可以同时进行
-
-### IO 模型
-
-#### 阻塞IO
-
-#### 非阻塞IO
-
-#### IO多路复用
-
-#### AIO异步IO
 
 
 
@@ -600,96 +586,6 @@ buffer --> channel
 
 
 
-
-
-
-### 零拷贝
-
-#### 传统 IO 问题
-
-传统的 IO 将一个文件通过 socket 写出
-
-```java
-File f = new File("helloword/data.txt");
-RandomAccessFile file = new RandomAccessFile(file, "r");
-
-byte[] buf = new byte[(int)f.length()];
-file.read(buf);
-
-Socket socket = ...;
-socket.getOutputStream().write(buf);
-```
-
-内部工作流程是这样的：
-
-![](img/Netty02-入门/0024.png)
-
-1. java 本身并不具备 IO 读写能力，因此 read 方法调用后，要从 java 程序的**用户态**切换至**内核态**，去调用操作系统（Kernel）的读能力，将数据读入**内核缓冲区**。这期间用户线程阻塞，操作系统使用 DMA（Direct Memory Access）来实现文件读，其间也不会使用 cpu
-
-   > DMA 也可以理解为硬件单元，用来解放 cpu 完成文件 IO
-
-2. 从**内核态**切换回**用户态**，将数据从**内核缓冲区**读入**用户缓冲区**（即 byte[] buf），这期间 cpu 会参与拷贝，无法利用 DMA
-
-3. 调用 write 方法，这时将数据从**用户缓冲区**（byte[] buf）写入 **socket 缓冲区**，cpu 会参与拷贝
-
-4. 接下来要向网卡写数据，这项能力 java 又不具备，因此又得从**用户态**切换至**内核态**，调用操作系统的写能力，使用 DMA 将 **socket 缓冲区**的数据写入网卡，不会使用 cpu
-
-
-
-可以看到中间环节较多，java 的 IO 实际不是物理设备级别的读写，而是缓存的复制，底层的真正读写是操作系统来完成的
-
-* 用户态与内核态的切换发生了 3 次，这个操作比较重量级
-* 数据拷贝了共 4 次
-
-
-
-#### NIO 优化
-
-通过 DirectByteBuf 
-
-* ByteBuffer.allocate(10)  HeapByteBuffer 使用的还是 java 内存
-* ByteBuffer.allocateDirect(10)  DirectByteBuffer 使用的是操作系统内存
-
-![](img/Netty02-入门/0025.png)
-
-大部分步骤与优化前相同，不再赘述。唯有一点：java 可以使用 DirectByteBuf 将堆外内存映射到 jvm 内存中来直接访问使用
-
-* 这块内存不受 jvm 垃圾回收的影响，因此内存地址固定，有助于 IO 读写
-* java 中的 DirectByteBuf 对象仅维护了此内存的虚引用，内存回收分成两步
-  * DirectByteBuf 对象被垃圾回收，将虚引用加入引用队列
-  * 通过专门线程访问引用队列，根据虚引用释放堆外内存
-* 减少了一次数据拷贝，用户态与内核态的切换次数没有减少
-
-
-
-进一步优化（底层采用了 linux 2.1 后提供的 sendFile 方法），java 中对应着两个 channel 调用 transferTo/transferFrom 方法拷贝数据
-
-![](img/Netty02-入门/0026.png)
-
-1. java 调用 transferTo 方法后，要从 java 程序的**用户态**切换至**内核态**，使用 DMA将数据读入**内核缓冲区**，不会使用 cpu
-2. 数据从**内核缓冲区**传输到 **socket 缓冲区**，cpu 会参与拷贝
-3. 最后使用 DMA 将 **socket 缓冲区**的数据写入网卡，不会使用 cpu
-
-可以看到
-
-* 只发生了一次用户态与内核态的切换
-* 数据拷贝了 3 次
-
-
-
-进一步优化（linux 2.4）
-
-![](img/Netty02-入门/0027.png)
-
-1. java 调用 transferTo 方法后，要从 java 程序的**用户态**切换至**内核态**，使用 DMA将数据读入**内核缓冲区**，不会使用 cpu
-2. 只会将一些 offset 和 length 信息拷入 **socket 缓冲区**，几乎无消耗
-3. 使用 DMA 将 **内核缓冲区**的数据写入网卡，不会使用 cpu
-
-整个过程仅只发生了一次用户态与内核态的切换，数据拷贝了 2 次。所谓的【零拷贝】，并不是真正无拷贝，而是在不会拷贝重复数据到 jvm 内存中，零拷贝的优点有
-
-* 更少的用户态与内核态的切换
-* 不利用 cpu 计算，减少 cpu 缓存伪共享
-* 零拷贝适合小文件传输
 
 ### AIO(不重要)
 
@@ -3110,7 +3006,7 @@ ByteBuffer有两个具体的子类实现
 
 #### DirectByteBuffer为什么不需要手动释放
 
-首先在jvm中, 分配直接内存和是否直接内存是通过Unsafe中的如下函数来实现的:
+首先在jvm中, 分配直接内存和释放直接内存是通过Unsafe中的如下函数来实现的:
 
 ~~~java
         // 获取Unsafe.theUnsafe属性, 他是一个Unsafe的单例对象
@@ -3265,7 +3161,7 @@ Netty 采用了引用计数法来对ByteBuf进行计数, 看看有多少个ByteB
     }
 ~~~
 
-#### 谁来是否ByteBuf
+#### 谁来释放ByteBuf
 
 谁来负责 release 呢？
 
@@ -9113,3 +9009,537 @@ public static void main(String[] args) {
 2. 不必调用`timer.start()`方法,  因为在提交任务的时候, 会自动启动时间轮,  如果提前启动了也支持徒增浪费
 3. 在不使用时间轮之后, 一定要调用`stop()`方法来停止时间轮
 4. 在不使用时间轮之后, 一定要关闭时间轮中的线程池
+
+
+
+## 零拷贝
+
+### 传统 IO 问题
+
+传统的 IO 将一个文件通过 socket 写出
+
+```java
+File f = new File("helloword/data.txt");
+RandomAccessFile file = new RandomAccessFile(file, "r");
+
+byte[] buf = new byte[(int)f.length()];
+file.read(buf);
+
+Socket socket = ...;
+socket.getOutputStream().write(buf);
+```
+
+内部工作流程是这样的：
+
+![](img/Netty02-入门/0024.png)
+
+![img](img/netty/v2-e785cd936388622f9951fe70e7edc36b_1440w.jpg)
+
+具体过程：
+
+- 用户进程调用 read 方法，向操作系统发出 I/O 请求，请求读取数据到自己的内存缓冲区中，进程进入阻塞状态；
+- 操作系统收到请求后，进一步将 I/O 请求发送 DMA，然后让 CPU 执行其他任务；
+- DMA将数据从磁盘读取到内核缓冲区中, 然后发出中断
+- CPU 收到 DMA 的信号，知道数据已经准备好，于是cpu将数据从内核拷贝到用户空间
+- 系统调用返回, 从内核态切换回用户态
+
+在上面的步骤中, 只有第四部需要cpu的配合, 其他步骤都不需要cpu
+
+如果考虑到我们从磁盘读取文件, 然后发送到socket中的话
+
+![img](img/netty/v2-248a78f902f34c2a64b17efae58e0164_1440w.jpg)
+
+首先，期间共发生了 4 次用户态与内核态的上下文切换，因为发生了两次系统调用，一次是 read() ，一次是 write()，每次系统调用都得先从用户态切换到内核态，等内核完成任务后，再从内核态切换回用户态。
+
+上下文切换到成本并不小，一次切换需要耗时几十纳秒到几微秒，虽然时间看上去很短，但是在高并发的场景下，这类时间容易被累积和放大，从而影响系统的性能。
+
+其次，还发生了 4 次数据拷贝，其中两次是 DMA 的拷贝，另外两次则是通过 CPU 拷贝的，下面说一下这个过程：
+
+- 第一次拷贝，把磁盘上的数据拷贝到操作系统内核的缓冲区里，这个拷贝的过程是通过 DMA 搬运的。
+- 第二次拷贝，把内核缓冲区的数据拷贝到用户的缓冲区里，这个拷贝到过程是由 CPU 完成的。
+- 第三次拷贝，把刚才拷贝到用户的缓冲区里的数据，再拷贝到内核的 socket 的缓冲区里，这个过程依然还是由 CPU 搬运的。
+- 第四次拷贝，把内核的 socket 缓冲区里的数据，拷贝到网卡的缓冲区里，这个过程又是由 DMA 搬运的。
+
+这种简单又传统的文件传输方式，存在冗余的上文切换和数据拷贝，在高并发系统里是非常糟糕的，多了很多不必要的开销，会严重影响系统性能。
+
+
+
+### 零拷贝
+
+https://zhuanlan.zhihu.com/p/616105519
+
+https://zhuanlan.zhihu.com/p/467302001
+
+在linux中,零拷贝技术通常可以通过两种方式来实现
+
+1. sendfile
+2. mmap + write
+
+#### sendfile
+
+linux 2.1 后提供的 sendFile 方法，java 中对应着两个 channel 调用 transferTo/transferFrom 方法拷贝数据
+
+![](img/Netty02-入门/0026.png)
+
+1. java 调用 transferTo 方法后，要从 java 程序的**用户态**切换至**内核态**，使用 DMA将数据读入**内核缓冲区**，不会使用 cpu
+2. 数据从**内核缓冲区**传输到 **socket 缓冲区**，cpu 会参与拷贝
+3. 最后使用 DMA 将 **socket 缓冲区**的数据写入网卡，不会使用 cpu
+
+可以看到
+
+* 只发生了一次用户态与内核态的切换
+* 数据拷贝了 3 次
+
+
+
+在linux2.4之后, 对sendfile函数进行了进一步的优化
+
+![](img/Netty02-入门/0027.png)
+
+1. java 调用 transferTo 方法后，要从 java 程序的**用户态**切换至**内核态**，使用 DMA将数据读入**内核缓冲区**，不会使用 cpu
+2. 只会将一些 offset 和 length 信息拷入 **socket 缓冲区**，几乎无消耗
+3. 使用 DMA 将 **内核缓冲区**的数据写入网卡，不会使用 cpu
+
+整个过程仅只发生了一次用户态与内核态的切换，数据拷贝了 2 次。所谓的【零拷贝】，并不是真正无拷贝，而是在不会拷贝重复数据到 jvm 内存中，零拷贝的优点有
+
+* 更少的用户态与内核态的切换
+* 不利用 cpu 计算，减少 cpu 缓存伪共享
+* 零拷贝适合小文件传输
+
+
+
+下面是java中sendfile的一个小案例
+
+~~~java
+public class SendFileTest {
+    public static void main(String[] args) {
+        try {
+            FileChannel readChannel = FileChannel.open(Paths.get("./jay.txt"), StandardOpenOption.READ);
+            long len = readChannel.size();
+            long position = readChannel.position();
+            
+            FileChannel writeChannel = FileChannel.open(Paths.get("./siting.txt"), StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+            //数据传输
+            readChannel.transferTo(position, len, writeChannel);
+            readChannel.close();
+            writeChannel.close();
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    }
+~~~
+
+
+
+
+
+#### mmap + write
+
+在前面我们知道，read() 系统调用的过程中会把内核缓冲区的数据拷贝到用户的缓冲区里，于是为了减少这一步开销，我们可以用 mmap() 替换 read() 系统调用函数。
+
+mmap() 系统调用函数会直接把内核缓冲区里的数据「映射」到用户空间，这样，操作系统内核与用户空间就不需要再进行任何的数据拷贝操作。
+
+![img](img/netty/v2-b78c223698f5b342324549fdec6294c1_1440w.jpg)
+
+具体过程如下：
+
+- 应用进程调用了 mmap() 后，DMA 会把磁盘的数据拷贝到内核的缓冲区里。接着，应用进程跟操作系统内核「共享」这个缓冲区；
+- 应用进程再调用 write()，操作系统直接将内核缓冲区的数据拷贝到 socket 缓冲区中，这一切都发生在内核态，由 CPU 来搬运数据；
+- 最后，把内核的 socket 缓冲区里的数据，拷贝到网卡的缓冲区里，这个过程是由 DMA 搬运的。
+
+我们可以得知，通过使用 mmap() 来代替 read()， 可以减少一次数据拷贝的过程。
+
+但这还不是最理想的零拷贝，因为仍然需要通过 CPU 把内核缓冲区的数据拷贝到 socket 缓冲区里，而且仍然需要 4 次上下文切换，因为系统调用还是 2 次。
+
+下面是java中一个mmap的小案例
+
+```java
+public class MmapTest {
+
+    public static void main(String[] args) {
+        try {
+            FileChannel readChannel = FileChannel.open(Paths.get("./jay.txt"), StandardOpenOption.READ);
+            MappedByteBuffer data = readChannel.map(FileChannel.MapMode.READ_ONLY, 0, 1024 * 1024 * 40);
+            FileChannel writeChannel = FileChannel.open(Paths.get("./siting.txt"), StandardOpenOption.WRITE, StandardOpenOption.CREATE);
+            //数据传输
+            writeChannel.write(data);
+            readChannel.close();
+            writeChannel.close();
+        }catch (Exception e){
+            System.out.println(e.getMessage());
+        }
+    }
+```
+
+
+
+### netty中使用到了零拷贝的部分
+
+1. Netty的接收和发送使用的是DirectByteBuf, 他是内核中的一块内存, 然后通过mmap的方式映射到了jvm内存上
+
+   使用直接内存进行Socket读写，不需要进行字节缓冲区的二次拷贝。
+
+   如果使用JVM的堆内存进行Socket读写，JVM会将堆内存Buffer拷贝一份到直接内存中，然后才写入Socket中。
+
+   **因为在进行write的时候, 要求对象的内存地址不变, 而java的gc会修改对象地址, 所以在write的时候, 会将数据从堆内存拷贝到直接内存, 然后再写到socket的内核缓冲区中, 相比于使用直接内存，消息在发送过程中多了一次缓冲区的内存拷贝。**
+
+1. Netty的文件传输调用FileRegion包装的transferTo方法，可以直接将文件缓冲区的数据发送到目标Channel，避免通过循环write方式导致的内存拷贝问题。
+2. Netty提供CompositeByteBuf类, 可以将多个ByteBuf合并为一个逻辑上的ByteBuf, 避免了各个ByteBuf之间的拷贝。
+3. 通过wrap操作, 我们可以将byte[]数组、ByteBuf、ByteBuffer等包装成一个Netty ByteBuf对象, 进而避免拷贝操作。
+4. ByteBuf支持slice操作，可以将ByteBuf分解为多个共享同一个存储区域的ByteBuf, 避免内存的拷贝。
+
+
+
+## IO模型
+
+### bio
+
+在nio的时候, 调用read函数从socket中读取数据的话
+
+如果此时数据还没有准备好的话, 那么会堵塞线程, 直到数据到来
+
+然后dma将数据从网卡读取到内核缓冲区, 然后触发中断
+
+然后cpu将数据从内核缓冲区读取到用户空间, 然后程序才返回
+
+缺点:  会堵塞线程, 如果想要处理多个socket的话, 就需要多个线程, 用户多的话会线程爆炸
+
+### nio
+
+在调用read函数从socket中读取数据, 如果数据没有到来的话, 会直接返回
+
+缺点: 用户需要一直调用read函数来判断数据是否到来
+
+### io多路复用
+
+https://zhuanlan.zhihu.com/p/11661880208
+
+在io多路复用中, 一共有三种模型
+
+#### select模型
+
+~~~c
+int select (int n, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, struct timeval *timeout);
+~~~
+
+fd_set是一个数组, 长度固定为1024
+
+如果你想要监听某个socket, 那么就将socket对应的文件描述符fd作为索引, 将fd_set中的元素设置为1, 比如我想要监听fd为3的socket, 那么就将fd_set[3]设置为1
+
+readfds, writefds, exceptfds分别表示要监听可读事件, 可写事件, 是否异常的socket的fd
+
+n表示readfds, writefds, exceptfds中最大的文件描述符+1, 比如三个fs_set分别是[00101],[1001], [0110], 那么n就是5
+
+
+
+在调用select函数之后, 会从用户态切换到内核态, 并且会将readfds, writefds, exceptfds三个数组从用户态拷贝到内核态,  然后cpu在内核态中, 从0到n遍历这些数组, 看看有没有事件触发, 如果没有就sleep一段时间再看看, 直到有事件触发了, 他会将readfds, writefds, exceptfds这三个数组中的元素全部设置为0, 然后将有事件触发的socket的fd设置为了, 假如fd为3的socket触发了写事件, 那么就将writefds[3]设置为1,  之后将三个数组从内核态copy回用户态, 然后返回触发事件的个数
+
+返回之后, 如果触发事件的个数大于0, 那么你需要遍历readfds, writefds, exceptfds三个数组, 看看哪个索引的元素为1, 那么就是索引对应的fd触发了事件
+
+下面是c语音编写的, 通过select来监听socket的代码
+
+~~~c
+while(1) {
+  connfd = accept(listenfd);
+  fcntl(connfd, F_SETFL, O_NONBLOCK);
+  fdlist.add(connfd);
+}
+
+struct timeval timeout;
+int max = 0;  // 用于记录最大的fd，在轮询中时刻更新即可
+FD_ZERO(&read_fd); // 初始化read_fd, 将所有元素都设置为0
+FD_SET(4, &read_fd) // 将read_fd[4]设置为1, 表示监听fd=4的socket
+FD_SET(10, &read_fd) // 将read_fd[4]设置为1, 表示监听fd=4的socket
+int max = 11;  // 用于记录最大的fd，在轮询中时刻更新即可
+while (1) {
+    // 阻塞获取 每次需要把fd_set从用户态拷贝到内核态, 有事件发生的时候, 将fs_set清空并重新置位
+    nfds = select(max + 1, &read_fd, &write_fd, NULL, &timeout);
+    // 每次需要遍历所有fd，判断有无读写事件发生
+    for (int i = 0; i <= max && nfds; ++i) {
+        // 只读已就绪的文件描述符，不用过多遍历
+        if (i == listenfd) {
+            // 这里处理accept事件
+            FD_SET(i, &read_fd);//将客户端socket加入到集合中
+        }
+        if (FD_ISSET(i, &read_fd)) {
+            // 这里处理read事件
+        }
+    }
+}
+~~~
+
+缺点:
+
+1. 通过select, 会将三个fd_set拷贝到内核态, 等事件触发的时候, 将三个fd_set重新置位, 然后将他们拷贝回用户态, 这个效率是不行的
+2. fd_set数组的大小为1024, 也就是最多能监听1024个socket, 显然是不够的
+3. 返回之后, 用户需要知道哪个socket触发了事件, 必须遍历整个fs_set数组才知道
+
+
+
+#### poll
+
+poll的实现和select非常相似，只是描述fd集合的方式不同。
+
+在poll中, 使用了pollfd的数据结构, 而不是fd_set的数据结构
+
+~~~c
+struct pollfd {
+　　 int fd;           /*文件描述符*/
+　　 short events;     /*监控的事件*/
+　　 short revents;    /*监控事件中满足条件返回的事件*/
+};
+// struct pollfd类型的数组, 存储了待检测的文件描述符
+// 描述的是数组 fds 的大小
+// 指定poll函数的阻塞时长
+int poll(struct pollfd *fds, unsigned long nfds, int timeout);   
+~~~
+
+上面通过pollfd来描述需要监听的fd, 和要监听的事件,  在调用poll函数之后, 也会将pollfd数组从用户态拷贝到内核态, 然后循环遍历pollfd中的fd, 看看有没有事件发生, 如果没有的话就sleep一段时间
+
+如果有事件发生的话, 那么就将revents置位, 然后将pollfd数组从用户态拷贝回内核态, 然后返回触发事件的个数
+
+在pollfd返回之后, 用户要想知道哪个fd发生了事件, 需要遍历整个pollfd数组
+
+
+
+poll通过pollfd数组解决了select中fd_set大小为1024的文件, 但是还是要将pollfd数组从用户态拷贝到用户态, 然后从用户态拷贝回内核态, 同时要想知道哪个fd发生了事件, 需要遍历这个数组
+
+他只解决了select的缺点2, 没有解决缺点1,3
+
+
+
+#### epoll
+
+在epoll中, 提供了三个函数
+
+1. epoll_create函数
+
+   ~~~c
+   int epoll_create(int size); // size无作用
+   ~~~
+
+   调用这个函数, 会在内核态创建一个event_poll结构体,  他内部有一个红黑树, 用来保存要监听的fd, 同时还有一个链表, 用来保存就绪的socket的fd
+
+   返回值是event_poll结构体的文件描述符fd
+
+2. epoll_ctl
+
+   ~~~c
+   int epoll_ctl(int epfd, int op, int fd, struct epoll_event *event); 
+   ~~~
+
+   - **功能：**epoll 的事件注册函数，它不同于 select() 是在监听事件时告诉内核要监听什么类型的事件，而是在这里先注册要监听的事件类型。
+   - **参数epfd:** epoll 专用的文件描述符，epoll_create()的返回值
+   - **参数op:** 表示动作，用三个宏来表示：
+     1. EPOLL_CTL_ADD：注册新的 fd 到 epfd 中；
+     2. EPOLL_CTL_MOD：修改已经注册的fd的监听事件；
+     3. EPOLL_CTL_DEL：从 epfd 中删除一个 fd；
+
+   - **参数fd:** 需要监听的文件描述符
+   - **参数event:** 告诉内核要监听什么事件, 他可以是以下几个宏的集合
+     - EPOLLIN ：表示对应的文件描述符可以读（包括对端 SOCKET 正常关闭）；
+     - EPOLLOUT：表示对应的文件描述符可以写；
+     - EPOLLPRI：表示对应的文件描述符有紧急的数据可读（这里应该表示有带外数据到来）；
+     - EPOLLERR：表示对应的文件描述符发生错误；
+     - EPOLLHUP：表示对应的文件描述符被挂断；
+     - EPOLLET ：将 EPOLL 设为边缘触发(Edge Trigger)模式，这是相对于水平触发(Level Trigger)来说的。
+     - EPOLLONESHOT：只监听一次事件，当监听完这次事件之后，如果还需要继续监听这个 socket 的话，需要再次把这个 socket 加入到 EPOLL 队列里
+
+3. epoll_wait
+
+   ~~~c
+   int epoll_wait(int epfd, struct epoll_event * events, int maxevents, int timeout); 
+   ~~~
+
+   功能：等待事件的产生，收集在 epoll 监控的事件中已经发送的事件，类似于 select() 调用。
+
+   - 参数epfd: epoll 专用的文件描述符，epoll_create()的返回值
+   - 参数events: 他是一个数组, 用来接受已经就绪事件
+   - 参数maxevents: maxevents 告之内核这个 events 有多少个 。
+   - 参数timeout: 超时时间，单位为毫秒，为 -1 时，函数为阻塞。
+
+
+
+当我们调用epoll_create函数的时候, 首先会在内核态创建一个event_poll结构, 他内部有一个红黑树, 和一个就绪列表
+
+我们可以调用epoll_create函数, 来添加, 删除, 修改需要监听的socket的fd,  这些fd会保存在红黑树中, 新增删除查找的复杂度都是logN
+
+之后我们可以调用event_wait函数, 来等待事件的到来,  这会从用户态切换到内核态, 并堵塞线程, cpu就可以干其他事情了
+
+当网络数据到达网卡后, dma会将数据从网卡拷贝到socket缓冲区中, 然后触发软中断, 然后cpu会在回调函数中, 将就绪的fd拷贝到就绪列表中,  然后将就绪列表拷贝到epoll_wait的events函数中, 然后返回epoll_wait函数
+
+我们可以在后续代码中, 直接遍历events数组, 就可以获取所有就绪的fd了
+
+<video src="https://vdn6.vzuu.com/SD/346e30f4-9119-11eb-bb4a-4a238cf0c417.mp4?pkey=AAXysgBEHgXthexHCE_s62DGXbQrx82HQZ5Kmv4yVffZFAkpqkbukL5yG9Ge2y_rlQoeIYYNC9YPTCzZJpsAMf3L&bu=078babd7&c=avc.0.0&expiration=1749965898&f=mp4&pu=078babd7&v=ks6" controls></video>
+
+
+
+- epoll 采用红黑树管理文件描述符
+  从上图可以看出，epoll使用红黑树管理文件描述符，红黑树插入和删除的都是时间复杂度 O(logN)，不会随着文件描述符数量增加而改变。
+  select、poll采用数组或者链表的形式管理文件描述符，那么在遍历文件描述符时，时间复杂度会随着文件描述的增加而增加。
+- epoll 将文件描述符添加和检测分离，减少了文件描述符拷贝的消耗
+  
+
+
+
+epoll相较于select
+
+- **解决了fd_set大小的限制**
+- **我们不需要像select函数一样遍历整个fd_set才能知道哪些fd就绪了**
+- **epoll是通过软终端的回调函数来将fd拷贝到就绪列表中的, 而不是像select一样循环遍历**
+- epoll采用了红黑树来管理socket的文件描述符fd, 插入和删除的时间复杂度都是logN, 而select和poll都是使用数组或者链表, 在遍历的时候, 事件复杂度为N
+- select和poll 调用时会将全部监听的 fd 从用户态空间拷贝至内核态空间并线性扫描一遍找出就绪的 fd 再返回到用户态。下次需要监听时，又需要把之前已经传递过的文件描述符再读传递进去，增加了拷贝文件的无效消耗，当文件描述很多时，性能瓶颈更加明显。
+  而epoll只需要使用epoll_ctl添加一次，后续的检查使用epoll_wait，减少了文件拷贝的消耗。
+
+
+
+下面是通过epoll来创建socket服务端的代码
+
+~~~c
+const int MAX_EVENT_NUMBER = 10000; //最大事件数
+// 设置句柄非阻塞
+int setnonblocking(int fd)
+{
+    int old_option = fcntl(fd, F_GETFL);
+    int new_option = old_option | O_NONBLOCK;
+    fcntl(fd, F_SETFL, new_option);
+    return old_option;
+}
+
+int main(){
+
+    // 创建套接字
+    int nRet=0;
+    int m_listenfd = socket(PF_INET, SOCK_STREAM, 0);
+    if(m_listenfd<0)
+    {
+        printf("fail to socket!");
+        return -1;
+    }
+    // 
+    struct sockaddr_in address;
+    bzero(&address, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    address.sin_port = htons(6666);
+
+    int flag = 1;
+    // 设置ip可重用
+    setsockopt(m_listenfd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag));
+    // 绑定端口号
+    int ret = bind(m_listenfd, (struct sockaddr *)&address, sizeof(address));
+    if(ret<0)
+    {
+        printf("fail to bind!,errno :%d",errno);
+        return ret;
+    }
+
+    // 监听连接fd
+    ret = listen(m_listenfd, 200);
+    if(ret<0)
+    {
+        printf("fail to listen!,errno :%d",errno);
+        return ret;
+    }
+
+    // 初始化红黑树和事件链表结构rdlist结构
+    epoll_event events[MAX_EVENT_NUMBER];
+    // 创建epoll实例
+    int m_epollfd = epoll_create(5);
+    if(m_epollfd==-1)
+    {
+        printf("fail to epoll create!");
+        return m_epollfd;
+    }
+
+
+
+    // 创建节点结构体将监听连接句柄
+    epoll_event event;
+    event.data.fd = m_listenfd;
+    //设置该句柄为边缘触发（数据没处理完后续不会再触发事件，水平触发是不管数据有没有触发都返回事件），
+    event.events = EPOLLIN | EPOLLET | EPOLLRDHUP;
+    // 添加监听连接句柄作为初始节点进入红黑树结构中，该节点后续处理连接的句柄
+    epoll_ctl(m_epollfd, EPOLL_CTL_ADD, m_listenfd, &event);
+
+    //进入服务器循环
+    while(1)
+    {
+        int number = epoll_wait(m_epollfd, events, MAX_EVENT_NUMBER, -1);
+        if (number < 0 && errno != EINTR)
+        {
+            printf( "epoll failure");
+            break;
+        }
+        for (int i = 0; i < number; i++)
+        {
+            int sockfd = events[i].data.fd;
+            // 属于处理新到的客户连接
+            if (sockfd == m_listenfd)
+            {
+                struct sockaddr_in client_address;
+                socklen_t client_addrlength = sizeof(client_address);
+                int connfd = accept(m_listenfd, (struct sockaddr *)&client_address, &client_addrlength);
+                if (connfd < 0)
+                {
+                    printf("errno is:%d accept error", errno);
+                    return false;
+                }
+                epoll_event event;
+                event.data.fd = connfd;
+                //设置该句柄为边缘触发（数据没处理完后续不会再触发事件，水平触发是不管数据有没有触发都返回事件），
+                event.events = EPOLLIN | EPOLLRDHUP;
+                // 添加监听连接句柄作为初始节点进入红黑树结构中，该节点后续处理连接的句柄
+                epoll_ctl(m_epollfd, EPOLL_CTL_ADD, connfd, &event);
+                setnonblocking(connfd);
+            }
+            else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
+            {
+                //服务器端关闭连接，
+                epoll_ctl(m_epollfd, EPOLL_CTL_DEL, sockfd, 0);
+                close(sockfd);
+            }
+            //处理客户连接上接收到的数据
+            else if (events[i].events & EPOLLIN)
+            {
+                char buf[1024]={0};
+                read(sockfd,buf,1024);
+                printf("from client :%s");
+
+                // 将事件设置为写事件返回数据给客户端
+                events[i].data.fd = sockfd;
+                events[i].events = EPOLLOUT | EPOLLET | EPOLLONESHOT | EPOLLRDHUP;
+                epoll_ctl(m_epollfd, EPOLL_CTL_MOD, sockfd, &events[i]);
+            }
+            else if (events[i].events & EPOLLOUT)
+            {
+                std::string response = "server response \n";
+                write(sockfd,response.c_str(),response.length());
+
+                // 将事件设置为读事件，继续监听客户端
+                events[i].data.fd = sockfd;
+                events[i].events = EPOLLIN | EPOLLRDHUP;
+                epoll_ctl(m_epollfd, EPOLL_CTL_MOD, sockfd, &events[i]);
+            }
+            //else if 可以加管道，unix套接字等等数据
+        }
+    }
+}
+~~~
+
+
+
+#### epoll的水平触发和边缘触发
+
+**水平触发(LT)**
+
+关注点是数据是否有无，只要读缓冲区不为空，写缓冲区不满，那么epoll_wait就会一直返回就绪，水平触发是epoll的默认工作方式。
+
+**边缘触发(ET)**
+
+关注点是变化，只要缓冲区的数据有变化，epoll_wait就会返回就绪。
+这里的数据变化并不单纯指缓冲区从有数据变为没有数据，或者从没有数据变为有数据，还包括了数据变多或者变少。即当buffer长度有变化时，就会触发。
+假设epoll被设置为了边缘触发，当客户端写入了100个字符，由于缓冲区从0变为了100，于是服务端epoll_wait触发一次就绪，服务端读取了2个字节后不再读取。这个时候再去调用epoll_wait会发现不会就绪，只有当客户端再次写入数据后，才会触发就绪。
+这就导致如果使用ET模式，那就必须保证要「一次性把数据读取&写入完」，否则会导致数据长期无法读取/写入。
+
+## 

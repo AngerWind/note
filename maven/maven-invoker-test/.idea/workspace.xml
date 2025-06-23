@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="ee5f8255-7177-42b5-9998-31c5542ddd8f" name="Changes" comment="" />
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Class" />
+        <option value="JUnit5 Test Class" />
+      </list>
+    </option>
+  </component>
+  <component name="MavenImportPreferences">
+    <option name="generalSettings">
+      <MavenGeneralSettings>
+        <option name="customMavenHome" value="E:\apache-maven\apache-maven-3.8.5" />
+        <option name="localRepository" value="E:\apache-maven\apache-maven-repository" />
+        <option name="mavenHomeTypeForPersistence" value="CUSTOM" />
+        <option name="useMavenConfig" value="false" />
+        <option name="userSettingsFile" value="E:\apache-maven\settings\settings _with_proxy.xml" />
+      </MavenGeneralSettings>
+    </option>
+  </component>
+  <component name="ProjectCodeStyleSettingsMigration">
+    <option name="version" value="2" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 4
+}]]></component>
+  <component name="ProjectId" id="2xfrRcn0KoTtLs9scLBb4cPZTEK" />
+  <component name="ProjectViewState">
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Application.DependencyTreeParser.executor": "Debug",
+    "Application.com.tiger.embeder.dependency.tree.DependencyTreeParser.executor": "Run",
+    "JUnit.DependencyTreeParserTest.parse.executor": "Debug",
+    "JUnit.MavenEmbedderTest.executor": "Run",
+    "JUnit.MavenEmbedderTest.testMavenEmbedder.executor": "Debug",
+    "JUnit.MavenEmbedderTest1.executor": "Debug",
+    "JUnit.MavenEmbedderTest1.testMavenEmbedder.executor": "Debug",
+    "JUnit.MavenInvokerTest.buildClasspath.executor": "Run",
+    "JUnit.MavenInvokerTest.executor": "Run",
+    "JUnit.MavenInvokerTest.test.executor": "Debug",
+    "JUnit.MavenInvokerTest.testMavenInvoker (1).executor": "Debug",
+    "JUnit.MavenInvokerTest.testMavenInvoker.executor": "Run",
+    "JUnit.MavenInvokerTest.testMavenInvoker2.executor": "Debug",
+    "Maven.simple-project [org.apache.maven.plugins:maven-dependency-plugin:3.5.0:collect].executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "com.intellij.testIntegration.createTest.CreateTestDialog.defaultLibrary": "JUnit5",
+    "com.intellij.testIntegration.createTest.CreateTestDialog.defaultLibrarySuperClass.JUnit5": "",
+    "last_opened_file_path": "C:/Users/Administrator/Desktop/maven-invoker-test",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "project.structure.last.edited": "Project",
+    "project.structure.proportion": "0.0",
+    "project.structure.side.proportion": "0.0",
+    "settings.editor.selected.configurable": "preferences.language.and.region",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="C:\Users\Administrator\Desktop\maven-invoker-test" />
+    </key>
+    <key name="CreateTestDialog.Recents.Supers">
+      <recent name="" />
+    </key>
+    <key name="CreateTestDialog.RecentsKey">
+      <recent name="com.tiger.embeder.dependency.tree" />
+    </key>
+    <key name="CopyClassDialog.RECENTS_KEY">
+      <recent name="com.tiger.embeder" />
+      <recent name="com.tiger" />
+    </key>
+  </component>
+  <component name="RunManager" selected="JUnit.DependencyTreeParserTest.parse">
+    <configuration name="DependencyTreeParser" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.tiger.embeder.DependencyTreeParser" />
+      <module name="maven-invoker-test" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.tiger.invoker.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="com.tiger.embeder.dependency.tree.DependencyTreeParser" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.tiger.embeder.dependency.tree.DependencyTreeParser" />
+      <module name="maven-invoker-test" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.tiger.embeder.dependency.tree.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="DependencyTreeParserTest.parse" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="maven-invoker-test" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.tiger.embeder.dependency.tree.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <option name="PACKAGE_NAME" value="com.tiger.embeder.dependency.tree" />
+      <option name="MAIN_CLASS_NAME" value="com.tiger.embeder.dependency.tree.DependencyTreeParserTest" />
+      <option name="METHOD_NAME" value="parse" />
+      <option name="TEST_OBJECT" value="method" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="MavenEmbedderTest.testMavenEmbedder" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="maven-invoker-test" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.tiger.invoker.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <option name="PACKAGE_NAME" value="com.tiger.embeder" />
+      <option name="MAIN_CLASS_NAME" value="com.tiger.embeder.MavenEmbedderTest" />
+      <option name="METHOD_NAME" value="testMavenEmbedder" />
+      <option name="TEST_OBJECT" value="method" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="MavenInvokerTest.test" type="JUnit" factoryName="JUnit" temporary="true" nameIsGenerated="true">
+      <module name="maven-invoker-test" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.tiger.embeder.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <option name="PACKAGE_NAME" value="com.tiger.embeder" />
+      <option name="MAIN_CLASS_NAME" value="com.tiger.embeder.MavenInvokerTest" />
+      <option name="METHOD_NAME" value="test" />
+      <option name="TEST_OBJECT" value="method" />
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="JUnit.DependencyTreeParserTest.parse" />
+        <item itemvalue="Application.com.tiger.embeder.dependency.tree.DependencyTreeParser" />
+        <item itemvalue="JUnit.MavenInvokerTest.test" />
+        <item itemvalue="JUnit.MavenEmbedderTest.testMavenEmbedder" />
+        <item itemvalue="Application.DependencyTreeParser" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-jdk-9823dce3aa75-fbdcb00ec9e3-intellij.indexing.shared.core-IU-251.23774.435" />
+        <option value="bundled-js-predefined-d6986cc7102b-f27c65a3e318-JavaScript-IU-251.23774.435" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="StructureViewState">
+    <option name="selectedTab" value="Logical" />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="ee5f8255-7177-42b5-9998-31c5542ddd8f" name="Changes" comment="" />
+      <created>1748339962450</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1748339962450</updated>
+      <workItem from="1748339963996" duration="39607000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/src/main/java/com/tiger/embeder/dependency/tree/DependencyTreeParser.java</url>
+          <line>158</line>
+          <option name="timeStamp" value="6" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/src/main/java/com/tiger/embeder/MavenEmbedderInvoker.java</url>
+          <line>37</line>
+          <option name="timeStamp" value="10" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/src/main/java/com/tiger/embeder/MavenEmbedderInvoker.java</url>
+          <line>61</line>
+          <option name="timeStamp" value="11" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+</project>

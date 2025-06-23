@@ -2654,12 +2654,14 @@ publishing {
 // 如果也没有指定, 那么gradle会在线下载对应的jdk版本到$gradle_user_home/jdk/中
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(17) // 指定使用JDK17的版本来编译项目
     }
 }
 ~~~
 
 当然, 你也可以指定toolchains的供应商
+
+或者如果你需要使用graalvm将代码编译为native code, 那么也可以指定使用的jdk必须是graalvm
 
 ~~~groovy
 java {
@@ -2667,6 +2669,8 @@ java {
         languageVersion = JavaLanguageVersion.of(11)
         vendor = JvmVendorSpec.ORACLE // 指定toolchains的供应商
         // vendor = JvmVendorSpec.matching("customString") // 通过字符串匹配来指定供应商
+        
+        nativeImageCapable = true // 指定使用graalvm的jdk
     }
 }
 ~~~
@@ -2676,7 +2680,7 @@ java {
 - 对于JavaCompile类型的task, 可以指定编译时使用的toolchians
 
   ~~~groovy
-  // 指定所有JavaCompile类型的task的Compiler为jdk8
+  // 指定使用JDK8来执行所有JavaCompile类型的任务
   tasks.withType(JavaCompile).configureEach {
       javaCompiler = javaToolchains.compilerFor {
           languageVersion = JavaLanguageVersion.of(8)
@@ -2777,7 +2781,7 @@ org.gradle.java.installations.paths=/custom/path/jdk1.8,/custom/path/jdk11
 
 
 
-如果没有自动检测到符合版本的JDK, 也没有指定符合版本的JDK的位置, 那么Gradle会自动下载一个到`$gradle_user_home/jdks/`中, 并且后续的自动检测也会检测到他
+如果没有自动检测到符合版本的JDK, 也没有指定符合版本的JDK的位置, 那么Gradle会自动下载一个到`$gradle_user_home/jdks/`中, 并且后续的自动检测也会检测到他, 前提是你配置了下载仓库
 
 想要能够自动下载, 需要配置如下的插件在**settings.gradle文件的开始**,  之后他会在访问`https://api.foojay.io/disco/v3.0/`来获取符合条件的jdk
 
@@ -2791,7 +2795,17 @@ plugins {
 
 
 
+除了指定编译, 撤销, 运行项目使用的jdk版本, 你也可以指定编译的时候,  Java 编译器生成与特定 Java 版本兼容的字节码
 
+~~~gradle
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17) // 指定使用JDK17的版本来编译项目
+    }
+    sourceCompatibility = JavaVersion.VERSION_1_8
+    targetCompatibility = JavaVersion.VERSION_1_8
+}
+~~~
 
 
 

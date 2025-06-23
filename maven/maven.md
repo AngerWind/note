@@ -904,3 +904,686 @@ maven-invoker-plugin一共提供了六个goal:
 ## 自定义插件
 
 查看本地项目的`maven-plugin-test`
+
+
+
+
+
+## Maven隐含变量
+
+Maven提供了三个隐式的变量可以用来访问环境变量，POM信息，和Maven Settings
+
+#### env
+
+env变量，暴露了你操作系统或者shell的环境变量。比如在Maven POM中一个对\${env.PATH}的引用将会被 ​\${PATH}环境变量替换，在Windows中为%PATH%.
+
+#### project
+
+project变量暴露了POM。可以使用点标记(.)的路径来引用POM元素的值。例如
+
+```xml
+<project>
+	<modelVersion>4.0.0</modelVersion>
+    <groupId>org.sonatype.mavenbook</groupId>
+	<artifactId>project-a</artifactId>
+	<version>1.0-SNAPSHOT</version>
+	<packaging>jar</packaging>
+	<build>
+		<finalName>${project.groupId}-${project.artifactId</finalName>
+	</build>
+</project>
+```
+
+当你使用mvn help:effective-pom 查看时,你会看到<finalName>org.sonatype.mavenbook-project-a</finalName>
+
+
+
+${basedir} 项目根目录 ​
+
+\${project.build.directory} 构建目录, 缺省为target ​
+
+\${project.build.outputDirectory} 构建过程输出目录, 缺省为target/classes
+
+ ​\${project.build.finalName} 产出物名称, 缺省为\${project.artifactId}- \${project.version} 
+
+\${project.packaging} 打包类型缺省为jar
+
+\${project.xxx} 当前pom文件的任意节点的内容
+
+#### settings
+
+settings变量暴露了Maven settings信息。可以使用点标记(.)的路径来引用settings.xml文件中元素的值。
+
+**例如${settings.offline}会引用~/.m2/settings.xml文件中offline元素的值。**
+
+## maven 获取编译时间和pom中的版本号
+
+1. Maven中获得编译时间
+
+   在 pom文件`properties` 中添加两个属性
+
+   ~~~xml
+   <properties>
+       <!--maven.build.timestamp保存了maven编译时间戳-->
+       <timestamp>${maven.build.timestamp}</timestamp>
+       <!--指定时间格式-->    
+       <maven.build.timestamp.format>yyyy-MM-dd HH:mm:ss</maven.build.timestamp.format>
+   </properties>
+   ~~~
+
+2. 在pom文件`build`中配置
+
+   ```xml
+   <build>
+       <resources>
+           <resource>
+               <directory>src/main/resources</directory>
+               <filtering>true</filtering>
+           </resource>
+       </resources>
+   </build>
+   12345678
+   ```
+
+3. 在`application.yml`中配置
+
+   > 不能使用`${}`
+
+   ```yml
+   app:
+     version: @project.version@
+     build:
+       time: @timestamp@
+   ```
+
+4. 提供接口
+
+   ```java
+   package com.example.demo;
+   
+   import java.util.HashMap;
+   import java.util.Map;
+   
+   import org.springframework.beans.factory.annotation.Value;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.RequestMapping;
+   import org.springframework.web.bind.annotation.RestController;
+   
+   @RestController
+   @RequestMapping("/app")
+   public class AppController {
+       /**
+        * 当前版本
+        */
+       @Value("${app.version}")
+       private String version;
+       /**
+        * 打包时间
+        */
+       @Value("${app.build.time}")
+       private String buildTime;
+   
+       @GetMapping
+       public Map<String, String> uploadImg() {
+           Map<String, String> ret = new HashMap<>();
+           ret.put("version", version);
+           ret.put("buildTime", buildTime);
+           System.out.println(version + "," + buildTime);
+           return ret;
+       }
+   }
+   ```
+
+#### `maven.build.timestamp`时区错误解决方案
+
+在Maven 3.2.2+中， `maven.build.timestamp`已被重新定义，显示UTC中的时间,比中国时间慢8个小时。
+
+要么自己处理, 加上八个小时, 或者使用插件`build-helper-maven-plugin`获得本时区的时间
+
+~~~xml
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>1.8</version>
+                <executions>
+                    <execution>
+                        <id>timestamp-property</id>
+                        <goals>
+                            <goal>timestamp-property</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <!-- 指定的property的名字 -->
+                    <name>build.time</name>
+                    <!-- 格式 -->
+                    <pattern>yyyy-MM-dd HH:mm:ss.SSS</pattern>
+                    <!-- 时区 -->
+                    <timeZone>GMT+8</timeZone>
+                </configuration>
+            </plugin>
+        </plugins>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <!-- 指定要变量替换的文件 -->
+                    <include>application.yml</include>
+                </includes>
+            </resource>
+        </resources>
+
+    </build>
+~~~
+
+经过上述处理后，属性`${build.time}`已经代表GMT-8时区的时间
+
+`application.yml`配置如下
+
+```yml
+app:
+  version: @project.version@
+  build:
+    time: @build.time@
+```
+
+
+
+
+
+#### 把时间戳加到包名
+
+两种方法不要重复，否则
+
+方法一：**把时间戳加到版本号**
+
+```xml
+<project>
+    <versioin>
+        0.0.5.${build.time}
+    </version>
+</project>
+12345
+```
+
+方法二：**把时间戳直接加到包名**
+
+```xml
+<project>
+    <build>
+        <finalName>
+            ${project.artifactId}-${project.version}-${build.time}
+        </finalName>
+    </build>    
+    
+</project>
+```
+
+## maven 属性过滤
+
+~~~xml
+   <build>
+        <resources>
+            <resource>
+                <!-- 指定目录 -->
+                <directory>src/main/resources/</directory>
+                <!-- include的文件要进行变量替换 -->
+                <filtering>true</filtering>
+                <!-- 要过滤的文件 -->
+                <includes>
+                    <include>**/*.properties</include>
+                    <include>**/*.yaml</include>
+                </includes>
+                <!-- 指定不要过滤的文件 -->
+                <excludes>
+                    <exclude>**/*.xml</exclude>
+                </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <!-- include的文件不需要变量替换 -->
+                <filtering>false</filtering>
+                <includes>
+                    <include>**/*.xml</include>
+                </includes>
+            </resource>
+        </resources>
+    </build>
+~~~
+
+然后在resources下面的properties文件中, 可以使用`${xxx}`或者`@xxx@`来获取maven中的变量
+
+注意: 在yml中不能使用`@xxx@`的形式
+
+## repository标签和mirror标签
+
+**原始的maven仓库**
+
+所有的项目都自带一个仓库, 他定义在`pom-4.0.0.xml`中,这个就是所有Maven POM的父POM，所有Maven项目继承该配置
+
+~~~xml
+    <repository>
+      <id>central</id>
+      <name>Central Repository</name>
+      <url>https://repo.maven.apache.org/maven2</url>
+      <layout>default</layout>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
+    </repository>
+  </repositories>
+~~~
+
+
+
+**仓库的分类**
+
+仓库一般分为release库和snapshot库,release库存放正式版本,snapshot库存放快照版本.两者的区别:
+
+- 从远程仓库拉取的release版本依赖,如果远程仓库的该依赖版本升级,并且依赖的名称没有更改,那么本地项目的依赖就无法更新,比如Junit-4.10.jar,如果远程仓库版本升级,如果还采用Junit-4.10.jar名称,那么本地项目的依赖就无法更新,只有升级为Junit-4.11.jar,才会更新.
+- snapshot版本依赖每次都会去远程仓库中检查该依赖是否更新,即使名称一样也会去检查,如果有更新则下载到本地仓库.推荐禁止从公共仓库下载snapshot构件，因为这些构件不稳定且不受控制，避免使用
+
+~~~xml
+<repositories>
+  <repository>
+    <id>aliyun-releases</id>
+    <name>阿里云仓库(name可以随便起)</name>
+    <url>https://maven.aliyun.com/repository/public</url>
+    <releases>
+      <!-- 默认为true, 表示是否需要重这个仓库下载稳定版本的jar包 -->
+      <enabled>true</enabled>
+    </releases>
+    <snapshots>
+      <!-- 默认为true, 表示是否需要重这个仓库下载快照版本的jar包 -->
+      <enabled>false</enabled>
+    </snapshots>
+  </repository>
+</repositories>
+~~~
+
+
+
+
+
+**pom.xml中配置多个远程仓库**
+
+项目所需的依赖,可能不在中央仓库中,可能只存在于某个特定的公共仓库,这时就需要配置多个远程仓库了.比如:
+
+```xml
+ 	<repository>
+ 		<id>aliyun</id>
+ 		<name>aliyun Repository</name>
+ 		<url>http://maven.aliyun.com/nexus/content/groups/public</url>
+ 		<snapshots>
+ 			<enabled>false</enabled>
+ 		</snapshots>
+ 	</repository>
+ 	<repository>
+ 		<id>jeecg</id>
+ 		<name>jeecg Repository</name>
+ 		<url>http://maven.jeecg.org/nexus/content/repositories/jeecg</url>
+ 		<snapshots>
+ 			<enabled>false</enabled>
+ 		</snapshots>
+ 	</repository>
+ </repositories>
+```
+
+
+
+**仓库的优先级**
+
+仓库优先级为：本地仓库(localRepositories) > profile中配置的repositories仓库 > pom中配置的repository仓库 > settings.xml中配置的mirrors
+
+
+
+**通过mirror配置**
+
+如果仓库X可以提供仓库Y所有的内容，那么我们就可以认为X是Y的一个镜像，通俗点说，可以从Y获取的构件都可以从他的镜像中进行获取。可以采用镜像的方式配置远程仓库，镜像在settings.xml中进行配置，在`setting.xml`中的`<mirrors>`标签下加入如下子标签配置便配置了一个maven镜像。
+
+```xml
+<mirror>
+  <id>alimaven</id>
+  <name>aliyun maven</name>
+  <!--mirrorOf的配置很重要后面会详细说明-->
+  <mirrorOf>central</mirrorOf>
+  <url>http://maven.aliyun.com/nexus/content/groups/public/</url>
+</mirror>
+```
+
+添加如上配置后，maven会读取setting.xml中配置的mirror作为jar包的下载地址，我们以在项目中下载fastjson为例来看一下效果。
+
+![img](img/maven/f73ea03da144ba33991b825a61ac8a98.png)
+
+![img](img/maven/ca12b266eb08bb35261cb77d8dc8b7d8.png)
+
+可以看到，配置了上面的mirror后，maven是从aliyun仓库下载的jar包，不配置的时候，默认从apache的maven中央仓库下载的jar包。
+
+上面提到，`<mirrorOf></mirrorOf>`的设置很重要，比如上面我设置的mirrorOf为`<mirrorOf>central</mirrorOf>`，如果`<mirrorOf></mirrorOf>`我随便设置一个参数，如`<mirrorOf>abc</mirrorOf>`，这时候我们配置的仓库就不起作用了，**这是因为maven默认内置了如下一个仓库，这个默认仓库的id为central，**当我们把mirrorOf设置为`<mirrorOf>central</mirrorOf>`时，maven就会查找有没有id为central的仓库，然后把id为central的仓库地址换成我们`<mirror>`标签配置的那个url，这样我们配置的mirror才会起作用。**当然我们也可以把mirrorOf设置为`<mirrorOf>\*</mirrorOf>`，表示所有仓库都使用我们配置的这个mirror作为jar包下载地址。**
+
+~~~xml
+<repositories>
+  <repository>
+   <id>central</id>
+   <name>Central Repository</name>
+   <url>https://repo.maven.apache.org/maven2</url>
+   <layout>default</layout>
+   <snapshots>
+    <enabled>false</enabled>
+   </snapshots>
+  </repository>
+</repositories>
+~~~
+
+
+
+**通过repositories配置**
+
+通过setting.xml方式配置会对所有maven项目生效，如果只想在本项目中配置一个maven仓库，可以通过在pom.xml中配置`<repositories>`标签来实现。在自己的maven项目的pom.xml中添加如下配置，就配置好了一个仓库。这时候，maven会优先采用这个配置，而不会去读setting.xml中的配置了。这样配置好后，maven就会自动从aliyun下载jar包了。
+
+~~~xml
+<repositories>
+  <repository>
+    <id>aliyun-releases</id>
+    <name>阿里云仓库(name可以随便起)</name>
+    <url>https://maven.aliyun.com/repository/public</url>
+  </repository>
+</repositories>
+~~~
+
+
+
+我们知道，repositories标签下可以配置多个repository，如果我们配置了多个repository，maven会用哪个呢，答案是按出现顺序使用，如果第1个可用，就用第一个，如果不可用，就依次往下找，下面的2张图片可以说明这个问题。
+
+![img](img/maven/d8b2cd520f68fe025c69c469913aedee.png)
+
+![img](img/maven/6a6a40febbfdcbd8b4b6c9866d96a3d0.png)
+
+上面配置<repository>时<id>似乎也没什么用，确实是，如果你只是在pom.xml中配置个仓库，这个id是没什么用的，可以随便写，其实这个id是配合上面讲的mirror一块使用的，还记得mirrorOf吗，我们配置mirrorOf为<mirrorOf>central</mirrorOf>是，mirror中的url就是central仓库的url给覆盖了，所以这里的<repository>标签下的id是给mirrorOf用的。
+
+可以看下面一个例子，本来我们的abc-releases这个仓库是不可用的，因为根本就没有https://abc.def.com/repository/public/这个仓库，但是我们通过mirror配置，改变了id为abc-releases这个仓库的url，从而使用maven也可以从id为abc-releases这个仓库下载jar包了。当然这样配置也没只啥意义，只是为了方便理解repository和mirror之间的关系。
+
+![img](img/maven/47ceaf2e8e80f505cc206ae805a42c32.png)
+
+
+
+## pluginManagement标签
+
+pluginManagement主要有两个作用
+
+1. 用来管理当前模块和子模块的插件版本
+2. 用来管理当前模块和子模块的goals
+
+假如我们的父模块有如下的pom.xml
+
+~~~xml
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <!-- 
+                        这里有两个作用
+                        1. 子模块只要使用了maven-dependency-plugin, 那么不用写version和groupid, 会指定使用当前的version和groupid
+                        2. 子模块的maven-dependency-plugin会自动继承这里的execution和configuration
+                     -->
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>3.8.1</version>
+                    <executions>
+                        <execution>
+                            <id>print dependencies</id>
+                            <phase>compile</phase>
+                            <goals>
+                                <goal>tree</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+~~~
+
+假设我们的子模块如下
+
+~~~xml
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <version>3.4.4</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <!-- 继承父pom的groupid, version, execution, configuration-->
+                <artifactId>maven-dependency-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+~~~
+
+此时我们如果执行子模块的`compile`命令, 会自动执行tree这个goal, 因为他会从父模块中继承
+
+
+
+
+
+## Maven profile
+
+在maven中, 你可以通过如下方式来指定多个profile
+
+~~~xml
+    <profiles>
+        <profile>
+            <id>dev</id>
+        </profile>
+        <profile>
+            <id>test</id>
+        </profile>
+        <profile>
+            <id>docker</id>
+        </profile>
+        <profile>
+            <id>prod</id>
+        </profile>
+    </profiles>
+~~~
+
+### 激活profile
+
+对于一个profile, 有几种默认激活他的方式
+
+1. 手动激活
+
+   通过命令`mvn -P  dev, !prod`来指定启用dev配置文件, 并关闭prod配置文件(prod可能在默认情况下会激活)
+
+2. 默认激活
+
+   ~~~xml
+           <profile>
+               <id>mac</id>
+               <activation>
+                   <!-- 自动激活, 默认为false -->
+                   <activeByDefault>true</activeByDefault>
+               </activation>
+           </profile>
+   ~~~
+
+3. 在执行mvn命令的时候, 通过判断属性的值和有无来激活
+
+   要设置属性的话, 可以通过`mvn -Dxxx=bbb`来设置
+
+   ~~~xml
+   <profile>
+     <id>mac</id>
+     <activation>
+       <property>
+         <!-- 如果存在特定的property, 并且值也是一样的, 那么自动激活-->
+         <name>xxx</name>
+         <value>bbb</value>
+       </property>
+     </activation>
+   </profile>
+   <profile>
+     <id>mac</id>
+     <activation>
+       <property>
+         <!-- 如果存在特定的property, 但是值与bbb不一样, 那么自动激活-->
+         <name>xxx</name>
+         <value>!bbb</value>
+       </property>
+     </activation>
+   </profile>
+   <profile>
+     <id>mac1</id>
+     <activation>
+       <property>
+   	  <!-- 当不存在xxx属性的时候, 该配置激活 --> 
+         <name>!xxx</name>
+       </property>
+     </activation>
+   </profile>
+   <profile>
+     <id>mac2</id>
+     <activation>
+       <property>
+   	  <!-- 只要存在xxx属性的时候, 该配置激活 --> 
+         <name>xxx</name>
+       </property>
+     </activation>
+   </profile>
+   ~~~
+
+4. 特定的jdk版本
+
+   这里的jdk版本是指执行`mvn`命令的时候使用的jdk的版本, 而**不是** `pom.xml` 里 `maven.compiler.target` 或 `maven.compiler.source` 指定的编译 JDK 版本。
+
+   ~~~xml
+   <profile>
+     <id>mac</id>
+     <activation>
+       <!-- 指定在特定的jdk版本时激活 -->
+       <!-- 还可以制定 !1.4 , 只在jdk为非1.4时才自动激活 -->
+       <!-- 还可以制定范围 [1.5, ) 在大于1.5的版本激活 -->
+       <jdk>1.8</jdk>
+     </activation>
+   </profile>
+   ~~~
+
+5. 在特定的操作系统上激活
+
+   ~~~xml
+   <profile>
+     <id>mac</id>
+     <activation>
+       <!-- 在特定的操作系统上激活 -->
+       <os>
+         <!-- family表示系统大类, arch表示架构, name表示系统的名称, version表示版本 -->
+         <family>mac</family>
+         <arch>x86_64</arch>
+         <name>mac os x</name>
+         <version>10.15.7</version>
+       </os>
+     </activation>
+   </profile>
+   ~~~
+
+下面还有一些需要注意的问题
+
+- 如果同时指定了jdk/os/file/property,   那么他们的关系是与的
+
+- jdk/os/file/property这些标签都只能指定**一个**, 不能指定多个
+
+- **注意: 以下代码, 如果设置了`-Dxxx=bbb`, 那么两个profile都会被同时激活, 并且如果设置了相同的property, 那么下面的会覆盖上面的**
+
+  ~~~xml
+  	<profile>
+          <activation>
+              <property>
+                  <!-- 在-Dxxx=bbb的时候激活 -->
+                  <name>xxx</name>
+                  <value>bbb</value>
+              </property>
+          </activation>
+      </profile>
+  	<profile>
+          <activation>
+              <property>
+                  <!-- 在具有xxx属性的时候激活 -->
+                  <name>xxx</name>
+              </property>
+          </activation>
+       </profile>
+  ~~~
+
+  
+
+### 不同的profile能够拥有的东西
+
+你可以在profile标签中, 指定当前profile生效的内容, 包括
+
+1. dependencies:  使用这个标签, 可以在激活profile的时候, 添加dependency, 或者让不同的依赖使用不同的version
+2. dependencyManagement: 使用这个标签可以管理不同的依赖
+3. repository: 使用这个标签可以有不同的仓库
+4. pluginRepositories: 使用这个标签可以有不同的插件仓库
+5. modules: 使用这个标签, 可以有不同的子模块
+6. properties: 使用这个标签, 可以激活不同的property
+7. build
+8. project
+
+~~~xml
+ <profile>
+            <id>dev</id>
+            <dependencies>
+                <!-- 指定不同的依赖, 或者同一个依赖, 使用不同的版本-->
+            </dependencies>
+            <properties>
+                <!-- 添加property, 或者同一个property使用不同的值-->
+                <flink.version>1.14</flink.version>
+                <scope>test</scope>
+            </properties>
+            <dependencyManagement>
+                <dependencies>
+                    <!-- 不同的依赖版本-->
+                </dependencies>
+            </dependencyManagement>
+            <repositories>
+                <repository>
+                    <!-- 不同的仓库 -->
+                </repository>
+            </repositories>
+            <pluginRepositories>
+                <pluginRepository>
+                    <!-- 不同的插件仓库 -->
+                </pluginRepository>
+            </pluginRepositories>
+            <modules>
+                <module>
+                    <!-- 能够包含不同的子模块 -->
+                </module>
+            </modules>
+            <build>
+                <!-- 不同的构建方式 -->
+                <plugins></plugins>
+                <pluginManagement></pluginManagement>
+                <finalName></finalName>
+                <directory></directory>
+                <resources></resources>
+                <testResources></testResources>
+                <filters></filters>
+            </build>
+            <project>
+                <!-- 这里面能写的东西很多, 看截图-->
+            </project>
+        </profile>
+~~~
+
+project标签能写的内容太多了, 看截图
+
+<img src="img/maven/image-20250607182740006.png" alt="image-20250607182740006" style="zoom:33%;" />

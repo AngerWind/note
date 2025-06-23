@@ -1702,9 +1702,13 @@ protected final boolean compareAndSetState(int expect, int update) {
 
 ## ReentrantLock
 
+
+
 ## ReentrantReadWriteLock
 
-锁降级
+
+
+
 
 ## StampedLock
 
@@ -3182,6 +3186,949 @@ while (iter.hasNext()) {
 >
 > - 数据库的 MVCC 都是弱一致性的表现 
 > - 并发高和一致性是矛盾的，需要权衡
+
+# Reference
+
+https://www.cnblogs.com/binlovetech/p/18245598
+
+### 1. Reference的概念
+
+#### 1.1 StrongReference
+
+大部分 Java 对象之间的关系都是强引用，只要对象与 GcRoot 之间有强引用关系的存在，那么JVM宁愿报OutOfMemory也不会回收他
+
+~~~java
+Object gcRoot = new Object();
+~~~
+
+#### 1.2 SoftReference
+
+如果一个对象只有一个软引用引用着他, 那么只有当内存不足的时候, 才会回收他
+
+后面我们通过 `SoftReference#get` 方法获取到的引用对象将会是 Null （Object 对象已被回收)。
+
+~~~java
+SoftReference gcRoot = new SoftReference<Object>(new Object());
+~~~
+
+![image](img/JUC/2907560-20240613111433306-1376591454.png)
+
+#### 1.3 WeakReference
+
+如果一个对象只有一个弱引用在引用着他, 那么只要发生了gc, 就会回收他
+
+后面我们通过 `WeakReference#get` 方法获取到的引用对象将会是 Null （Object 对象已被回收)。
+
+~~~java
+WeakReference gcRoot = new WeakReference<Object>(new Object());
+~~~
+
+![image](img/JUC/2907560-20240613111615691-941014088.png)
+
+#### 1.4 PhantomReference
+
+虚引用其实和 WeakReference 差不多，他们共同的特点都是一旦发生 GC，PhantomReference 和 WeakReference 所引用的对象都会被 GC 掉
+
+不同的是 PhantomReference 无法像其他引用类型一样能够通过 get 方法获取到被引用的对象。
+
+~~~java
+public class PhantomReference<T> extends Reference<T> {
+    public T get() {
+        return null;
+    }
+}
+~~~
+
+看上去这个 PhantomReference 好像是没啥用处，因为它既不能影响被引用对象的生命周期，也无法通过它来访问被引用对象。
+
+但是PhantomReference一个重要的功能就是, 我们可以在创建PhantomReference的时候指定一个ReferenceQueue, 这样当PhantomReference保存的值被gc之后, JVM会将PhantomReference放到这个ReferenceQueue中,  我们可以从ReferenceQueue中将PhantomReference取出来, 这样我们就知道对应的referent被gc了, 从而进行一些资源清理的动作, 类似对象的析构函数
+
+~~~java
+public class ReferenceTest {
+
+    public static class MustRelease extends PhantomReference<Object> {
+
+        public static final ReferenceQueue<Object> queue = new ReferenceQueue<>();
+
+        // Reference需要被gc root强引用才会生效, 否则Reference和保存的值会被直接gc掉
+        // 所有创建的MustRelease都放在这里, 组成一个双向链表, 进行强引用
+        private static MustRelease first = null;
+        private MustRelease next = null;
+        private MustRelease prev = null;
+
+        // 执行资源清理的动作
+        private final Runnable doRelease;
+
+        private MustRelease(Object referent, Runnable doRelease) {
+            // 所有referent被gc的MustRelease都会被放到这个队列中
+            super(referent, queue);
+            this.doRelease = doRelease;
+        }
+
+        public static MustRelease create(Object referent, Runnable doRelease){
+            return add(new MustRelease(referent, doRelease));
+        }
+
+        // 将创建的MustRelease头插法到链表中
+        private static synchronized MustRelease add(MustRelease m) {
+            if (first != null) {
+                m.next = first;
+                first.prev = m;
+            }
+            first = m;
+            return m;
+        }
+
+        // 从链表中移除MustRelease
+        private static synchronized boolean remove(MustRelease m) {
+            // 如果m已经被移除了
+            if (m.next == m)
+                return false;
+            // 如果移除的是头结点
+            if (first == m) {
+                if (m.next != null)
+                    first = m.next;
+                else
+                    first = m.prev;
+            }
+            // 移除的是中间节点
+            if (m.next != null)
+                m.next.prev = m.prev;
+            if (m.prev != null)
+                m.prev.next = m.next;
+            // 将m的next和prev都指向自己, 表示一个被删除了
+            m.next = m;
+            m.prev = m;
+            return true;
+        }
+
+        public void clean(){
+            // 从链表中移除this, 使得当前Reference对象可以被gc
+            if (!remove(this)) {
+                return;
+            }
+            try {
+                // 执行清理
+                doRelease.run();
+            } catch (Throwable e) {
+                e.printStackTrace();
+            }
+        }
+
+        static {
+            // 启动一个线程, 从queue中不停的获取MustRelease, 这些对象的referent已经被gc了
+            new Thread(() -> {
+                while (true) {
+                    try {
+                        // remove()会阻塞, 直到队列中有元素
+                        // remove(timeout)会堵塞, 直到有元素或者timeout时间到了
+                        // poll()不会堵塞, 如果没有元素就直接返回null
+                        MustRelease mustRelease = (MustRelease)queue.remove();
+
+                        mustRelease.doRelease.run(); // 执行资源清理的动作
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }).start();
+        }
+    }
+
+    public static void main(String[] args) {
+        MustRelease mustRelease = new MustRelease(new Object(), () -> {
+            System.out.println("do release");
+        });
+        System.gc(); // 回收object对象
+        System.out.println("end");
+    }
+}
+~~~
+
+需要注意的是, **不管软引用还是弱引用, 还是虚引用, 都必须被其他gcroot强引用, 否则Reference和他保存的值referent都是不可达的, 那么只要有gc的时候, Reference和他保存的值referent都会被回收掉, 起不到作用**
+
+
+
+### 2. Reference的原理
+
+在这里提出一个疑问? **PhantomReference保存的referent被gc后, 对应的PhantomReference会被放到对应的ReferenceQueue中,  那么他是怎么被放进去的?**
+
+要回答这个问题, 我们首先来看看Reference这个类的字段
+
+~~~java
+public abstract class Reference<T> {
+    private T referent; // 保存的值
+    volatile ReferenceQueue<? super T> queue; // 当referent被gc后, Reference需要放入的队列
+    volatile Reference next;
+    private transient Reference<T> discovered;
+}
+~~~
+
+当GC的时候, JVM如果发现了
+
+- 一个对象只能通过WeakReference, PhantomReference可达
+- 内存不足时只能通过SoftReference可达
+
+**那么就会将该对象gc, 并将对应的Reference使用头插法插入到叫做 `_reference_pending_list` 变量的链表中, 同时将对应Reference保存的值referent设置为null**
+
+`_reference_pending_list` 链表中的 Reference 对象通过 Reference 类中的 `discovered` 字段相互连接。
+
+```java
+public abstract class Reference<T> {
+     private transient Reference<?> discovered;
+}
+```
+
+![image-20241225235519227](img/JUC/image-20241225235519227.png)
+
+而在Reference中还有这样一段代码
+
+~~~java
+public abstract class Reference<T> {
+
+    static {
+        ThreadGroup tg = Thread.currentThread().getThreadGroup();
+        // 获取 system thread group
+        for (ThreadGroup tgn = tg;
+             tgn != null;
+             tg = tgn, tgn = tg.getParent());
+        // 创建 system thread : ReferenceHandler
+        Thread handler = new ReferenceHandler(tg, "Reference Handler");
+        // 设置 ReferenceHandler 线程的优先级为最高优先级
+        handler.setPriority(Thread.MAX_PRIORITY);
+        handler.setDaemon(true);
+        handler.start();  
+    }
+}
+~~~
+
+可以看到, Reference 类被加载的时候会创建一个ReferenceHandler守护线程，同时拥有最高的优先级, 这样可以尽最大可能保证 ReferenceHandler 线程被及时的调度到
+
+而这个线程的作用就是执行processPendingReferences方法, 从`_reference_pending_list`中不停的取元素, 然后处理他们
+
+~~~java
+public abstract class Reference<T> {
+	private static class ReferenceHandler extends Thread {
+        public void run() {
+            while (true) {
+                processPendingReferences();
+            }
+        }
+    }
+    // 获取JVM内部的_reference_pending_list的值, 即获取链表的第一个元素并清除他
+    private static native Reference<Object> getAndClearReferencePendingList();
+	// 判断_reference_pending_list是否有值
+    private static native boolean hasReferencePendingList();
+	// 堵塞直到_reference_pending_list有值
+    private static native void waitForReferencePendingList();
+    // 当前是否在处理Reference
+    private static boolean processPendingActive = false;
+    
+    private static void processPendingReferences() {
+        // ReferenceHandler 线程等待 JVM 向 _reference_pending_list 填充 Reference 对象
+        // GC 之后，如果有 Reference 对象需要处理，JVM 则将 ReferenceHandler 线程 唤醒
+        waitForReferencePendingList();
+        Reference<Object> pendingList;
+        synchronized (processPendingLock) {
+            // 获取 _reference_pending_list，随后将 _reference_pending_list 置为 null
+            // 方便 JVM 在下一轮 GC 处理其他 Reference 对象
+            pendingList = getAndClearReferencePendingList();
+            //  true 表示 ReferenceHandler 线程正在处理 pendingList
+            processPendingActive = true;
+        }
+  
+        // 将 pendingList 中的 Reference 对象挨个从链表中摘下处理
+        while (pendingList != null) {
+            Reference<Object> ref = pendingList;
+            // 获取下一个要处理的元素
+            pendingList = ref.discovered;
+            // 断开两个Reference之间的连接
+            ref.discovered = null;
+
+            if (ref instanceof Cleaner) {
+                // 如果ref是Cleaner子类型, 那么调用其clean方法清除资源
+                ((Cleaner)ref).clean();
+                // 唤醒其他线程
+                synchronized (processPendingLock) {
+                    processPendingLock.notifyAll();
+                }
+            } else {
+                // 如果对应的ref不是Cleaner值类型, 并且指定了ReferenceQueue
+                // 就将Reference入队列
+                ReferenceQueue<? super Object> q = ref.queue;
+                if (q != ReferenceQueue.NULL) q.enqueue(ref);
+            }
+        }
+        // 处理完了链表中的所有元素, 将是否正在处理Reference设置为false
+        // 并唤醒其他线程
+        synchronized (processPendingLock) {
+            processPendingActive = false;
+            processPendingLock.notifyAll();
+        }
+    }
+}    
+~~~
+
+![image](img/JUC/2907560-20240613112136137-800684891.png)
+
+说大白话就是
+
+- JVM会将referent被gc的Reference放到内部的_reference_pending_list链表中
+- ReferenceHandler形成会从中不停的取元素, 如果是Cleaner就执行clean方法, 否则就放入到ReferenceQueueu中
+
+### 3. Reference的应用
+
+#### DirectByteBuffer
+
+在java中, 我们可以通过如下方式来创建堆内存和直接内存的ByteBuffer
+
+~~~java
+// 堆内存的ByteBuffer, 由gc自动回收
+ByteBuffer buffer = ByteBuffer.allocate(1024 * 1024); 
+// 直接内存的ByteBuffer, 真实类似的DirectByteBuffer
+ByteBuffer buffer1 = ByteBuffer.allocateDirect(1024 * 1024);
+~~~
+
+现在我们提出问题, 
+
+- 当DirectByteBuffer被gc回收的时候, 那么他底层使用的字节内存是怎么被回收的
+
+- DirectByteBuffer又是怎么限制直接内存的使用大小的
+
+
+
+##### DirectByteBuffer内存的释放
+
+要回答这个两个问题, 我们首先要看看DirectByteBuffer的创建过程
+
+~~~java
+class DirectByteBuffer extends MappedByteBuffer implements DirectBuffer {
+    private final Cleaner cleaner;
+
+    DirectByteBuffer(int cap) { 
+
+        ...... 省略 .....   
+        // 检查堆外内存整体用量是否超过了 -XX:MaxDirectMemorySize
+        // 如果超过则尝试等待一下 JVM 回收堆外内存，回收之后还不够的话则抛出 OutOfMemoryError
+        Bits.reserveMemory(size, cap);   
+        // 底层调用 malloc 申请虚拟内存
+        base = UNSAFE.allocateMemory(size);
+
+        ...... 省略 .....   
+
+        cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
+    }
+}
+~~~
+
+首先我们先来看看后面的Cleaner设计
+
+~~~java
+public class Cleaner extends PhantomReference<Object>{
+
+    private static final ReferenceQueue<Object> dummyQueue = new ReferenceQueue<>();
+
+    private static Cleaner first = null;
+
+    private Cleaner next = null, prev = null;
+    
+    private static synchronized Cleaner add(Cleaner cl) {
+		// ...
+    }
+
+    private static synchronized boolean remove(Cleaner cl) {
+		// ...
+    }
+        private final Runnable thunk;
+
+    private Cleaner(Object referent, Runnable thunk) {
+        super(referent, dummyQueue);
+        this.thunk = thunk;
+    }
+
+    public static Cleaner create(Object ob, Runnable thunk) {
+        return add(new Cleaner(ob, thunk));
+    }
+
+    public void clean() {
+        if (!remove(this))
+            return;
+        try {
+            thunk.run();
+        } catch (final Throwable x) {
+            // ...
+        }
+    }
+~~~
+
+首先我们可以看到, Cleaner继承自PhantomReference, 并且每当创建一个DirectByteBuffer的时候, 都会将this传入到Reference的referent中
+
+同时在创建的时候,  还会将创建的Cleaner添加到一个链表中, 这个链表强引用着所有的Cleaner, 这样就保证了PhantomReference不会失效()
+
+~~~java
+    // 静态的头结点, 强引用所有Cleaner实例
+	private static Cleaner first = null;
+	// 双向节点
+    private Cleaner next = null, prev = null;
+	// 添加实例到头结点, 采用头插法
+    private static synchronized Cleaner add(Cleaner cl) {}
+	// 移除节点
+    private static synchronized boolean remove(Cleaner cl) {}
+~~~
+
+![image](img/JUC/2907560-20240613112207034-1295628973.png)
+
+因为Cleaner继承自PhantomReference, 这样当DirectByteBuffer只能通过Cleaner可达的时候, JVM就会将DirectByteBuffer进行回收, 并将Cleaner的referent设置为null, 同时将对应的Cleaner放到JVM内部的` _reference_pending_list`链表中
+
+![image-20241226171500908](img/JUC/image-20241226171500908.png)
+
+同时在Reference类中还定义了一个ReferenceHandler线程,  他会从 `_reference_pending_list` 链表中不停的获取第一个元素, 然后判断他是不是Cleaner子类, 如果是的话就执行对应的clean方法, 如果不是的话, 那么就将其放入到对应的ReferenceQueue中
+
+所以此时ReferenceHandler就会仔细对应Cleaner的clean方法
+
+~~~java
+    private static void processPendingReferences() {
+        // 堵塞直到_reference_pending_list有值
+        waitForReferencePendingList();
+        Reference<Object> pendingList;
+        synchronized (processPendingLock) {
+            // 从JVM的_reference_pending_list链表中获取第一个元素并清除
+            pendingList = getAndClearReferencePendingList();
+            // 表示当前正在处理Reference
+            processPendingActive = true;
+        }
+        while (pendingList != null) {
+            Reference<Object> ref = pendingList;
+            // 获取下一个要处理的元素
+            pendingList = ref.discovered;
+            // 断开两个Reference之间的连接
+            ref.discovered = null;
+
+            if (ref instanceof Cleaner) {
+                // 如果ref是Cleaner子类型, 那么调用其clean方法清除资源
+                ((Cleaner)ref).clean();
+            } else {
+                // 如果对应的ref不是Cleaner值类型, 并且指定了ReferenceQueue
+                // 就将Reference入队列
+                ReferenceQueue<? super Object> q = ref.queue;
+                if (q != ReferenceQueue.NULL) q.enqueue(ref);
+            }
+        }
+
+    }
+~~~
+
+而在Cleaner的clean方法中, 就是清理对应的直接内存
+
+~~~java
+    public void clean() {
+        if (!remove(this))
+            return;
+        try {
+            thunk.run();
+        } catch (final Throwable x) {
+            // ...
+        }
+    }
+    private static class Deallocator implements Runnable {
+        private long address;
+        public void run() {
+            // 是否直接内存
+            UNSAFE.freeMemory(address);
+            address = 0;
+            Bits.unreserveMemory(size, capacity);
+        }
+    }
+~~~
+
+##### DirectByteBuffer直接内存限制
+
+当我们使用 `ByteBuffer#allocateDirect` 来向 JVM 申请 direct memory 的时候，direct memory 的容量是受到 `-XX:MaxDirectMemorySize` 参数限制的，在 ZGC 中 `-XX:MaxDirectMemorySize` 默认为堆的最大容量（`-Xmx`）。
+
+```java
+class DirectByteBuffer extends MappedByteBuffer implements DirectBuffer
+{
+    private final Cleaner cleaner;
+
+    DirectByteBuffer(int cap) {                   // package-private
+
+        ...... 省略 .....   
+        // 检查堆外内存整体用量是否超过了 -XX:MaxDirectMemorySize
+        // 如果超过则尝试等待一下 JVM 回收堆外内存，回收之后还不够的话则抛出 OutOfMemoryError
+        Bits.reserveMemory(size, cap);   
+        // 底层调用 malloc 申请虚拟内存
+        base = UNSAFE.allocateMemory(size);
+
+        ...... 省略 .....   
+
+        cleaner = Cleaner.create(this, new Deallocator(base, size, cap));
+    }
+}
+```
+
+所以在创建 DirectByteBuffer 之前，需要通过 `Bits.reserveMemory` 来检查一下当前 direct memory 的使用量是否已经超过了 `-XX:MaxDirectMemorySize` 的限制，如果超过了就需要进行一些补救的措施，尝试去回收一部分 direct memory 用以满足本次申请的容量需求。
+
+检查当前 direct memory 使用量是否超过限制的逻辑在 `tryReserveMemory` 函数中完成：
+
+```java
+    // -XX:MaxDirectMemorySize 最大允许使用的 direct memory 容量
+    private static volatile long MAX_MEMORY = VM.maxDirectMemory();
+    // 向 OS 实际申请的内存，考虑到内存对齐的情况，实际向 OS 申请的内存会比指定的 cap 要多
+    private static final AtomicLong RESERVED_MEMORY = new AtomicLong();
+    // 已经使用的 direct memory 总量 
+    private static final AtomicLong TOTAL_CAPACITY = new AtomicLong();
+
+    private static boolean tryReserveMemory(long size, long cap) {
+
+        long totalCap;
+        while (cap <= MAX_MEMORY - (totalCap = TOTAL_CAPACITY.get())) {
+            if (TOTAL_CAPACITY.compareAndSet(totalCap, totalCap + cap)) {
+                RESERVED_MEMORY.addAndGet(size);
+                COUNT.incrementAndGet();
+                return true;
+            }
+        }
+        // 已经超过了最大 direct memory 容量的限制则返回 false
+        return false;
+    }
+```
+
+如果 tryReserveMemory 返回 `false` 表示当前系统中 direct memory 的使用量已经超过了 `-XX:MaxDirectMemorySize` 的限制，随后就会调用 `waitForReferenceProcessing` 检查一下当前系统中是否还有待处理的 Reference 对象（Cleaner）没有处理。
+
+如果有的话，就让当前 Java 业务线程在 `processPendingLock` 上等待一下，目的是等待 ReferenceHandler 线程去调用 Cleaner 释放 direct memory。等到 ReferenceHandler 线程处理完这些 Cleaner 就会将当前业务线程从 `processPendingLock` 上唤醒。
+
+随后 waitForReferenceProcessing 方法返回 `true` ，表示 _reference_pending_list 中的的这些 Cleaner 已经被 ReferenceHandler 线程处理完了，又释放了一些 direct memory。
+
+如果当前系统中没有待处理的 Cleaner , 那么就返回 false ，说明系统中已经没有任何可回收的 direct memory 了。
+
+```java
+public abstract class Reference<T> {
+
+    private static boolean waitForReferenceProcessing()
+        throws InterruptedException
+    {
+        synchronized (processPendingLock) {
+            // processPendingActive = true 表示 ReferenceHandler 线程正在处理 PendingList 中的 Cleaner，那么就等待 ReferenceHandler 处理完
+            // hasReferencePendingList 检查 JVM 中的 _reference_pending_list 是否包含待处理的 Reference 对象
+            // 如果还有待处理的 Reference，那么也等待一下
+            if (processPendingActive || hasReferencePendingList()) {
+                // 等待 ReferenceHandler 线程处理 Cleaner 释放 direct memory
+                processPendingLock.wait();
+                return true;
+            } else {
+                // 当前系统中没有待处理的 Reference，直接返回 false
+                return false;
+            }
+        }
+    }
+}
+```
+
+当 Java 业务线程从 waitForReferenceProcessing 上唤醒之后，如果 ReferenceHandler 线程已经回收了一些 direct memory（返回 true），那么就尝试再次调用 `tryReserveMemory` 检查一下当前系统中剩余的 direct memory 容量是否满足本次申请的需要。
+
+如果还是不满足，那么就循环调用 waitForReferenceProcessing 持续查看当前系统是否有可回收的 direct memory，如果确实没有任何 direct memory 可以被回收了（返回 false）那么就退出循环。
+
+退出循环之后，那么就说明当前系统中已经没有可回收的 direct memory 了，这种情况下 JDK 就会调用 `System.gc()` 来立即触发一次 `Full GC`，尝试让 JVM 在去回收一些没有任何强引用的 directByteBuffer。
+
+如果当前系统中确实存在一些没有任何强引用的 directByteBuffer，那么本轮 GC 就可以把它们回收掉，于此同时，与这些 directByteBuffer 关联的 Cleaner 也会被 JVM 放入 _reference_pending_list 中。
+
+那么 JDK 就会再次调用 waitForReferenceProcessing 去等待 ReferenceHandler 线程处理这些 Cleaner 释放 direct memory。等到 ReferenceHandler 线程处理完之后，再去调用 `tryReserveMemory` 查看当前 direct memory 的容量是否满足本次申请的需要。
+
+如果还是不满足，但本次 GC 回收的 Cleaner 已经全部被执行完了，系统中已经没有可回收的 direct memory 了，那该怎么办呢 ？
+
+此时 JDK 再去调用 waitForReferenceProcessing 就会返回 false，最后的一个补救措施就是让当前 Java 业务线程在一个 `while (true)` 循环中睡眠 —— `Thread.sleep(sleepTime)`, 最多睡眠 9 次，每次睡眠时间按照 `1, 2, 4, 8, 16, 32, 64, 128, 256 ms` 依次递增，目的是等待其他线程触发 GC，尝试看看后面几次的 GC 是否能回收到一些 direct memory。
+
+> 这里不让当前线程继续触发 System.gc 的目的是，我们刚刚已经触发一轮 GC 了，仍然没有回收到足够的 direct memory，那如果再次立即触发 GC ,收效依然不会很大，所以这里选择等待其他线程去触发。
+
+如果在睡眠了 9 次之后，也就是尝试等待 `511 ms` 之后，依然没有足够的 direct memory ，那么就抛出 OOM 异常。
+
+JDK 这里选择连续睡眠的应对场景还有另外一种，如果 `System.gc()` 触发的是一次 `Concurrent Full GC`，那么 Java 业务线程是可以与 GC 线程一起并发执行的。
+
+此时 JDK 去调用 waitForReferenceProcessing 有很大可能会返回 false，因为 GC 线程可能还没有遍历标记到 Cleaner 对象，自然 JVM 中的 _reference_pending_list 啥也没有。
+
+连续睡眠应对的就是这种并发执行的情况，每次睡眠时间由短逐渐变长，尽可能及时的感知到 _reference_pending_list 中的变化。
+
+以上就是 Bits.reserveMemory 函数的核心逻辑，明白这些之后，在看源码的实现就很清晰了。
+
+![image](img/JUC/2907560-20240613112338283-128297830.png)
+
+```java
+    static void reserveMemory(long size, long cap) {
+         // 首先检查一下 direct memory 的使用量是否已经超过了 -XX:MaxDirectMemorySize 的限制
+        if (tryReserveMemory(size, cap)) {
+            return;
+        }
+
+        final JavaLangRefAccess jlra = SharedSecrets.getJavaLangRefAccess();
+        boolean interrupted = false;
+        try {      
+            boolean refprocActive;
+            do {
+                try {
+                    // refprocActive = true 表示 ReferenceHandler 线程又释放了一些 direct memory
+                    // refprocActive = false 表示当前系统中没有待处理的 Cleaner，系统中已经没有任何可回收的 direct memory 了
+                    refprocActive = jlra.waitForReferenceProcessing();
+                } catch (InterruptedException e) {
+                    // Defer interrupts and keep trying.
+                    interrupted = true;
+                    refprocActive = true;
+                }
+                // 再次检查 direct memory 的容量是否能够满足本次分配请求
+                if (tryReserveMemory(size, cap)) {
+                    return;
+                }
+            } while (refprocActive);
+
+            // 此时系统中已经没有任何可回收的 direct memory 了
+            // 只能触发 gc，尝试让 JVM 再去回收一些没有任何强引用的 directByteBuffer
+            System.gc();
+             
+            // 下面开始睡眠等待 ReferenceHandler 线程调用 Cleaner 释放 direct memory
+            // 初始睡眠时间, 单位 ms
+            long sleepTime = 1;
+            // 睡眠次数，最多睡眠 9 次
+            int sleeps = 0;
+            while (true) {
+                if (tryReserveMemory(size, cap)) {
+                    return;
+                }
+                // MAX_SLEEPS = 9
+                if (sleeps >= MAX_SLEEPS) {
+                    break;
+                }
+                try {
+                    // 等待 ReferenceHandler 线程处理 Cleaner 释放 direct memory （返回 true）
+                    // 当前系统中没有任何可回收的 direct memory，则 Thread.sleep 睡眠 (返回 false)
+                    if (!jlra.waitForReferenceProcessing()) {
+                        // 睡眠等待其他线程触发 gc，尝试看看后面几轮 gc 是否能够回收到一点 direct memory
+                        // 最多睡眠 9 次，每次睡眠时间按照 1, 2, 4, 8, 16, 32, 64, 128, 256 ms 依次递增
+                        Thread.sleep(sleepTime);
+                        sleepTime <<= 1;
+                        sleeps++;
+                    }
+                } catch (InterruptedException e) {
+                    interrupted = true;
+                }
+            }
+
+            // 在尝试回收 direct memory 511 ms 后触发 OOM
+            throw new OutOfMemoryError
+                ("Cannot reserve "
+                 + size + " bytes of direct buffer memory (allocated: "
+                 + RESERVED_MEMORY.get() + ", limit: " + MAX_MEMORY +")");
+
+        } finally {
+        }
+    }
+```
+
+从上面 Bits.reserveMemory 的源码实现中我们可以体会到，监控当前 JVM 进程 direct memory 的使用量是非常重要的，如果 direct memory 的使用量达到了 `-XX:MaxDirectMemorySize` 的限制，那么此时我们再去通过 `ByteBuffer#allocateDirect`来向 JVM 申请 direct memory 的话，就会引起很大的阻塞延迟。
+
+首先当前线程会阻塞在 processPendingLock 上去等待 ReferenceHandler 线程去处理 Cleaner 释放 direct memory。
+
+如果当前系统中没有可回收的 direct memory，当前线程又会触发一次 Full GC，如果 Full GC 之后也没有回收足够的 direct memory 的话，当前线程还会去睡眠等待其他线程触发 GC，极端的情况下需要睡眠 9 次，也就是说在 `511 ms` 之后才会去触发 OOM。所以监控系统中 direct memory 的用量是非常非常重要的。
+
+
+
+#### WeakHashMap
+
+WeakHashMap的使用案例如下
+
+~~~java
+    public static void main(String[] args) {
+        WeakHashMap<String, String> map = new WeakHashMap<>();
+        String key = "key";
+        map.put(key, "hello");
+        String value = map.get(key);
+        System.out.println(value); // hello
+
+        key = null;
+        System.gc();
+        value = map.get(key);
+        System.out.println(value); // null
+    }
+~~~
+
+**下面我们就来讲讲WeakHashMap的原理**
+
+首先 WeakHashMap 的内部包含了一个 ReferenceQueue 的实例 —— queue，WeakHashMap 的底层数据结构是一个哈希表 —— table，table 中的元素类型为 Entry 结构。
+
+```java
+public class WeakHashMap<K,V> extends AbstractMap<K,V>  implements Map<K,V> {
+    Entry<K,V>[] table;
+    private final ReferenceQueue<Object> queue = new ReferenceQueue<>();
+}
+```
+
+Entry 是一个 WeakReference，弱引用了 key，强引用了 value，在构造 Entry 实例的时候需要传入一个 ReferenceQueue，当 key 被 GC 回收的时候，这个 Entry 实例就会被 ReferenceHandler 线程从 JVM 中的 `_reference_pending_list` 转移到这里的 ReferenceQueue 中。
+
+```java
+    private static class Entry<K,V> extends WeakReference<Object> implements Map.Entry<K,V> {
+        V value;
+        final int hash;
+        Entry<K,V> next;
+
+        Entry(Object key, V value, ReferenceQueue<Object> queue, int hash, Entry<K,V> next) {
+            super(key, queue);
+            this.value = value;
+            this.hash  = hash;
+            this.next  = next;
+        }
+}
+```
+
+从 WeakHashMap 的 put 方法实现中我们可以看到，构建 Entry 实例的时候传入的这个 ReferenceQueue 正是 WeakHashMap 内部的 queue 实例。
+
+```java
+    public V put(K key, V value) {
+        Object k = maskNull(key);
+        int h = hash(k);
+        Entry<K,V>[] tab = getTable();
+        int i = indexFor(h, tab.length);
+
+        ...... 省略 ......
+
+        Entry<K,V> e = tab[i];
+        // 创建 Entry 的时候会传入 ReferenceQueue
+        tab[i] = new Entry<>(k, value, queue, h, e);
+
+        return null;
+    }
+```
+
+![image](img/JUC/2907560-20240613112247818-1457639853.png)
+
+**当 Entry 对象中的 key 在 WeakHashMap 之外存在强引用的时候，那么 key 是不会被 GC 回收的。当这个强引用被断开之后，发生 GC 的时候，这个 key 就会被 GC 回收掉，以此同时，与 key 关联的这个 Entry 对象（WeakReference）就会被 JVM 放入 _reference_pending_list 中。**
+
+**随后 ReferenceHandler 线程会将 Entry 对象从 _reference_pending_list 中转移到 WeakHashMap 内部的这个 ReferenceQueue 中。**
+
+![image](img/JUC/2907560-20240613112307455-1312902779.png)
+
+从这里我们也可以看到，ReferenceQueue 中保存的正是 WeakHashMap 所有已经被 GC 回收的 key 对应的 Entry 对象。key 都已经被回收了，那么这个 Entry 对象以及其中的 value 也没什么用了。
+
+**调用 WeakHashMap 的任意方法都会触发对 ReferenceQueue 的检测，遍历 ReferenceQueue，将队列中所有的 Entry 对象以及其中的 value 清除掉，当下一次 GC 的时候，这些 Entry 对象以及 value 就可以被回收了，防止内存泄露的发生。**
+
+```java
+    private void expungeStaleEntries() {
+        for (Object x; (x = queue.poll()) != null; ) {
+            synchronized (queue) {
+
+             ... 将 ReferenceQueue 中的 Entry 全部从 WeakHashMap 中删除 ...
+
+            }
+        }
+    }
+```
+
+
+
+#### ThreadLocal
+
+ThreadLocal 顾名思义是线程本地变量，当我们在程序中定义了一个 ThreadLocal 对象之后，那么在多线程环境中，每个线程都会拥有一个独立的 ThreadLocal 对象副本，这就使得多线程可以独立的操作这个 ThreadLocal 变量不需要加锁。
+
+为了完成线程本地变量的语义，JDK 在 Thread 中添加了一个 ThreadLocalMap 对象，用来持有属于自己本地的 ThreadLocal 变量副本。
+
+```java
+public class Thread implements Runnable {
+        ThreadLocal.ThreadLocalMap threadLocals = null;
+}
+```
+
+由于我们通常在程序中会定义多个 ThreadLocal 变量，所以 ThreadLocalMap 被设计成了一个哈希表的结构 —— `Entry[] table`，多个 ThreadLocal 变量的本地副本就保存在这个 table 中。
+
+```java
+static class ThreadLocalMap {
+        private Entry[] table;
+}
+```
+
+table 中的每一个元素是一个 Entry 结构，Entry 被设计成了一个 WeakReference，由 Entry 来弱引用持有 ThreadLocal 对象（作为 key）, 强引用持有 value 。这样一来，ThreadLocal 对象和它所对应的 value 就被 Entry 关联起来了。
+
+```java
+static class Entry extends WeakReference<ThreadLocal<?>> { 
+        Object value;
+        Entry(ThreadLocal<?> k, Object v) {       
+                // 弱引用     
+                super(k);
+                // 强引用
+                value = v;
+        }
+}
+```
+
+当某一个线程开始调用 ThreadLocal 对象的 get 方法时：
+
+```java
+        ThreadLocal<Object> gcRoot = new ThreadLocal<Object>(){
+            @Override
+            protected Object initialValue() {
+                return new Object();
+            }
+        };
+
+        gcRoot.get();
+```
+
+JDK 首先会找到本地线程中保存的 ThreadLocal 变量副本 —— ThreadLocalMap，然后以 ThreadLocal 对象为 key —— 也就是上面 `gcRoot` 变量引用的 ThreadLocal 对象，到哈希表 table 中查找对应的 Entry 结构（WeakReference），近而通过 `Entry. value` 找到该 ThreadLocal 对象对应的 value 值返回。
+
+```java
+public class ThreadLocal<T> {
+    public T get() {
+        Thread t = Thread.currentThread();
+        // 获取本地线程中存储的 ThreadLocal 变量副本
+        ThreadLocalMap map = getMap(t);
+        if (map != null) {
+            // 以 ThreadLocal 对象为 key，到哈希表 table 中查找对应的 Entry 结构
+            ThreadLocalMap.Entry e = map.getEntry(this);
+            if (e != null) {
+                // 返回该 threadLocal 对象对应的 value。
+                T result = (T)e.value;
+                return result;
+            }
+        }
+        // 如果 threadLocal 对象还未设置 value 值的话，则调用 initialValue 初始化 threadLocal 对象的值
+        return setInitialValue();
+    }
+}
+```
+
+以上面这段示例代码为例，当前系统中的这个 ThreadLocal 对象 —— 也就是由 `gcRoot` 变量指向的 ThreadLocal 对象，存在以下两条引用链：
+
+![image](img/JUC/2907560-20240613111716008-1448661799.png)
+
+- 一条是 `Thead对象 -> ThreadLocalMap对象->Entry对象` 这条弱引用链。
+- 另一条则是有 `gcRoot变量 -> ThreadLocal对象` 这条强引用链。
+
+当我们通过 `gcRoot = null` 来断开 gcRoot 变量到 ThreadLocal 对象的强引用之后，ThreadLocal 对象在系统中就只剩下一条弱引用链存在了。
+
+![image](img/JUC/2907560-20240613111731009-2069957338.png)
+
+**Entry 被设计成一个 WeakReference，由它来弱引用 ThreadLocal 对象的好处就是，当系统中不存在任何对这个 ThreadLocal 对象的强引用之后，发生 GC 的时候这个 ThreadLocal 对象就会被回收掉。后续我们在通过 `Entry.get()` 获取 Key（ThreadLocal 对象）的时候就会得到一个 Null 。**
+
+虽然现在 ThreadLocal 对象已经被 GC 掉了，但 JDK 对于 Reference 的处理流程还没有结束，事实上对于 Reference 的处理是需要 GC 线程以及 Java 业务线程相互配合完成的，这也是本文我们要重点讨论的主题。（唠叨了这么久，终于要引入主题了）
+
+**GC 线程负责回收被 WeakReference 引用的对象，也就是这里的 ThreadLocal 对象。但别忘了这里的 Entry 对象本身也是一个 WeakReference 类型的对象。被它弱引用的对象现在已经回收掉了，那么与其关联的 Entry 对象以及 value 其实也没啥用处了。**
+
+**但如上图所示，Entry 对象以及 value 对象却还是存在一条强引用链，虽然他们没什么用了，但仍然无法被回收，如果 Java 业务线程不做任何处理的话就会导致内存泄露。**
+
+在 ThreadLocal 的设计中 ，Java 业务线程清理无用 Entry 的时机有以下三种：
+
+1. 当我们在线程中通过 `ThreadLocal.get()` 获取任意 ThreadLocal 变量值的时候，如果发生哈希冲突，随后采用**开放定址**解决hash冲突的过程中，如果发现 key 为 null 的 Entry，那么就将该 Entry以及与其关联的 vakue 设置为 null。最后以此 Entry 对象为起点遍历整个 ThreadLocalMap 清理所有无用的 Entry 对象。
+
+   **但这里需要注意的是如果 `ThreadLocal.get()` 没有发生哈希冲突（直接命中），或者在解决哈希冲突的过程中没有发现 key 为 null 的 Entry**，那么就不会触发无用 Entry 的清理，仍然存在内存泄露的风险。
+
+```java
+       private int expungeStaleEntry(int staleSlot) {
+            Entry[] tab = table;
+            int len = tab.length;
+
+            // 将当前遍历到的 Entry 以及与其关联的 value 设置为 null 
+            tab[staleSlot].value = null;
+            tab[staleSlot] = null;
+            size--;
+    
+            Entry e;
+            int i;
+            // 遍历整个 ThreadLocalMap，清理无用的 Entry
+            for (i = nextIndex(staleSlot, len);
+                 (e = tab[i]) != null;
+                 i = nextIndex(i, len)) {
+                ThreadLocal<?> k = e.get();
+                if (k == null) {
+                    e.value = null;
+                    tab[i] = null;
+                    size--;
+                } 
+            }
+            return i;
+        }
+```
+
+2. 当我们在线程中通过 `ThreadLocal.set(value)`设置任意 ThreadLocal 变量值的时候，如果直接通过 ThreadLocal 变量定位到了 Entry 的位置，那么直接设置 value 返回，并不会触发无用 Entry 的清理。如果在定位 Entry 的时候发生哈希冲突，随后会通过开放定址在 ThreadLocalMap 中寻找到一个合适的 Entry 位置。并从这个位置开始向后扫描 `log2(size)` 个 Entry，如果在扫描的过程中发现有一个是无用的 Entry，那么就会遍历整个 ThreadLocalMap 清理所有无用的 Entry 对象。**但如果恰好这 `log2(size)` 个 Entry 都是有用的，即使后面存在无用的 Entry 也不会再清理了，这也导致了内存泄露的风险。**
+
+```java
+        // 参数 i 表示开发定址定位到的 Entry 位置
+        // n 为当前 ThreadLocalMap 的 size
+        private boolean cleanSomeSlots(int i, int n) {
+            boolean removed = false;
+            Entry[] tab = table;
+            int len = tab.length;
+            do {
+                i = nextIndex(i, len);
+                Entry e = tab[i];
+                // 如果发现有一个是无用 Entry
+                if (e != null && e.refersTo(null)) {
+                    // 遍历整个 ThreadLocalMap 清理所有无用的 Entry 对象
+                    i = expungeStaleEntry(i);
+                }
+            } while ( (n >>>= 1) != 0); // 向后扫描 log2(size) 个 Entry
+            return removed;
+        }
+```
+
+3. 前面介绍的 get , set 方法只是顺手清理一下 ThreadLocalMap 中无用的 Entry，但并不一定保证能够触发到清理动作，所以仍然面临内存泄露的风险。**一个更加安全有效的方式是我们需要在使用完 ThreadLocal 对象的时候，手动调用它的 `remove` 方法，及时清理掉 Entry 对象并通过 `Entry.clear()` 断开 Entry 到 ThreadLocal 对象之间的弱引用关系，这样一来，当 ThreadLocal 对象被 GC 的时候，与它相关的 Entry 对象以及 value 也会被一并 GC ，这样就彻底杜绝了内存泄露的风险。**
+
+```java
+        private void remove(ThreadLocal<?> key) {
+            Entry[] tab = table;
+            int len = tab.length;
+            // 确定 key 在 table 中的起始位置
+            int i = key.threadLocalHashCode & (len-1);
+            for (Entry e = tab[i];
+                 e != null;
+                 e = tab[i = nextIndex(i, len)]) {
+                if (e.refersTo(key)) {
+                    // 断开 Entry  到 ThreadLocal 对象之间的弱引用关系
+                    e.clear();
+                    // 清理 key 为 null 的 Entry 对象。
+                    expungeStaleEntry(i);
+                    return;
+                }
+            }
+        }
+```
+
+#### ResourceLeakDetector 
+
+Netty 中的资源泄露探测工具 ResourceLeakDetector 也是通过 WeakReference 来探测资源是否存在泄露的，默认是开启的，但我们也可以通过 `-Dio.netty.leakDetection.level=DISABLED` 来关闭资源泄露探测。
+
+Netty 中的 ByteBuf 是一种内存资源，我们可以通过 ResourceLeakDetector 来探测我们的工程是否存在内存泄露的状况，这里面有一个非常重要的类 DefaultResourceLeak 就是一个弱引用 WeakReference。由它来弱引用 ByteBuf。
+
+```java
+private static final class DefaultResourceLeak<T> extends WeakReference<Object> implements ResourceLeakTracker<T>, ResourceLeak {
+
+    private final Set<DefaultResourceLeak<?>> allLeaks;
+
+    DefaultResourceLeak(
+                Object referent,
+                ReferenceQueue<Object> refQueue,
+                Set<DefaultResourceLeak<?>> allLeaks) {
+            // 弱引用 ByteBuf
+            super(referent, refQueue);    
+            // 将弱引用 DefaultResourceLeak 放入全局 allLeaks 集合中
+            allLeaks.add(this);
+            this.allLeaks = allLeaks;
+    }
+}
+```
+
+在每创建一个 ByteBuf 的时候， Netty 都会创建一个 DefaultResourceLeak 实例来弱引用 ByteBuf，并且会将这个 DefaultResourceLeak 实例放入到一个全局的 allLeaks 集合中。Netty 中的每个 ByteBuf 都会有一个 refCnt 来表示对这块内存的引用情况。
+
+```java
+public abstract class AbstractReferenceCountedByteBuf extends AbstractByteBuf {
+   // 引用计数
+   private volatile int refCnt = updater.initialValue();
+}
+```
+
+对于 ByteBuf 的每一次引用 —— `ByteBuf.retain()`，都会增加一次引用计数 refCnt。对于 ByteBuf 的每一次释放 —— `ByteBuf.release()`,都会减少一次引用计数 refCnt。当引用计数 refCnt 为 0 时，Netty 就会将与 ByteBuf 弱引用关联的 DefaultResourceLeak 实例从 allLeaks 中删除。
+
+由于 DefaultResourceLeak 只是用来追踪 ByteBuf 的资源泄露情况，它并不能影响 ByteBuf 是否存活，所以 Netty 这里只是让 DefaultResourceLeak 来弱引用一下 ByteBuf。当 ByteBuf 在系统中没有任何强引用或者软引用时，那么就只有一个 DefaultResourceLeak 实例在弱引用它了，发生 GC 的时候 ByteBuf 就会被回收掉。
+
+Netty 判断是否发生内存泄露的时机就发生在 ByteBuf 被 GC 的时候，这时 Netty 会拿到被 GC 掉的 ByteBuf 对应的弱引用 DefaultResourceLeak 实例，然后检查它的 allLeaks 集合是否仍然包含这个 DefaultResourceLeak 实例，如果包含就说明 ByteBuf 有内存泄露的情况。
+
+因为如果 ByteBuf 的引用计数 refCnt 为 0 时，Netty 就会将弱引用 ByteBuf 的 DefaultResourceLeak 实例从 allLeaks 中删除。ByteBuf 现在都被 GC 了，它的 DefaultResourceLeak 实例如果还存在 allLeaks 中，那说明我们就根本没有调用 `ByteBuf.release()` 去释放内存资源。
+
+在探测到内存泄露发生之后，后续 Netty 就会通过 `reportLeak()` 将内存泄露的相关信息以 `error` 的日志级别输出到日志中。
 
 
 
@@ -4793,6 +5740,10 @@ public ThreadPoolExecutor(int corePoolSize,
 - workQueue 阻塞队列 
 - threadFactory 线程工厂 - 可以为线程创建时起个好名字 
 - handler 拒绝策略
+  - ThreadPoolExecutor.AbortPolicy: 处理程序在拒绝时抛出运行时RejectedExecutionException, 默认
+  - ThreadPoolExecutor.CallerRunsPolicy: 在当前线程中执行任务
+  - 在ThreadPoolExecutor.DiscardPolicy: 直接丢弃掉当前任务
+  - 在ThreadPoolExecutor.DiscardOldestPolicy: 如果执行器没有关闭，工作队列头部的任务会被丢弃，然后重试执行（可能会再次失败，导致重复执行）。
 
 
 
@@ -5145,6 +6096,8 @@ public static void main(String[] args) throws ExecutionException, InterruptedExc
 
 
 ##### 关闭线程池
+
+![image-20230830183852132](file://J:/desktop-shortcut/note/%E5%88%86%E5%B8%83%E5%BC%8F%E4%B8%8E%E5%A4%9A%E7%BA%BF%E7%A8%8B%E4%B8%8EJVM/img/%E9%9D%A2%E8%AF%95%E9%A2%98/image-20230830183852132.png?lastModify=1749695081)
 
 **shutdown**
 
