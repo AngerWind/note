@@ -4,5 +4,5 @@
 git add .
 git commit -m "%date%"
 git pull --rebase 
-git push
+git push origin
 pause
