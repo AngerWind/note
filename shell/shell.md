@@ -524,7 +524,7 @@ echo $b # 20
 
 
 
-## 条件判断
+## if判断
 
 ### 条件判断的方式
 
@@ -556,14 +556,55 @@ echo $b # 20
    echo $? # 0
    ~~~
 
+### if判断的格式
+
+if判断
+
+~~~shell
+if [ condition ]; then command1; else command2; fi
+
+# 方式1 这里本质就是把if和then写在了一行, 通过;隔开
+if [ condition ]; then 
+    # do something
+fi
+
+# 方式2
+if [ condition ]
+then
+    # do something
+if
+~~~
+
+if-elif-else判断
+
+~~~shell
+if [ condition ]; then 
+    # do something
+elif [ condition ]; then
+    # do something
+elif [ condition ]; then
+    # do something
+else
+    # do something
+fi
+~~~
+
+
+
+
+
 ### 常用的条件判断
 
 常用的比较
 
-1. 变量定义
+1. 变量是否存在
 
    ~~~shell
-   if [ -n "$var" ]; then
+   var=100
+   # var是要判断的变量,  x可以是任意值,abc都可以
+   # 原理是var如果存在, 那么${var+x}会返回x, 那么[]就返回真, 
+   # 如果var不存在, 那么${var+x}就返回空字符串, 那么[]就返回假
+   if [ ${var+x} ]; then 
      echo "变量非空"
    fi
    ~~~
@@ -582,7 +623,7 @@ echo $b # 20
 
 3. 字符串的比较
 
-   = 相等    != 不相等   -z 判断变量未定义或者字符串长度为0    -n 变量非空
+   = 相等    != 不相等   -z 判断变量未定义或者字符串长度为0    -n 变量存在并且非空
 
    ~~~shell
    str1="hello"
@@ -591,8 +632,13 @@ echo $b # 20
      echo "两个字符串相等"
    fi
    
+   var=100
    if [ -n "$var" ]; then
-     echo "变量非空"
+     echo "变量var存在, 并且变量非空"
+   fi
+   
+   if [ -z "$a" ]; then
+           echo "变量a为空, 或者变量a不存在"
    fi
    ~~~
 
@@ -624,9 +670,273 @@ echo $b # 20
    fi
    ~~~
 
+
+6. 取反操作
+
+   取反就是在条件判断之前添加一个`!`
+
+   ~~~shell
+   if [[ ! -d "/tmp/testdir" ]]; then
+     echo "目录不存在"
+   fi
+   ~~~
+
    
 
-todo 加引号和不加引号的区别
+
+
+### 多条件判断
+
+shell的多条件判断有三种写法
+
+写法1 ( 常用 )
+
+~~~shell
+# 写法1
+if [[ "$a" -lt 10 && "$b" -gt 5 ]]; then
+    echo "条件都成立"
+fi
+
+if [[ "$a" -lt 3 || "$b" -lt 3 ]]; then
+    echo "至少一个条件成立"
+fi
+~~~
+
+写法2(了解)
+
+~~~shell
+if [ "$a" -lt 3 ] || [ "$b" -lt 3 ]; then
+    echo "a 小于 3 或 b 小于 3"
+fi
+
+if [ "$a" -lt 10 ] && [ "$b" -gt 5 ]; then
+    echo "a 小于 10 且 b 大于 5"
+fi
+~~~
+
+写法3(了解)
+
+~~~shell
+a=3
+b=7
+
+if [ "$a" -lt 5 -o "$b" -gt 10 ]; then # -o 表示 or
+  echo "a 小于 5 或 b 大于 10"
+fi
+
+if [ "$a" -lt 5 -a "$b" -lt 10 ]; then # -a 表示 and
+  echo "a 小于 5 且 b 小于 10"
+fi
+~~~
+
+
+
+
+
+
+
+### 条件判断特别注意的地方
+
+在条件判断的时候, 最好是带上双引号
+
+~~~shell
+a=
+if [ -n $a ]; then 
+    echo 'a非空'
+fi
+~~~
+上面的代码在执行的时候会报格式错误, 因为$a为空, 所以判断变成了` [ -n ]`, 然后报错
+
+
+~~~shell
+a=
+if [ -n "$a" ]; then 
+    echo 'a非空'
+fi
+~~~
+
+上面代码不会报错, 即使$a为空, 那么判断也是`[ -n "" ]`, 所以他会返回false, 而不是报错
+
+
+
+
+
+## case分支
+
+语法
+
+~~~shell
+case $变量名 in
+  值1)
+      # do something
+      ;; # ;;表示break
+  值2)
+      # do something
+      ;;
+  *)
+      # default
+      ;;
+esac
+~~~
+
+
+
+案例
+
+~~~shell
+#!/usr/bin/env bash
+
+read -p "请输入操作命令 (start/stop/restart/status): " cmd
+
+case "$cmd" in
+  start)
+    echo "正在启动服务..."
+    ;;
+  stop)
+    echo "正在停止服务..."
+    ;;
+  restart)
+    echo "正在重启服务..."
+    ;;
+  status)
+    echo "服务正在运行。"
+    ;;
+  *)
+    echo "未知命令：$cmd"
+    echo "用法: start | stop | restart | status"
+    ;;
+esac
+~~~
+
+
+
+## for循环
+
+### 普通的for循环
+
+语法
+
+~~~shell
+for (( 初始条件; 循环控制条件;变量变化)); do
+    # do something
+done
+
+# 或者
+for (( 初始条件; 循环控制条件;变量变化))
+do
+    # do something
+done
+~~~
+
+案例
+
+~~~shell
+#!/usr/bin/env bash
+sum=0
+for (( i=1; i<=100; i++ )); do
+  sum=$[$sum+$i] # $[]用于计算$sum+$i
+done
+echo $sum
+~~~
+
+
+
+### for range语法
+
+~~~shell
+sum=0
+for {1..100}; do
+  sum=$[$sum+$i] # $[]用于计算$sum+$i
+done
+echo $sum
+~~~
+
+### for in语法
+
+~~~shell
+for name in Alice Bob Charlie; do
+  echo "Hello, $name!"
+done
+~~~
+
+遍历文件
+
+~~~shell
+for file in *.txt; do
+  echo "找到了文件：$file"
+done
+~~~
+
+遍历命令行参数
+
+~~~shell
+for arg in "$@"; do
+  echo "你传入的参数：$arg"
+done
+~~~
+
+
+
+
+
+
+
+## while循环
+
+语法
+
+~~~shell
+while [ condition ]; do
+    # do something
+done
+
+# 或者
+while [ condition ]
+do 
+    # do something
+done
+~~~
+
+累加案例
+
+~~~shell
+#!/usr/bin/env bash
+
+i=1
+sum=0
+
+while [ "$i" -le 100 ]; do
+  sum=$((sum + i))
+  i=$((i + 1))
+done
+
+echo "1 到 100 的总和是：$sum"
+~~~
+
+
+
+## until循环
+
+语法
+
+~~~shell
+until [ 条件 ]; do
+  # 循环体（条件为 false 时执行）
+  ...
+done
+~~~
+
+案例
+
+~~~shell
+# 等待文件被其他人创建成功
+until [ -f /tmp/ready ]; do
+  echo "Waiting for /tmp/ready..."
+  sleep 1
+done
+
+echo "File is ready!"
+~~~
 
 
 
@@ -636,13 +946,289 @@ todo 加引号和不加引号的区别
 
 
 
-## 流程控制
+
+
+## 从控制台读取输入
+
+~~~shell
+# -p指定提示信息
+# -t表示等待用户10s, 如果10s到了没有输入, 那么直接返回空字符串, 如果不加-t的话会一直等待
+# 输入读取到name中
+read -p "请输入你的名字: " -t 10 name 
+echo "你好，$name！"
+~~~
 
 
 
 
 
 ## 函数
+
+
+
+### 常用的系统函数
+
+1. basename
+
+   basename的作用从一个路径中拆分出文件名, 本质上就是一个字符串拆分
+
+   ~~~shell
+   # $0获取文件, 会带上路径, 比如./test.sh /root/test.sh
+   # basename 从路径中拆分出文件名
+   echo `basename $0`  # test.sh
+   
+   # basename还可以去除掉文件名的后缀
+   echo `basename $0 .sh`  # 去除掉.sh后缀, 返回test
+   ~~~
+
+2. dirname
+
+   dirname的作用是从一个路径中拆分出路径, 本质上是一个字符串拆分
+
+   ~~~shell
+   a=/root/a
+   echo `dirname $a` # /root
+   
+   b=.././.././a
+   echo `dirname $b` # .././../.
+   ~~~
+
+   dirname也可以用于获取当前脚本所在的文件夹
+
+   ~~~shell
+   # 默认情况下可以执行
+   # 但是考虑到软连接, $0 是链接路径，不是原脚本路径。
+   # 同时如果脚本被 source 执行，$0 不一定是脚本路径，而是当前 shell。
+   echo $(cd `dirname $0`; pwd) 
+   
+   # 推荐
+   # ${BASH_SOURCE[0]} 可能包含空格或特殊字符, 使用双引号括起来
+   # ${BASH_SOURCE[0]} 是文件的真实路径
+   DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+   echo "脚本所在目录是：$DIR"
+   ~~~
+
+
+
+### 自定义函数
+
+语法
+
+~~~shell
+# function可以省略, 函数后面的()可以省略, return可以省略
+function xxx(){
+    # do something
+    return int;
+}
+
+xxx param1 parma2 # 函数调用
+~~~
+
+1. 必须先声明函数, 才可以调用, 因为shell是解释执行的
+2. 函数不需要声明参数, 直接通过 `$1, $2, $3`的形式来获取位置参数
+3. **return后面只能跟`0-255`的数值, 表示函数执行的状态码, 而不是函数的结果, 0表示正常**
+4. 如果省略return, 那么会将最后一条命令的状态码return回去
+5. 可以通过`$?`获取函数的return的状态码
+6. 如果你想要返回一个结果, 那么可以使用echo, 那么在外层使用命令替换
+
+~~~shell
+function add(){
+    s=$[ $1 + $2 ]
+    echo $s
+}
+read -p "请输入第一个参数: " a
+read -p "请输入第二个参数: " b
+
+sum=`add $a $b`
+echo 结果是$sum
+~~~
+
+
+
+### 小案例
+
+写一个脚本, 可以对指定的目录进行归档, 归档文件名带上日期
+
+~~~shell
+#!/bin/bash
+
+if [ 1 -ne $# ]; then
+    echo "必须指定一个参数"
+    exit 1
+fi
+
+if [ ! -d $1 ]; then
+    echo "输入的参数不是一个目录, 或者目录不存在"
+    exit 1
+fi
+
+DIR_NAME=$( basename $1 ) # 获取要归档的目录
+DIR_PATH=$( cd $(dirname $1) && pwd) # 获取归档的目录所在的目录
+DATE=$(date +%Y%m%d) # 当前的日期
+FILE=archive_${DIR_NAME}_${DATE}.tar.gz # 归档文件的文件名
+DEST=/root/archive/$FILE # 归档文件的完整路径
+
+tar -czf $DEST $DIR_PATH/$DIR_NAME # 归档文件
+if [ ! $? -ne 0 ]; then
+    echo "tar命令执行失败"
+    exit 1
+else
+    echo "归档成功"
+    echo "归档文件为: $DEST"
+fi
+~~~
+
+
+
+
+
+## 正则表达式
+
+1. `^`匹配开头
+
+2. `$`匹配结尾
+
+3. `.`匹配任意字符
+
+4. `*`匹配任意次数, 0次或者1次或者多次
+
+   ~~~shell
+   cat /etc/passwd | grep '^root.*zsh$' # grep也可以使用正则表达式, 必须使用单引号括起来
+   root:x:0:0:root:/root:/usr/bin/zsh
+   ~~~
+
+5. `[]`表示匹配一个范围
+
+   | 表达式     | 作用                         |
+   | ---------- | ---------------------------- |
+   | [6, 8]     | 匹配6或者8                   |
+   | [0-9]      | 匹配0-9中的任意数字          |
+   | [0-9]*     | 匹配任意长度的数字字符串     |
+   | [a-z]      | 匹配a到z之间的一个字符       |
+   | [a-z]*     | 匹配任意长度的字符字符串     |
+   | [a-c, e-f] | 匹配a-c或者e-f之间的任意字符 |
+
+6. `\`表示转移, 比如要匹配$的时候, 就要进行转移
+
+   ~~~shell
+   echo '$aaa' | grep '\$'
+   ~~~
+
+   
+
+
+
+## 文本处理
+
+### cut
+
+cut主要用于处理字符串的拆分
+
+`cut [选项参数] filename`
+
+- `-f` 指定每一行都拆分后, 需要保存第几列的数据
+- `-d` 指定分隔符, 默认为制表符, 分隔符只能是一个字符
+- `-c` 按照字符进行切割
+
+~~~shell
+# 文件为test.txt
+hello, world
+hello, java
+
+# 按照,拆分文本, 并保留每一行的第二列数据
+cut -d "," -f 2 test.txt
+ world
+ java
+~~~
+
+~~~shell
+# 匹配/etc/passwd中以zsh结尾的行
+# 然后根据:拆分, 保留1,6,7行
+# !!!!!如果保留多列, cut会将多列按照分隔符拼接, 然后返回
+cat /etc/passwd | grep 'zsh$' | cut -d ":" -f 1,6,7
+root:/root:/usr/bin/zsh
+tiger:/home/tiger:/usr/bin/zsh
+
+# -2表示前2列, 5-6表示第5列到第6列, 7-表示第7列和以后的所有列
+cat /etc/passwd | grep 'zsh$' | cut -d ":" -f -2,3,4,5-6,7
+root:x:0:0:root:/root:/usr/bin/zsh
+~~~
+
+
+
+### awk
+
+awk将文本逐行的读入, 并按照分隔符进行拆分, 拆分后再进行处理
+
+`awk [选项参数] 'BEGIN{action0} /pattern1/{action1} /pattern1/{action2} ... END{actionN} ' filename`
+
+- `-F` 指定分隔符, 默认是空格
+- `-v` 赋值一个用户自定义变量, 可以在action中使用
+
+awk的运行原理是:
+
+1. 先执行BEGIN中的action, BEGIN可以省略
+
+2. 将一整行去匹配pattern1, pattern2, pattern3
+
+   pattern可以省略, 表示匹配所有的行
+
+3. 如果匹配成功, 那么拆分字符串, 并将拆分后的内容作为参数, 传递到action1, action2, action3中
+
+4. 最后执行END中的action, END可以省略
+
+~~~shell
+# 拆分每一行
+# 匹配z结尾的行, 并将拆分的单词作为参数传入到 print $1 中
+echo -e "xyz:ha:nz\nzz:al:xz" |  awk -F ":" '/z$/{print $1}'
+
+# 搜索/etc/passed中以root开头的行, 并输出第1列和第7列, 并使用逗号隔开
+awk -F ":" '/^root/{print $1","$7}' /etc/passwd
+
+# pattern也可以没有, 表示匹配所有的行
+awk -F ":" '{print $1","$7}' /etc/passwd # 输出第一列和第七列, 使用逗号隔开
+
+# 先输出begin, 然后输出每一行的第一列和第7列, 然后输出end
+awk -F ":" 'BEGIN{print "begin"} {print $1","$7} END{print "end"}'
+~~~
+
+
+
+`-v`参数的作用
+
+~~~shell
+# 获取每一本书的数量, 并加10
+echo -e 'java,1\npython,4' | awk -v i=10 -F "," '{print $2+i}'
+11
+14
+~~~
+
+
+
+同时awk中也内置了一些变量
+
+- `FILENAME`:  文件名
+- `NR`: 当前的行号
+- `NF`: 当前行, 拆分后的个数
+
+~~~shell
+# 假设有 test.txt
+java, 10
+python, 20, 2016
+goland, 33, 2017
+
+awk -F "," 'print FILENAME NR NF' test.txt
+~~~
+
+
+
+
+
+
+
+## 其他
+
+
 
 
 

@@ -164,7 +164,7 @@ sudo yum install -y git
 
 ### 创建item, 用于自动构建, 测试
 
-1. <img src="img/jenkins/image-20231121193654200.png" alt="image-20231121193654200" style="zoom:33%;" />
+<img src="img/jenkins/image-20231121193654200.png" alt="image-20231121193654200" style="zoom:33%;" />
 
 <img src="img/jenkins/image-20231121193736707.png" alt="image-20231121193736707" style="zoom:33%;" />
 
@@ -180,7 +180,9 @@ sudo yum install -y git
 
 构建的时候, jenkins会通过git将源代码下载到`/var/lib/jenkins/workspace/item_name/`下, 然后通过maven进行构建
 
-并且如果没有在maven的settings.xml中指定maven仓库, 默认使用`/var/lib/jenkins/.m2`作为maven仓库
+并且如果没有在m
+
+aven的settings.xml中指定maven仓库, 默认使用`/var/lib/jenkins/.m2`作为maven仓库
 
 ### 配置item构建后发送jar包到测试服务器上, 并执行
 
@@ -231,11 +233,11 @@ sudo yum install -y git
 
    <img src="img/jenkins/image-20231122131202901.png" alt="image-20231122131202901" style="zoom:33%;" />
 
-
-
-### 几种构建触发器的说明
+# 自动化构建的几种构建触发器的说明
 
 <img src="img/jenkins/image-20231122131819645.png" alt="image-20231122131819645" style="zoom:33%;" />
+
+触发器指定了在什么时候, 自动的触发item任务的执行, 并自动构建我们的任务
 
 - Build whenever a SNAPSHOT dependency is built
 
@@ -245,9 +247,13 @@ sudo yum install -y git
 
 - 触发远程构建 (例如,使用脚本)
 
-  设置一个`TOKEN_NAME`, 比如12345, 当调用`jenkins域名:端口/job/item_name?token=TOKEN_NAME`时, 会触发jenkins调用项目
+  设置一个`TOKEN`, 比如12345, 当调用`jenkins域名:端口/job/item_name?token=${TOKEN}`时, 会触发jenkins调用项目
 
-  > Note: 调用的时候必须携带已登录的token, 否则会调用失败, 如果希望可以直接调用而不用带已登录的token, 需要安装插件Build Authorization Token Root, 然后调用`buildByToken/build?job=item_name&token=TOKEN_NAME`
+  **使用这种方式, 可以配合GitLab或者GitHub的Webhooks来使用, 当我们提交代码的时候, 自动调用我们的接口, 来触发项目构建**
+
+  !!! 使用这种方式接口触发自动化构建的时候, 除了要携带token, 还必须触发已经登录的状态, 否则会调用失败并跳转到登录界面
+
+  如果希望可以直接调用而不用带已登录的token, 需要安装插件`Build Authorization Token Root`, 然后调用`buildByToken/build?job=${item_name}&token=${TOKEN}`
 
 - Build after other projects are built
 
