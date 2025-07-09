@@ -2,7 +2,7 @@
 
 ## 集群相关
 
-~~~shell
+```shell
 # 切换当前命令行默认使用的namespace
 kubectl config set-context --current --namespace=my-namespace
 
@@ -79,7 +79,7 @@ kubectl expose deployment nginx --port=80 --type=NodePort
 
 # 根据命令生成yaml文件, --dry-run表示不执行命令
 kubectl create deployment web1 --image=nginx:1.24 --dry-run -o yaml > deployment.yaml
-~~~
+```
 
 
 
@@ -121,22 +121,20 @@ https://www.bilibili.com/video/BV1GT4y1A756
 - **在master节点上面单独执行**
 
 - **可以将要下载的东西通过浏览器下载好, 然后放在~目录下**, 通过wget下载会很慢
-
+  
   需要下载的东西如下:
-
+  
   https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
-
+  
   https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
-
+  
   https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
-
+  
   https://github.com/etcd-io/etcd/releases/download/v3.4.9/etcd-v3.4.9-linux-amd64.tar.gz
-
-
 
 生成etcd证书
 
-~~~shell
+```shell
 cd ~
 
 # 获取cfssl
@@ -220,11 +218,11 @@ EOF
 # 生成证书
 cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=www server-csr.json | cfssljson -bare server
 ls server*pem
-~~~
+```
 
 安装etcd
 
-~~~shell
+```shell
 cd ~
 # 下载安装包
 wget https://github.com/etcd-io/etcd/releases/download/v3.4.9/etcd-v3.4.9-linux-amd64.tar.gz
@@ -275,13 +273,13 @@ EOF
 
 # 拷贝刚刚的证书到目标位置
 cp ~/TLS/etcd/ca*pem ~/TLS/etcd/server*pem /opt/etcd/ssl/
-~~~
+```
 
 ## worker安装etcd
 
 将master上的所有文件拷贝到节点2和节点3上面
 
-~~~shell
+```shell
 scp -r /opt/etcd/ root@192.168.31.103:/opt/
 scp -r /opt/etcd/ root@192.168.31.104:/opt/
 
@@ -294,11 +292,11 @@ scp -r /opt/etcd/ root@192.168.31.104:/opt/
 
 scp /usr/lib/systemd/system/etcd.service root@192.168.31.103:/usr/lib/systemd/system/
 scp /usr/lib/systemd/system/etcd.service root@192.168.31.104:/usr/lib/systemd/system/
-~~~
+```
 
 修改节点2和节点3的etcd.conf为当前ip
 
-~~~shell
+```shell
 vi /opt/etcd/cfg/etcd.conf
 #[Member]
 ETCD_NAME="etcd-2" # 修改此处， 节点 2 改为 etcd-2， 节点 3 改为 etcd-3
@@ -314,23 +312,23 @@ ETCD_INITIAL_CLUSTER="etcd-1=https://192.168.31.71:2380,etcd-2=https://192.168.3
 
 ETCD_INITIAL_CLUSTER_TOKEN="etcd-cluster"
 ETCD_INITIAL_CLUSTER_STATE="new"
-~~~
+```
 
 自启动
 
-~~~shell
+```shell
 # 设置开机自启动
 systemctl daemon-reload
 systemctl start etcd
 systemctl status etcd
 systemctl enable etcd
-~~~
+```
 
 查看集群状态
 
-~~~shell
+```shell
 ETCDCTL_API=3 /opt/etcd/bin/etcdctl --cacert=/opt/etcd/ssl/ca.pem --cert=/opt/etcd/ssl/server.pem --key=/opt/etcd/ssl/server-key.pem --endpoints="https://192.168.31.102:2379,https://192.168.31.103:2379,https://192.168.31.104:2379" endpoint health
-~~~
+```
 
 ## 总结
 
@@ -339,34 +337,35 @@ ETCDCTL_API=3 /opt/etcd/bin/etcdctl --cacert=/opt/etcd/ssl/ca.pem --cert=/opt/et
 - **安装好master后不要着急启动, 因为配置了集群, master上的etcd启动后连接不到worker上的etcd, 不会退出命令行, 所有要master和worker一起安装好后, 再启动**
 
 - **其实不用配置etcd集群, 只要配置一个etcd就好, 后面的k8s就用这一个etcd**
+
 - **如果通过systemctl启动失败, 可以将etcd.service中的EnvironmentFile和ExecStart拼接上, 来执行, 如果能够执行, 说明etcd.service配置有问题, 如果不能执行, 说明etcd的配置文件有问题**
 
 ## Worker安装docker
 
 先设置稳定的存储库
 
-~~~shell
+```shell
 sudo yum install -y yum-utils
 sudo yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
-~~~
+```
 
 安装docker
 
-~~~shell
+```shell
 sudo yum install docker-ce docker-ce-cli containerd.io -y
-~~~
+```
 
 启动docker并运行hello world
 
-~~~shell
+```shell
 sudo systemctl start docker
 sudo systemctl enable docker
 sudo docker run hello-world
-~~~
+```
 
 修改docker镜像为阿里镜像
 
-~~~shell
+```shell
 cat > /etc/docker/daemon.json << eof
 {
  "registry-mirrors":["https://6kx4zyno.mirror.aliyuncs.com"]
@@ -374,13 +373,13 @@ cat > /etc/docker/daemon.json << eof
 eof
 systemctl daemon-reload 
 systemctl restart docker
-~~~
+```
 
 ## master安装kube-apiserver
 
 签发证书
 
-~~~shell
+```shell
 cd ~/TLS/k8s
 cat > ca-config.json<< EOF
 {
@@ -423,11 +422,11 @@ EOF
 # 生成证书
 cfssl gencert -initca ca-csr.json | cfssljson -bare ca -
 ls *pem
-~~~
+```
 
 使用自签ca签发kube-apiserver https证书
 
-~~~shell
+```shell
 cd ~/TLS/k8s
 cat > server-csr.json<< EOF
 {
@@ -458,29 +457,29 @@ cat > server-csr.json<< EOF
     ]
 }
 EOF
-~~~
+```
 
 生成证书
 
-~~~shell
+```shell
 cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes server-csr.json | cfssljson -bare server
 ls server*pem
-~~~
+```
 
 下载k8s并放到家目录下
 
-~~~shell
+```shell
 cd ~
 mkdir -p /opt/kubernetes/{bin,cfg,ssl,logs}
 tar -zxvf kubernetes-server-linux-amd64.tar.gz
 cd kubernetes/server/bin
 cp kube-apiserver kube-scheduler kube-controller-manager /opt/kubernetes/bin
 cp kubectl /usr/bin/
-~~~
+```
 
 部署kube-apiserver
 
-~~~shell
+```shell
 cat > /opt/kubernetes/cfg/kube-apiserver.conf << EOF
 KUBE_APISERVER_OPTS="--logtostderr=false \\
 --v=2 \\
@@ -510,25 +509,25 @@ KUBE_APISERVER_OPTS="--logtostderr=false \\
 --audit-log-maxsize=100 \\
 --audit-log-path=/opt/kubernetes/logs/k8s-audit.log"
 EOF
-~~~
+```
 
 拷贝刚刚的证书
 
-~~~shell
+```shell
 cp ~/TLS/k8s/ca*pem ~/TLS/k8s/server*pem /opt/kubernetes/ssl/
-~~~
+```
 
 TLS bootstraping 配置
 
-~~~shell
+```shell
 cat > /opt/kubernetes/cfg/token.csv << EOF
 c47ffb939f5ca36231d9e3121a252940,kubelet-bootstrap,10001,"system:nodebootstrapper"
 EOF
-~~~
+```
 
 systemd管理apiserver
 
-~~~shell
+```shell
 cat > /usr/lib/systemd/system/kube-apiserver.service << EOF
 [Unit]
 Description=Kubernetes API Server
@@ -540,30 +539,30 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-~~~
+```
 
 开机自启
 
-~~~shell
+```shell
 systemctl daemon-reload
 systemctl start kube-apiserver
 systemctl status kube-apiserver
 systemctl enable kube-apiserver
-~~~
+```
 
 授权 kubelet-bootstrap 用户允许请求证书
 
-~~~shell
+```shell
 kubectl create clusterrolebinding kubelet-bootstrap \
 --clusterrole=system:node-bootstrapper \
 --user=kubelet-bootstrap  
-~~~
+```
 
 ## master安装kube-controller-manager
 
 创建配置文件
 
-~~~shell
+```shell
 cat > /opt/kubernetes/cfg/kube-controller-manager.conf << EOF
 KUBE_CONTROLLER_MANAGER_OPTS="--logtostderr=false \\
 --v=2 \\
@@ -580,11 +579,11 @@ KUBE_CONTROLLER_MANAGER_OPTS="--logtostderr=false \\
 --service-account-private-key-file=/opt/kubernetes/ssl/ca-key.pem \\
 --experimental-cluster-signing-duration=87600h0m0s"
 EOF
-~~~
+```
 
 systemd管理controller-manager
 
-~~~shell
+```shell
 cat > /usr/lib/systemd/system/kube-controller-manager.service << EOF
 [Unit]
 Description=Kubernetes Controller Manager
@@ -596,22 +595,22 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-~~~
+```
 
 开机自启
 
-~~~shell
+```shell
 systemctl daemon-reload
 systemctl start kube-controller-manager
 systemctl status kube-controller-manager
 systemctl enable kube-controller-manager
-~~~
+```
 
 ## master部署kube-scheduler
 
 创建配置文件
 
-~~~shell
+```shell
 cat > /opt/kubernetes/cfg/kube-scheduler.conf << EOF
 KUBE_SCHEDULER_OPTS="--logtostderr=false \\
 --v=2 \\
@@ -620,11 +619,11 @@ KUBE_SCHEDULER_OPTS="--logtostderr=false \\
 --master=127.0.0.1:8080 \\
 --bind-address=127.0.0.1"
 EOF
-~~~
+```
 
 systemd管理scheduler
 
-~~~shell
+```shell
 cat > /usr/lib/systemd/system/kube-scheduler.service << EOF
 [Unit]
 Description=Kubernetes Scheduler
@@ -636,28 +635,28 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 EOF
-~~~
+```
 
 开机自启动
 
-~~~shell
+```shell
 systemctl daemon-reload
 systemctl start kube-scheduler
 systemctl status kube-scheduler.service
 systemctl enable kube-scheduler
-~~~
+```
 
 查看集群状态
 
-~~~shell
+```shell
 kubectl get cs
-~~~
+```
 
 ## worker部署kubelet
 
 下载k8s包在家目录下
 
-~~~shell
+```shell
 cd ~
 tar zxvf kubernetes-server-linux-amd64.tar.gz
 mkdir -p /opt/kubernetes/{bin,cfg,ssl,logs}
@@ -665,11 +664,11 @@ mkdir -p /root/TLS/k8s/
 cd kubernetes/server/bin
 cp kubelet kube-proxy /opt/kubernetes/bin
 cp kubectl /usr/bin/ # 后面要用这个文件
-~~~
+```
 
 创建kubelet配置文件, **hostname-override需要改为当前worker节点的主机名**
 
-~~~shell
+```shell
 cat > /opt/kubernetes/cfg/kubelet.conf << EOF
 KUBELET_OPTS="--logtostderr=false \\
 --v=2 \\
@@ -713,11 +712,11 @@ evictionHard:
   nodefs.available: "10%"
   nodefs.inodesFree: "5%"
 EOF
-~~~
+```
 
 生成bootstrap.kubeconfig文件, 
 
-~~~shell
+```shell
 # 先把master中/opt/kubernetes/ssl/ca*赋值到worker同样目录下
 # 因为worker节点上没有这些东西
 scp /root/TLS/k8s/ca* root@192.168.31.103:/root/TLS/k8s/ 
@@ -738,17 +737,17 @@ kubectl config set-context default \
 --user="kubelet-bootstrap" \
 --kubeconfig=bootstrap.kubeconfig
 kubectl config use-context default --kubeconfig=bootstrap.kubeconfig
-~~~
+```
 
 拷贝到配置文件路径下
 
-~~~shell
+```shell
 cp bootstrap.kubeconfig /opt/kubernetes/cfg
-~~~
+```
 
 systemd管理kubelet
 
-~~~shell
+```shell
 cat > /usr/lib/systemd/system/kubelet.service << EOF
 [Unit]
 Description=Kubernetes Kubelet
@@ -761,20 +760,20 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 EOF
-~~~
+```
 
 开机自启动
 
-~~~shell
+```shell
 systemctl daemon-reload
 systemctl start kubelet
 systemctl status kubelet
 systemctl enable kubelet
-~~~
+```
 
 在master上批准kublet证书申请并假如集群
 
-~~~shell
+```shell
 # 查看申请
 kubectl get csr
 NAME AGE SIGNERNAME  REQUESTOR CONDITION
@@ -783,24 +782,24 @@ node-csr-uCEGPOIiDdlLODKts8J658HrFq9CZ--K6M4G7bjhk8A 6m3s kubernetes.io/kube-api
 kubectl certificate approve node-csr-uCEGPOIiDdlLODKts8J658HrFq9CZ--K6M4G7bjhk8A
 # 查看节点
 kubectl get node
-~~~
+```
 
 ## worker部署kube-proxy
 
 创建配置文件
 
-~~~shell
+```shell
 cat > /opt/kubernetes/cfg/kube-proxy.conf << EOF
 KUBE_PROXY_OPTS="--logtostderr=false \\
 --v=2 \\
 --log-dir=/opt/kubernetes/logs \\
 --config=/opt/kubernetes/cfg/kube-proxy-config.yml"
 EOF
-~~~
+```
 
 创建配置参数文件, 需要修改hostnameOverride为当前ip地址
 
-~~~shell
+```shell
 cat > /opt/kubernetes/cfg/kube-proxy-config.yml << EOF
 kind: KubeProxyConfiguration
 apiVersion: kubeproxy.config.k8s.io/v1alpha1
@@ -811,11 +810,11 @@ clientConnection:
 hostnameOverride: hadoop104
 clusterCIDR: 10.0.0.0/24
 EOF
-~~~
+```
 
 生成kube-proxy.kubeconfig文件
 
-~~~shell
+```shell
 cd ~/TLS/k8s
 # 创建证书请求文件
 cat > kube-proxy-csr.json<< EOF
@@ -840,11 +839,11 @@ EOF
 # 生成证书
 cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes kube-proxy-csr.json | cfssljson -bare kube-proxy
 ls kube-proxy*pem
-~~~
+```
 
 生成kubeconfig文件
 
-~~~shell
+```shell
 KUBE_APISERVER="https://192.168.31.102:6443"
 kubectl config set-cluster kubernetes \
 --certificate-authority=/opt/kubernetes/ssl/ca.pem \
@@ -862,11 +861,11 @@ kubectl config set-context default \
 kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
 # 拷贝到指定目录下
 cp kube-proxy.kubeconfig /opt/kubernetes/cfg/
-~~~
+```
 
 systemd 管理 kube-proxy
 
-~~~shell
+```shell
 cat > /usr/lib/systemd/system/kube-proxy.service<< EOF
 [Unit]
 Description=Kubernetes Proxy
@@ -879,16 +878,16 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 EOF
-~~~
+```
 
 开机自启动
 
-~~~shell
+```shell
 systemctl daemon-reload
 systemctl start kube-proxy
 systemctl status kube-proxy
 systemctl enable kube-proxy
-~~~
+```
 
 ## 部署cni网络
 
@@ -898,7 +897,7 @@ systemctl enable kube-proxy
 
 并赋值到~目录
 
-~~~shell
+```shell
 mkdir /opt/cni/bin /etc/cni/net.d -p
 tar zxvf cni-plugins-linux-amd64-v0.8.6.tgz -C /opt/cni/bin
 # 部署cni网络
@@ -907,11 +906,11 @@ sed -i -r "s#quay.io/coreos/flannel:.*-amd64#lizhenliang/flannel:v0.12.0-amd64#g
 kubectl apply -f kube-flannel.yml
 kubectl get pods -n kube-flannel
 kubectl get node
-~~~
+```
 
 授权apiserver访问kubelet
 
-~~~shell
+```shell
 cat > apiserver-to-kubelet-rbac.yaml<< EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -933,7 +932,7 @@ rules:
       - pods/log
     verbs:
       - "*"
- 
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -951,11 +950,7 @@ subjects:
 EOF
 
 kubectl apply -f apiserver-to-kubelet-rbac.yaml
-~~~
-
-
-
-
+```
 
 # kubeadm安装k8s
 
@@ -971,17 +966,17 @@ kubectl apply -f apiserver-to-kubelet-rbac.yaml
 
 高可用Kubernetes集群规划
 
-| 主机名 | IP地址         | 说明       |
-| ------ | -------------- | ---------- |
+| 主机名    | IP地址           | 说明       |
+| ------ | -------------- | -------- |
 | cdh105 | 192.168.31.105 | master节点 |
 | cdh106 | 192.168.31.106 | node节点   |
 | cdh107 | 192.168.31.107 | node节点   |
 
 2.配置信息
 
-| 配置信息    | 备注      |
-| ----------- | --------- |
-| 系统版本    | Centos7.9 |
+| 配置信息      | 备注        |
+| --------- | --------- |
+| 系统版本      | Centos7.9 |
 | Docker版本  | 20.10x    |
 | Kubeadm版本 | v1.23.17  |
 
@@ -1308,8 +1303,6 @@ lsmod | grep --color=auto -e ip_vs -e nf_conntrack
 
 ![img](img/k8s笔记/v2-c08ef1a43661731cad99091d8613d819_1440w.webp)
 
-
-
 ### Containerd作为Runtime
 
 如果安装的版本低于1.24，选择Docker和Containerd均可，高于1.24选择Containerd作为Runtime。
@@ -1325,14 +1318,12 @@ yum install docker-ce-20.10.* docker-ce-cli-20.10.* -y
 
 使用一下命令
 
-~~~shell
+```shell
 $ yum list installed | grep docker
 docker-buildx-plugin.x86_64   0.11.2-1.el7   @docker-ce-stable
 docker-compose-plugin.x86_64  2.21.0-1.el7  @docker-ce-stable
 $ rpm -e docker-buildx-plugin.x86_64 docker-compose-plugin.x86_64
-~~~
-
-
+```
 
 2.在每台机器上执行以下命令配置Containerd所需的模块
 
@@ -1393,8 +1384,6 @@ $ vim /etc/containerd/config.toml
   SystemdCgroup = true
 ```
 
-
-
 <img src="img/k8s笔记/v2-4e3076a3f0c87af691dc553eab815486_1440w.webp" alt="img"  />
 
 8.在每台机器上执行以下命令将sandbox_image的Pause镜像改成符合自己版本的地址[http://registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.6](https://link.zhihu.com/?target=http%3A//registry.cn-hangzhou.aliyuncs.com/google_containers/pause%3A3.6)
@@ -1441,7 +1430,7 @@ REF TYPE DIGEST SIZE PLATFORMS LABELS
 
 12.修改docker镜像为阿里镜像
 
-~~~shell
+```shell
 cat > /etc/docker/daemon.json << eof
 {
  "registry-mirrors":["https://6kx4zyno.mirror.aliyuncs.com"]
@@ -1449,11 +1438,9 @@ cat > /etc/docker/daemon.json << eof
 eof
 systemctl daemon-reload 
 systemctl restart docker
-~~~
+```
 
 ## 搭建集群
-
-
 
 ### 安装Kubernetes组件Kubeadm&Kubelet
 
@@ -1474,7 +1461,7 @@ kubeadm version
 
 **注意!!!!**如果这里安装的不是1.23版本的k8s, 说明之前安装过了其他版本的, 使用以下脚本删除掉
 
-~~~shell
+```shell
 $ yum list installed | grep kube
 cri-tools.x86_64                        1.26.0-0                       @kubernetes
 kubeadm.x86_64                          1.28.2-0                       @kubernetes
@@ -1483,9 +1470,7 @@ kubelet.x86_64                          1.28.2-0                       @kubernet
 kubernetes-cni.x86_64                   1.2.0-0                        @kubernetes
 
 $  yum remove -y kubeadm.x86_64 kubectl.x86_64 kubelet.x86_64  kubernetes-cni.x86_64
-~~~
-
-
+```
 
 3.在每台机器上执行以下命令更改Kubelet的配置使用Containerd作为Runtime，如果选择的是docker作为的Runtime,则不需要进行更改
 
@@ -1501,7 +1486,6 @@ EOF
 systemctl daemon-reload
 systemctl enable --now kubelet
 systemctl status kubelet
-
 ```
 
 **说明:由于还未初始化，没有kubelet的配置文件，此时kubelet无法启动，无需管理**
@@ -1587,8 +1571,6 @@ systemctl enable --now kubelet
 kubeadm init --config /root/new.yaml  --upload-certs
 ```
 
-
-
 <img src="img/k8s笔记/v2-1f7786a474430196deed86480fbccd09_1440w.webp" alt="img" style="zoom:50%;" />
 
 > Note: 如果初始化失败，重置后再次初始化，命令如下（没有失败不要执行）
@@ -1643,7 +1625,7 @@ k8s-node02     NotReady   <none>                 84s
 
 从https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml下载kube-flannel.yml文件到linux上
 
-~~~shell
+```shell
 $ kubectl apply -f kube-flannel.yml
 $ kubectl get pod -n kube-flannel
 NAME                    READY   STATUS    RESTARTS   AGE
@@ -1666,15 +1648,15 @@ $ NAME     STATUS   ROLES                  AGE   VERSION
 cdh105   Ready    control-plane,master   23m   v1.23.17
 cdh106   Ready    <none>                 23m   v1.23.17
 cdh107   Ready    <none>                 22m   v1.23.17
-~~~
+```
 
 ### 测试集群
 
-~~~shell
+```shell
 kubectl create deployment nginx --image=nginx
 kubectl expose deployment nginx --port=80 --type=NodePort
 kubectl get pod,svc  
-~~~
+```
 
 ![image-20231028211718019](img/k8s笔记/image-20231028211718019.png)
 
@@ -2044,7 +2026,7 @@ status的状态有如下几种
 
 如果你想要看特定的字段下, 有哪些子字段, 那么可以通过类似`kubectl explain pod.apiVersion`, `kubectl explian pod.spec.nodeSelector`的形式来查看
 
-~~~yaml
+```yaml
 apiVersion: v1       #必选，版本号，例如v1
 kind: Pod       #必选，Pod
 metadata:       #必选，元数据
@@ -2104,8 +2086,8 @@ spec:         #必选，Pod中容器的详细定义
 #----------- 端口暴露-----------------------------------------------------
     ports:       #需要暴露的端口库号列表
       - name: string     #端口号名称
-        containerPort: int   # 需要暴露的容器的端口号
-        hostPort: int    # 主机端口号，默认与Container相同, !!!!注意!!!!如果指定了hostPort, 那么同一台主机上无法启动两个相同的副本, 因为端口号会冲突
+        containerPort: int   # 需要占用的容器的端口
+        hostPort: int    # 可选, 将宿主机上的指定端口, 映射到containerPort上, 不指定表示不映射 !!!!注意!!!!如果指定了hostPort, 那么同一台主机上无法启动两个相同的副本, 因为端口号会冲突
         protocol: string     #端口协议，支持TCP和UDP，默认TCP
 #---------------环境变量-----------------------------------------------------
     env:       #容器运行前需设置的环境变量列表
@@ -2188,7 +2170,7 @@ spec:         #必选，Pod中容器的详细定义
   volumes:       #在该pod上定义共享存储卷列表
     - name: string     # 共享存储卷名称 （volumes类型有很多种）
       emptyDir: {}     #类型为emtyDir的存储卷，与Pod同生命周期的一个临时目录, 即使pod重启和停止。
-      
+
       hostPath: string     #类型为PersistentVolume 的存储卷，表示挂载Pod所在宿主机的目录, 生产上不会使用
         path: string     #Pod所在宿主机的目录，将被用于同期中mount的目录
       secret:      #类型为secret的存储卷，挂载集群与定义的secre对象到容器内部
@@ -2213,7 +2195,7 @@ spec:         #必选，Pod中容器的详细定义
     volumeMounts:
     - name: workdir
       mountPath: "/work-dir"
-~~~
+```
 
 
 
@@ -2379,8 +2361,8 @@ Deployment控制器能够实现的功能
 
 ### yaml解析
 
-~~~yaml
-apiVersion: apps/v1      
+```yaml
+apiVersion: apps/v1
 kind: Deployment     
 metadata:       
   name: string       # 必填，Deployment名称, 同时根据该名字生成pod名字, 生成Deployment也会删除pod
@@ -2406,7 +2388,7 @@ spec:         #必填，部署的详细定义
         name: string #必填，遇上面matchLabels的标签相同
     spec: 
       containers:      #必填，定义容器列表
-~~~
+```
 
 案例
 
@@ -2443,14 +2425,16 @@ spec:
 
 ### 扩缩容
 
+
 ~~~shell
-kubectl scale deployment deployment --replica 10 # 扩容到10个副本
+# 扩容到10个副本
+kubectl scale deployment deployment --replica 10 
 
 # 自动根据容器cpu使用率进行扩缩容
 # 最小副本10, 最大副本15
 # 当容器cpu使用率大于80%的时候进行扩容, 当cpu小于80%的时候缩容
 kubectl autoscale deployment deployment_name --min=10 --max=15 --cpu-percent=80
-~~~
+```
 
 
 
@@ -2458,7 +2442,7 @@ kubectl autoscale deployment deployment_name --min=10 --max=15 --cpu-percent=80
 
 ### 镜像更新和回滚
 
-~~~shell
+```shell
 # 更新镜像, --record的作用是将该命令记录在版本号的change-cause字段中
 kubectl set image  deployment/deployment_name  container_name=image_name --record
 # 修改nginx-deployment下的容器nginx的镜像 修改为nginx:1.2
@@ -2474,7 +2458,7 @@ kubectl rollout status deployment/deployment_name
 
 # 查看deployment的历史版本
 kubectl rollout history deployment/deployment_name
-~~~
+```
 
 ![image-20231013151426897](img/k8s笔记/image-20231013151426897.png)
 
@@ -2499,7 +2483,6 @@ kubectl delete deploy -n namespae_name deploy_name # 删除指定命名空间中
 ~~~
 
 
-
 ### 实践
 
 1. 如何查看Deployment创建出来的ReplicaSet, 以及ReplicaSet控制的Pod
@@ -2518,7 +2501,7 @@ kubectl delete deploy -n namespae_name deploy_name # 删除指定命名空间中
 
 通过如下模板创建3个pv, 因为StatefulSet的replicas为3, 需要3个pv, 每个副本都会占据一个pv
 
-~~~yaml
+```yaml
 # 创建pv
 apiVersion: v1
 kind: PersistentVolume
@@ -2538,11 +2521,11 @@ spec:
   nfs:
     path: /nfs/data
     server: cdh107
-~~~
+```
 
 ![image-20231024221444559](img/k8s笔记/image-20231024221444559.png)
 
-~~~yaml
+```yaml
 # 创建headless service
 apiVersion: v1
 kind: Service
@@ -2593,7 +2576,7 @@ spec:
         resources:
           requests:
             storage: 1Gi
-~~~
+```
 
 <img src="img/k8s笔记/image-20231024223220762.png" alt="image-20231024223220762" style="zoom:50%;" />
 
@@ -2604,7 +2587,7 @@ spec:
   k8s会按照`{statefulset名称}-{index}`的名称来启动pod的多个副本, 并且多个副本会按照顺序启动,  如上图所示, 先启动web4-0, web4-1, web4-2, 只有前一个副本状态变为running和ready后才会启动下一个副本(基于initContainer实现)
 
   当删除pod的时候, 会从N-1到0顺序删除所有副本
-
+  
   **通过init containers来实现**
 
 - pod重新创建后名称不变
@@ -2616,10 +2599,6 @@ spec:
 - 删除pod并不会删除pvc, 需要手动处理
 
 - 通过volumeClaimTemplates字段, k8s会为每一个StatefulSet都创建一个pvc, 名称格式为: `{volumeClaimTemplates.name}-{pod_name}`, 比如上面`{volumeClaimTemplates.name}`是www, 所以创建的pvc分别是www-web4-0, www-web4-1, www-web4-2
-
-  
-
-  
 
 ## DaemonSet 控制器
 
@@ -2636,7 +2615,7 @@ Daemon确保在每个node(除了有污点的node)上都运行一个pod副本,  �
 
 ### yaml解析
 
-~~~yaml
+```yaml
 apiVersion: apps/vl
 kind: DaemonSet
 metadata:
@@ -2655,7 +2634,7 @@ spec:
       containers:
         - name: daemonset-example
           image: nginx:1.24
-~~~
+```
 
 然后通过`kubectl apply -f my-daemonset.yaml` 来创建这个DaemonSet
 
@@ -2694,7 +2673,7 @@ Pod执行完毕后, 状态为Completed
 
 ### yaml解析
 
-~~~yaml
+```yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -2714,7 +2693,7 @@ spec:
           image: perl
           command: ["perl","-Mbignum=bpi", "-wle", "print bpi(2000)"] # 通过perl语言计算圆周率后2000位
       restartPolicy: Never # RestartPolicy仅支持Never或OnFailure
-~~~
+```
 
 <img src="img/k8s笔记/image-20231013155959022.png" alt="image-20231013155959022" style="zoom:50%;" />
 
@@ -2759,7 +2738,7 @@ CronJob的原理:
 
 ### yaml解析
 
-~~~yaml
+```yaml
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -2788,7 +2767,7 @@ spec:
                 - -c
                 - date; echo Hello from the Kubernetes cluster
           restartPolicy: OnFailure
-~~~
+```
 
 
 
@@ -2843,11 +2822,15 @@ Service 在 K8s 中有以下四种类型: ClusterIp,  NodePort, LoadBalancer, Ex
 
 默认类型，这种类型的Service会被分配一个**仅 cluster 内部**可以访问的虚拟IP, 访问该虚拟ip后会轮询的将请求转发到pod上
 
-同时还会在集群内部的dns上创建一个A记录, 格式为`${service-name}.${namespace}.svc.cluster.local`, 当访问这个域名的时候, 访问到的就是service的ip
+> Note: 这里的转发是转发到容器内部的端口上, 即pod中指定的containerPort, 而不是hostPort
+
+> Note: 如果一个pod没有指定hostPort, 那么他就只能通过ClusterIp或者Service来提供服务了
+
+同时还会在集群内部的dns上创建一个A记录, 格式为`service-name.namespace.svc.cluster.local`, 当访问这个域名的时候, 访问到的就是service的ip
 
 <img src="img/k8s笔记/image-20231013172054050.png" alt="image-20231013172054050" style="zoom:25%;" />
 
-~~~yaml
+```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -2889,7 +2872,7 @@ spec:
       port: 80 # service占用的端口
       protocol: TCP
       targetPort: http-web-svc # 转发到的端口, 可以直接写端口名字, 也可以使用数字
-~~~
+```
 
 ![image-20231106182304861](img/k8s笔记/image-20231106182304861.png)
 
@@ -2901,7 +2884,7 @@ spec:
 
 <img src="img/k8s笔记/image-20231013172823945.png" alt="image-20231013172823945" style="zoom:33%;" />
 
-~~~yaml
+```yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -2969,8 +2952,6 @@ spec:
 
 
 
-
-
 ## ExternalName
 
 这种方式主要用于Pod访问集群外部的服务
@@ -2979,7 +2960,7 @@ spec:
 
 当外部服务改变时, 只需要修改这个service中记录的ip和port即可, 不需要修改pod中的ip和port
 
-~~~yaml
+```yaml
 kind: Service
 apiVersion: v1
 metadata:
@@ -2988,7 +2969,7 @@ metadata:
 spec:
   type: ExternalName
   externalName: hub.atguigu.com
-~~~
+```
 
 当查询主机 `my-service.defalut.svc.cluster.local` ( SVC_NAME.NAMESPACE.svc.cluster.local )时，集群的
 DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
@@ -3006,7 +2987,7 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
 - 会在集群内部有一个确切的虚拟ip
 
 - 会在集群内部的dns上添加一条A记录, 格式为`service-name.namespace.svc.cluster.local`, 这样pod中的程序访问这个域名, 就会被解析到service的ip上, **service再将请求轮询转发给pod**
-
+  
   ![image-20231106182304861](img/k8s笔记/image-20231106182304861.png)
 
 - 访问service的ip和域名, 就是访问到service, 然后service通过轮询的方式发送请求到pod中
@@ -3016,14 +2997,14 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
 - 不会分配一个确切的虚拟ip
 
 - 会在集群内部的dns上添加一条A记录, 格式为`service-name.namespace.svc.cluster.local`, 但是解析出来的ip并不是service的ip, 而直接是pod的ip, 如果有需要可以自己在客户端做些负载均衡策略
-
+  
   ![image-20231106191538447](img/k8s笔记/image-20231106191538447.png)
-
+  
   ![image-20231106191532663](img/k8s笔记/image-20231106191532663.png)
 
 - 会为每一个pod都添加一个A记录, 格式为`pod-name.service-name.namespace.svc.cluster.local`, 解析出来就直接是pod的ip, 直接访问该域名就可以访问到对应的pod
 
-  
+
 
 # Ingress
 
@@ -3041,11 +3022,9 @@ Ingress的主要作用是:  Service只能进行四层代理, 即只有访问serv
 2. 然后所有的请求通过域名发送到svc中
 3. svc转发给nginx,  然后通过nginx中的规则转发到后端pod的service中. 而转发的配置文件不用我们自己手写, ingress会通过yaml进行自动配置好
 
-
-
 安装:
 
-~~~shell
+```shell
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
 
 # 等待安装完成
@@ -3055,17 +3034,15 @@ kubectl wait --namespace ingress-nginx \
   --timeout=120s
 # 查看pod状态
 kubectl get pods --namespace=ingress-nginx
-~~~
+```
 
 ![image-20231023223731466](img/k8s笔记/image-20231023223731466.png)
 
 ![image-20231023224551164](img/k8s笔记/image-20231023224551164.png)
 
-
-
 使用: 
 
-~~~yaml
+```yaml
 apiVersion: apps/v1   
 kind: Deployment
 metadata:
@@ -3116,19 +3093,17 @@ spec:
                 name: nginx-svc # 转发到的svc
                 port: 
                   number: 80
-~~~
+```
 
 ![image-20231023225634418](img/k8s笔记/image-20231023225634418.png)
 
 经过上面的配置, 我们只需要访问`www1.atguigu.com:31864`就会访问到ingress的nodeport端口, 然后转发给nginx, 然后nginx再经过规则转发给后端的service
 
-
-
 > Note: 使用上面网站的yml安装ingress-nginx经常会失败, 因为镜像下载不下来, 可以使用下面这个文件
->
+> 
 > 主要就是将k8s镜像更新为阿里云的镜像
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -3778,10 +3753,7 @@ webhooks:
     resources:
     - ingresses
   sideEffects: None
-
-~~~
-
-
+```
 
 # 存储
 
@@ -3794,8 +3766,8 @@ ConfigMap AP 给我们提供了向容器中注入配置信息的机制，ConfigM
 ### ConfigMap的创建
 
 1. 通过配置文件或者目录来创建
-
-   ~~~shell
+   
+   ```shell
    $ ls 
    game.properties
    ui.properties
@@ -3814,17 +3786,18 @@ ConfigMap AP 给我们提供了向容器中注入配置信息的机制，ConfigM
    $ kubectl create configmap game-config --from-file=./game.properties
    ~~~
 
+
    通过上面这种方式创建的configmap,  一个文件名就是一个key, 文件内容就是对应的value
 
 2. 通过命令行创建
-
-   ~~~shell
+   
+   ```shell
    kubectl create cm cm_name --from-literal=color.good=purple --from-literal=color.bad=yellow
-   ~~~
+   ```
 
 3. 通过yaml创建
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: v1
    kind: ConfigMap
    metadata:
@@ -3853,8 +3826,8 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
 ### 使用configmap
 
 1. 将configmap中的配置加载到环境变量中
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: v1
    kind: ConfigMap
    metadata:
@@ -3895,17 +3868,17 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
            - configMapRef:
                name: env-config1 # configmap的名字, 将整个configmap中的key-value都加载进env
      restartPolicy: Never
-   ~~~
-
+   ```
+   
    然后通过下面命令可以查看到configmap中的配置确实加载进了容器的env中
-
-   ~~~shell
+   
+   ```shell
    [root@cdh105 ~]# kubectl logs test
    color.warn=yellow
    color.bad=red
    color.good=green
    color.forbidden=black
-   ~~~
+   ```
 
 2. 将configmap作为卷挂载进容器中, 作为配置文件
 
@@ -3939,18 +3912,18 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
          configMap:
            name: env-config
      restartPolicy: Never
-   ~~~
-
+   ```
+   
    通过如下命令来查看结果
-
-   ~~~shell
+   
+   ```shell
    [root@cdh105 ~]# kubectl exec test -it -- /bin/sh
    # cd /etc/config
    # ls
    color.bad        color.forbidden  color.good       color.warn
    # cat *
    redblackgreenyellow
-   ~~~
+   ```
 
 ## Secret
 
@@ -3962,7 +3935,7 @@ Secret 有三种类型:
 - **Service Account**: 用来访问 Kubernetes APl，由 Kubernetes 自动创建，并且会自动挂载到 Pod的`/run/secrets/kubernetes.io/serviceaccount` 目录中
 
 - **Opaque**: Opaque和ConfigMap比较类似, 但是他要求value是base64编码的
-
+  
   **并在作为数据卷和环境变量加载进容器的时候, k8s会先进行base64解码再加载进去**
 
 - **docker-registry**:  在创建pod的时候, 如果镜像在私服, 那么我们将无法拉取进行, 这个时候要进行登录认证, 而登录认证所需要的信息就报错在docker-registry中
@@ -3982,8 +3955,6 @@ kubectl describe secret secret_name # 查看sa的内容
 ![image-20231024175342765](img/k8s笔记/image-20231024175342765.png)
 
 **横线标出来的就是sa的账户名, 如果给pod分配权限, 可以使用这个账户名来和Role进行绑定**
-
-
 
 当pod启动的时候，会默认挂载当前namespace下secret进入pod，通过这个secret进行身份验证
 
@@ -4006,10 +3977,10 @@ ca.crt  namespace  token
 ### Opaque
 
 1. Opaque和ConfigMap比较类似, 但是他要求value是base64编码的
-
+   
    **并在作为数据卷和环境变量加载进容器的时候, k8s会先进行base64解码再加载进去**
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: v1
    kind: Secret
    metadata:
@@ -4018,21 +3989,19 @@ ca.crt  namespace  token
    data:
      password: YWRtaW4= # admin
      username: dGlnZXI= # tiger
-   ~~~
-
-   通过如下命令查看创建的secret
-
-   ~~~shell
-   kubectl get secret
-   ~~~
-
+   ```
    
+   通过如下命令查看创建的secret
+   
+   ```shell
+   kubectl get secret
+   ```
 
 2. 使用方式
-
+   
    1. 将secret挂载到volume中
-
-      ~~~yaml
+      
+      ```yaml
       apiVersion: v1
       kind: Secret
       metadata:
@@ -4060,22 +4029,22 @@ ca.crt  namespace  token
                 mountPath: "/etc/secrets" # 挂载到指定目录下
                 readOnly: true
         restartPolicy: Never
-      ~~~
-
+      ```
+      
       通过如下命令查看结果发现, secrets中的配置已经解密了
-
-      ~~~shell
+      
+      ```shell
       $ kubectl exec sep -it -- /bin/bash
       $ cd /etc/secrets
       $ ls
       password  username
       $ cat password
       admin
-      ~~~
-
+      ```
+   
    2. 将secrets加载进环境变量
-
-      ~~~yaml
+      
+      ```yaml
       apiVersion: v1
       kind: Secret
       metadata:
@@ -4109,27 +4078,27 @@ ca.crt  namespace  token
               - secretRef:
                   name: mysecret1 # configmap的名字, 将整个configmap中的配置都加载进env
         restartPolicy: Never
-      ~~~
-
+      ```
+      
       通过如下命令查看结果
-
-      ~~~shell
+      
+      ```shell
       $ kubectl logs test
       admin
-      ~~~
+      ```
 
 ### docker-registry
 
 通过kubectl来创建docker registry类型的secret, 用来给docker私服仓库做认证
 
-~~~shell
+```shell
 $ kubectl create secret docker-registry registrykey_name --docker-server=DOCKER REGISTRY SERVERdocker-username=DOCKER_USER --docker-password=DOCKER_PASSHORD --docke-email=DOCKER_EMAIL 
 secret "myregistrykey” created.
 
 # 上面的docker-registry表示secret的类型, registrykey_name表示secret的名称
-~~~
+```
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -4140,7 +4109,7 @@ spec:
       image: roc/awangyang:v1  # 拉取私服中的这个镜像需要认证, 所以使用docker registry来认证
   imagePullSecrets:
     - name: registrykey_name # 使用的docker registry
-~~~
+```
 
 
 
@@ -4168,7 +4137,7 @@ pod中的容器共享该卷中的文件
 
 当删除 Pod 时， emptyDir 中的数据将被永久删除
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -4183,11 +4152,7 @@ spec:
   volumes:
     - name: cache-volume # volumes的名字
       emptyDir: {} # 定义emptyDir
-~~~
-
-
-
-
+```
 
 ### hostPath
 
@@ -4195,7 +4160,7 @@ spec:
 
 需要注意的是, 因为每次pod所在的node不同, 所以即使同样的配置, 挂载进pod的内容也会不同
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -4220,7 +4185,7 @@ spec:
         # CharDevice: 必须存在给定的字符设备
         # BlockDevice: 必须存在给定的块设备
         type: Directory 
-~~~
+```
 
 ### nfs(net file system)
 
@@ -4239,23 +4204,23 @@ spec:
    cat > /etc/exports << EOF # 导出要被挂载的目录, 是他能够被挂载到其他客户机的目录下
    /nfs/data *(rw,no_root_squash,no_all_squash,sync)
    EOF
-   
+   ```
    
    systemctl start rpcbind
    systemctl start nfs
    systemctl enable rpcbind
    systemctl enable nfs
-   ~~~
 
+```
 2. 在所有的k8s的node主机上安装nfs相关组件, k8s需要通过这个来连接目标服务器
 
    ~~~shell
    yum install -y nfs-common nfs-utils rpcbind
-   ~~~
+```
 
 3. 测试nfs
-
-   ~~~shell
+   
+   ```shell
    # 在nfs主机上创建一个文件
    cat << EOF > /nfs/data/test.txt
    hello world
@@ -4266,13 +4231,13 @@ spec:
    showmount -e cdh107 # 查看cdh107上被导出的, 能够被挂载的目录
    mount -t nfs cdh107:/nfs/data  /test # 将cdh107下的/nfs/data挂载到客户机/test目录下
    umount -t nfs /test # 卸载挂载的目录
-   ~~~
+   ```
    
    ![image-20231024193535590](img/k8s笔记/image-20231024193535590.png)
-   
-4. 通过如下yaml创建pod
 
-   ~~~yaml
+4. 通过如下yaml创建pod
+   
+   ```yaml
    apiVersion: apps/v1
    kind: Deployment
    metadata:
@@ -4301,13 +4266,9 @@ spec:
              nfs:
                server: cdh107 # 指定目标服务器
                path: /nfs/data # 指定目标服务器上需要挂载的目录
-   ~~~
-
+   ```
+   
    ![image-20231024194459482](img/k8s笔记/image-20231024194459482.png)
-
-
-
-
 
 ## PersistentVolume
 
@@ -4317,15 +4278,13 @@ PersistentVolumeClaim(PVC)是对PV的申请, 通过在Pod中指定PVC, 之后PVC
 
 当pvc和pv绑定之后, pod就可以使用pvc了而无需关系pv的实现细节
 
-
-
 ### 创建pv
 
 下面是通过nfs创建一个PersistentVolume的yaml案例
 
 **记得根据上面创建nfs的Volume的教程安装nfs组件**
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -4365,7 +4324,7 @@ spec:
   nfs:
     path: /nfs/data
     server: cdh107
-~~~
+```
 
 查看pv以及他的描述信息
 
@@ -4383,13 +4342,11 @@ kubectl delete pv -n namespace_name pv0003 # 删除pv
 
 <img src="img/k8s笔记/image-20231024195234180.png" alt="image-20231024195234180" style="zoom:50%;" />
 
-
-
 ### 创建pvc
 
 下面是一个PersistentVolumeClaims的案例, 通过下面yaml创建pvc后, 他会找到一个符合条件的pv进行绑定
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -4408,7 +4365,7 @@ spec:
       pv-type: example-label
     matchExpressions: # 定义绑定的pv需要对应的label
       - {key: environment, operator: In, values: [dev]}
-~~~
+```
 
 相关的shell
 
@@ -4457,21 +4414,87 @@ spec:
 
 <img src="img/k8s笔记/image-20231024200232138.png" alt="image-20231024200232138" style="zoom:50%;" />
 
+### 相关shell
 
+```shell
+kubectl get pv, pvc # 查看当前namespace下的pvc和pv
+kubectl describe pv pv_name # 查看pv的详细信息
+```
+
+## 特殊的变量
+
+在上面的内容中, 我们可以将ConfigMap, Qpaque的挂载到环境变量中, 当然k8s中还有一些特殊的变量, 可以让我们挂在到环境变量中
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-pod
+  namespace: default
+spec:
+  containers:
+    - name: example-container
+      image: nginx:latest
+      env:
+        # spec.nodeName表示pod所在的node的名称, 可以通过kubectl get nodes来查看
+        # 下面代码将spec.nodeName设置为pod的环境变量NODENAME
+        - name: NODENAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        # metadata.name 表示当前pod的名称
+        # 下面代码将metadata.name 设置为pod的POD_NAME环境变量
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        # metadata.namespace 表示当前pod所在的命名空间
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        # status.podIP表示当前pod在docker中的ip
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        # status.hostIP表示当前pod所在的node的ip
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        # metadata.labels['app'] 表示当前pod的label app的
+        - name: POD_LABEL
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['app']
+        # 挂etadata.annotations['example-annotation'] 表示当前pod的annotations中的example-annotation的值
+        - name: POD_ANNOTATION
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['example-annotation']
+        # spec.containers[0].name表示pod中第一个容器的名字（容器索引从 0 开始）
+        - name: CONTAINER_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.containers[0].name
+
+
+```
 
 ## 存储卷的细节
 
 - 对于configmap类型的存储卷, 可以配置item, 这样可以不用挂载全部的文件和目录到pod中
-
+  
   通过key来指定configmap中的key, path指定挂载到pod中文件的名称(默认是文件名就是key)
 
 - volumeMounts中可以指定一个subPath选项
-
+  
   不过不指定的话, mountPath默认是目录, 会把卷中的所有东西都挂载到mountPath中
-
+  
   如果指定了subPath的话, mountPath就是subPath(subPath是文件, mountPath就是文件, subPath是目录, mountPath就是文件)
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -4525,13 +4548,13 @@ spec:
                 path: b1
               - key: c
                 path: c1
-~~~
+```
 
 上面这样配置可以适用在如下的场景中:
 
 1. 一个共享卷挂载多个目录
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: v1
    kind: Pod
    metadata:
@@ -4559,11 +4582,11 @@ spec:
        - name: site-data
          persistentVolumeClaim:
            claimName: my-lamp-site-data
-   ~~~
+   ```
 
 2. ConfigMap和Secret只挂载特定的文件, 并且只挂载到特定路径上, 而不覆盖整个目录
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: v1
    kind: Pod
    metadata:
@@ -4585,9 +4608,7 @@ spec:
              # 只挂载指定的文件
                - key: setenv.sh
                  path: setenv.sh # 文件别名
-   ~~~
-
-   
+   ```
 
 # 调度
 
@@ -4603,13 +4624,11 @@ Predicate 有一系列的算法可以使用：
 
 - `PodFitsResources` ：节点剩余资源是否大于 pod 请求的资源
 - `PodFitsHost` ：如果 pod 指定了 NodeName，检查节点名称是否和 NodeName 匹配
-- `PodFitsHostPorts` ：节点上已经使用的 port 是否和 pod 申请的 port 冲突
+- `PodFitsHostPorts` ：如果pod指定了hostPort, 那么说明这个pod需要将宿主机的端口, 映射到pod容器内的端口, 所以还需要检查宿主机的端口有没有被其他的节点占用
 - `PodSelectorMatches` ：过滤掉和 pod 指定的 label 不匹配的节点
 - `NoDiskConflict` ：已经 mount 的 volume 和 pod 指定的 volume 不冲突，除非它们都是只读
 
 如果在 predicate 过程中没有合适的节点，pod 会一直在 pending 状态，不断重试调度，直到有节点满足条件。
-
-
 
 经过这个步骤，如果有多个节点满足条件，就继续 priorities 过程： 按照优先级大小对节点排
 
@@ -4627,8 +4646,6 @@ Predicate 有一系列的算法可以使用：
 
 通过算法对所有的优先级项目和权重进行计算，得出最终的结果
 
-
-
 ## 亲和性
 
 ### 节点亲和性
@@ -4639,7 +4656,7 @@ Predicate 有一系列的算法可以使用：
 
 每个Node上都会有一个label, key为 `kubernetes.io/hostname`, value为`当前主机hostname`
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -4655,11 +4672,11 @@ spec:
       # 硬亲和性, pod必须调度到label满足以下条件的node上
       requiredDuringSchedulingIgnoredDuringExecution: 
         nodeSelectorTerms:
-          # 指定了多个matchExpressions, 那么只要其中一个, 节点就满足了条件
+          # 如果在这里指定了多个matchExpressions, 那么只要其中一个, 节点就满足了条件
           # 即多个matchExpressions是或的关系
           - matchExpressions:
+            # 如果在这里指定了多个key, 那么他们之间的关系是且的关系
             # 被分配的节点的label必须满足含有key为disktype, 并且value为ssd或者disk
-            # 如果指定了多个条件, 那么他们的关系是且
             - key: disktype
               operator: In # 操作符[In NotIn Exists Gt Lt Equal DoesNotExists]
               values: 
@@ -4667,21 +4684,22 @@ spec:
               - disk
       # 软亲和性, pod优先调度到label满足以下条件的node上
       preferredDuringSchedulingIgnoredDuringExecution: 
-      - weight: 1 # 权重
+      # 符合条件的节点会获得weight指定的分数, 然后k8s会根据weight来计算总分, 分越高的节点优先级越高
+      - weight: 1 
         preference:
+          # 多个matchExpressions之间是或的关系
+          # 同一个matchExpressions下面的多个key, 是且的关系
           matchExpressions:
             - key: disktype # key
               operator: In  # 操作符[In NotIn Exists Gt Lt Equal DoesNotExists]
               values: # value
               - ssd 
               - disk
-~~~
+```
 
 ### Pod亲和性和反亲和性
 
-Pod 间亲和性与反亲和性使你可以基于已经在节点上运行的 **Pod** 的标签来约束 Pod 可以调度到的节点，而不是基于节点上的标签。
-
-
+Pod 间亲和性与反亲和性使你可以基于**已经在节点上运行的 Pod 的标签**来约束 Pod 可以调度到的节点，而不是基于节点上的标签。
 
 **在设置亲和性和反亲和性的时候, 需要设置一个label  key为`topologyKey`, 根据node上的该label的value将集群分为多个拓扑区域**
 
@@ -4689,13 +4707,11 @@ Pod 间亲和性与反亲和性使你可以基于已经在节点上运行的 **P
 
 <img src="img/k8s笔记/image-20231020224224332.png" alt="image-20231020224224332" style="zoom: 33%;" />
 
-我们可以通过`topology=location`将集群分为sh和sz两个拓扑区域
+- 我们可以通过`topology=location`将集群分为sh和sz两个拓扑区域
 
-也可以通过`topology=kubernetes.io/hostname`将集群的每一个节点划分为一个拓扑区域, 因为`kubernetes.io/hostname`这个label是每个node都默认有的, 值为每个节点的hostname, 所以能够将每个节点都划分为一个拓扑区域
+- 也可以通过`topology=kubernetes.io/hostname`将集群的每一个节点划分为一个拓扑区域, 因为`kubernetes.io/hostname`这个label是每个node都默认有的, 值为每个节点的hostname, 所以能够将每个节点都划分为一个拓扑区域
 
 > Note: 必须要每个节点上都有该label标签, 才能将label key作为topologyKey
-
-
 
 Pod 间亲和性的意思为: **如果某个拓扑区域已经有符合某些条件的pod了,  那么就应该将pod分配到这个拓扑区域的随机节点上**
 
@@ -4703,7 +4719,7 @@ Pod间反亲和性的意思为: **如果某个拓扑区域已经有符合某些�
 
 以下为pod亲和性案例: 
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -4713,6 +4729,10 @@ spec:
     # pod亲和性
     podAffinity:
       # 如果某个拓扑区域上有pod的label满足条件, 就必须调度上这个拓扑区域的节点上
+
+      # 下面的作用是根据node的location label来划分拓扑区域
+      # 如果某个拓扑区域中有label为app=mysql或者app=pg的pod
+      # 那么当前的pod就必须分配在这个拓扑区域中
       requiredDuringSchedulingIgnoredDuringExecution:
       - labelSelector:
           matchExpressions:
@@ -4720,8 +4740,13 @@ spec:
             operator: In
             values:
             - mysql
-        topologyKey: location  # 指定通过location的label来划分拓扑区域
+            - pg
+        topologyKey: location
       # 如果某个拓扑区域上有pod的label满足条件, 就优先调度上这个拓扑区域的节点上
+
+      # 下面的作用是根据node的location label来划分拓扑区域
+      # 如果某个区域中有label为app=mysql或者app=pg的pod
+      # 那么当前pod就优先分配在这个拓扑区域中, 并且这些node的权重得分+100
       preferredDuringSchedulingIgnoredDuringExecution:
       - weight: 100
         podAffinityTerm:
@@ -4731,12 +4756,12 @@ spec:
               operator: In
               values:
               - mysql
+              - pg
           topologyKey: location # 指定通过location的label来划分拓扑区域
   containers:
   - name: java
     image: registry.k8s.io/pause:2.0
-
-~~~
+```
 
 在上面的案例中, 我们通过location来划分拓扑区域, 那么AB为一个拓扑区域, CD为一个拓扑区域
 
@@ -4744,12 +4769,9 @@ spec:
 
 **这种情况适用于将两个服务的 Pod 放到同一个云提供商可用区内，因为它们彼此之间通信非常频繁**
 
-
-
 以下是反亲和性的案例:
 
-~~~yaml
-
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -4759,15 +4781,24 @@ spec:
     # 节点反亲和性
     podAntiAffinity:
       # 如果某个拓扑区域上有pod的label满足条件, 就一定不能调度将pod调度到这个区域的节点上
+
+      # 下面的作用是根据node的location label来划分拓扑区域
+      # 如果某个拓扑区域中有label为jdk=jdk11或者jdk=jdk18的pod
+      # 那么当前的pod就一定不能分配在这个拓扑区域中
       requiredDuringSchedulingIgnoredDuringExecution:
       - labelSelector:
           matchExpressions:
-          - key: app
+          - key: jdk
             operator: In
             values:
-            - java2
+            - jdk11
+            - jdk18
         topologyKey: location  # 指定通过location的label来划分拓扑区域
       # 如果某个拓扑区域上有pod的label满足条件, 就优先不将该pod调度到这个区域的节点上
+
+      # 下面的作用是根据node的location label来划分拓扑区域
+      # 如果某个区域中有label为security=S2或者security=S3的pod
+      # 那么当前pod就不优先分配在这个拓扑区域中, 并且这些node的不优先权重得分+100
       preferredDuringSchedulingIgnoredDuringExecution:
       - weight: 100
         podAffinityTerm:
@@ -4777,19 +4808,18 @@ spec:
               operator: In
               values:
               - S2
+              - S3
           topologyKey: location  # 指定通过location的label来划分拓扑区域
   containers:
   - name: java1
     image: registry.k8s.io/pause:2.0
-~~~
+```
 
 在上面的案例中, 我们通过location来划分拓扑区域, 那么AB为一个拓扑区域, CD为一个拓扑区域
 
 如果在A节点上有pod的label满足app in (java2),  那么就会将我们创建的名为java1的pod 一定不能/优先不  调度到AB节点上
 
 **这种情况适用于将同一服务的多个 Pod 分布到多个云提供商可用区中。**
-
-
 
 ### NodeSelector
 
@@ -4809,7 +4839,6 @@ spec:
   - name: nginx
     image: nginx
     imagePullPolicy: IfNotPresent
-
 ```
 
 ### NodeName
@@ -4822,7 +4851,7 @@ spec:
 - 如果所指代的节点无法提供用来运行 Pod 所需的资源，Pod 会失败， 而其失败原因中会给出是否因为内存或 CPU 不足而造成无法运行。
 - 在云环境中的节点名称并不总是可预测的，也不总是稳定的。
 
-~~~yaml
+```yaml
 apiVersion: v1
 kind: Pod
 metadata:
@@ -4833,39 +4862,62 @@ spec:
   - name: nginx
     image: nginx
     imagePullPolicy: IfNotPresent
-~~~
-
-
+```
 
 ### 污点和污点容忍
 
-Taint(污点)和Toleration(污点容忍) 可以用来避免pod被分配到不合适的节点上, 每个节点都可以有多个taint, 对于哪些不能容忍taint的pod, 是不会被分配到该节点上的.
+污点(Taints)和污点容忍(Tolerations) 主要解决了以下的作用
+
+- 节点排斥: 避免pod被调度到不合适的特定节点(专用于GPU的节点)上
+
+- 节点隔离: 标记故障或者维护中的节点, 防止pod被调度到这些节点上
+
+- 优先级调度: 运行特定的pod可以容忍污点, 调度到有污点的node上
+
+每个node都可以被设置多个污点Taints, 如果pod不能容忍这些污点, 那么不会调度到这个pod上, 如果pod能够容忍这些污点, 那么就有可能调度到这个node上
+
+
 
 #### 污点
 
-每个污点都有key, value, effect组成, 其中value可以为空, effect描述污点的作用, 有以下三个选项
+每个污点都有key, value, effect组成, 格式为`key=value:effect`
 
-- NoSchedule: 表示k8s不会将pod调度到当前节点上面
-- PreferNoSchedule: 表示k8s尽量避免将pod调度到该节点上面
-- NoExecute: 表示k8s不会将pod调度到当前节点上面, 同时会将节点上已经存在的pod驱逐(**如果被驱逐的pod被deployment控制, 那么他会漂到其他机器上, 否则就直接没有了**)
+- key表示当前污点的名称
 
-~~~~shell
-# 设置污点
-kubectl taint nodes xxx key1=value1:NoSchedule
+- value表示污点的值, 可选, 可以问空
 
-# 查看污点
-kubectl describe nodes xxx
+- effect决定了排斥pod的方式, 他的取值如下
+  
+  1. NoSchedule: 表示k8s不会将新的pod调度到这个node上面, 但是已经在这个node上面的pod可以继续运行
+  
+  2. PreferNoSchedule: 表示k8s尽量避免将pod调度到该节点上面, 已经在这个node上面的pod可以继续运行
+  
+  3. NoExecute: 表示k8s不会将新的pod调度到当前node上面, 同时会将节点上已经存在的, 不能容忍这个污点的pod驱逐
+     
+     (**如果被驱逐的pod被deployment控制, 那么他会漂到其他机器上, 否则就直接没有了**)
 
-# 去除污点
-kubectl taint nodes xxx key1=value1:NoSchedule-
-~~~~
+
+
+```shell
+# 设置污点到指定的node上
+kubectl taint nodes <node-name> key1=value1:effect
+# 案例: 禁止普通pod调度到GPU节点上
+kubectl taint nodes node1 gpu=true:NoSchedule
+
+# 查看node上面的污点
+kubectl describe nodes <node-name> | grep Taints
+
+# 去除指定node上的污点, 特别要注意后面有一个减号
+kubectl taint nodes <node-name> key-
+# 案例
+kubectl taint nodes node1 gpu-
+```
 
 #### 污点容忍
 
-
 设置了污点的 Node, Pod 将在一定程度上不会被调度到 Node 上。 但我们可以在 Pod 上设置污点容忍 ( Toleration ) , 使得当前pod可以被调度到有污点的节点上.
 
-~~~yaml
+```yaml
 apiVersion: v1       
 kind: Pod       
 metadata:       
@@ -4873,39 +4925,39 @@ metadata:
 spec:         
   containers:      
   - name: nginx     
-    image: nginx   
+    image: nginx
   tolerations:
     # 其中 key, vaule, effect 要与 Node 上设置的 taint 保持一致, 才能容忍污点
     - key: "key1"
       operator: "Equal" # [In NotIn Exists Gt Lt Equal DoesNotExists], 当值为Exists时将会忽略value值
       value: "value1"
       effect: "NoSchedule"
-      tolerationSeconds: 3600 # 描述当 Pod 需要被驱逐时可以在 Pod 上继续保留运行的时间
-~~~
+      # 这个配置仅对NoExecute有效
+      # 描述当node被标记为NoExecute污点后, Pod再被关闭之前, 还可以运行多长时间
+      tolerationSeconds: 3600
+```
 
 当不指定 key 值时，表示容忍所有的污点 key：
 
-~~~yaml
+```yaml
 tolerations:
   - operator: "Exists"
-~~~
+```
 
 当不指定 effect 值时，表示容忍所有的污点作用
 
-~~~yaml
+```yaml
 tolerations:
   - key: "key"
     operator: "Exists"
-~~~
+```
 
 有多个 Master 存在时，防止资源浪费，可以如下设置
 
-~~~shell
+```shell
 # 设置一个污点, 让pod尽量不要调度到master节点
 kubectl taint nodes Node-Name node-role.kubernetes.io/master=:PreferNoSchedule
-~~~
-
-
+```
 
 # 称加密, 非对称加密, 电子签名, CA证书, HTTPS
 
@@ -4927,10 +4979,6 @@ kubectl taint nodes Node-Name node-role.kubernetes.io/master=:PreferNoSchedule
 
 当b发送消息给a的时候, 通过a_pub + message = 密文 发送给a,   a通过a_pri + 密文 = message
 
-
-
-
-
 但是上面的形式, 无法避免中间人攻击, 过程如下
 
 ab分别生成公私钥,.  a(a_pri/a_pub),   b(b_pri, b_pub),   同时有一个中间人c也生成了两对公私钥(ca_pri/ca_pub)(cb_pri/cb_pub)
@@ -4941,8 +4989,6 @@ ab分别生成公私钥,.  a(a_pri/a_pub),   b(b_pri, b_pub),   同时有一个�
 
 于是a给b发送消息的时候, a就会使用cb_pub进行加密生成密文, 如果这个密文再次被c截获, 就可以通过cb_pri解密, 然后c将解密后的明文通过b_pub进行加密发送给b,   这样b就无法发现自己的信息被截获了
 
-
-
 ## 电子签名
 
 电子签名同样使用的是非对称加密, 但是和加密通信不同的是, 电子签名通过私钥进行加密, 通过公钥进行解密
@@ -4951,15 +4997,11 @@ ab分别生成公私钥,.  a(a_pri/a_pub),   b(b_pri, b_pub),   同时有一个�
 
 因为公钥是公开的, 所有人都能够获取, 所以如果这个签名能够被公钥进行解密, 并且解密出来的摘要和原文件的摘要一致, 那么就可以证明是私钥的持有者进行的加密,  因为只要他才能够生成这样一个特殊的签名
 
-
-
 但是这样的方式也有一定的弊端,  即电子签名能够保证`这个签名一定是公钥对应的私钥的持有者进行签名的`, 但是不能够保证`私钥的持有者就是你认为的那个人`
 
 打个比方, A需要对一个电子合同进行签名, 但是他却谎称B的公私钥是自己的公私钥,  并使用B的私钥进行签名, 合同的接收方也使用B的公钥进行解密, 来确认这个合同是A签署的
 
 后面A却说这个合同和自己无关, 是B签署的,  同时B也可以耍赖, 说这个私钥的持有者不是自己
-
-
 
 ## CA证书 (Certificate Authority)
 
@@ -5024,8 +5066,8 @@ https://www.bilibili.com/video/BV1KY411x7Jp/?spm_id_from=333.337.search-card.all
 
 证书签名请求:
 
--  CSR(Certificate Signing Request)，它是向CA机构申请数字×××书时使用的请求文件。在生成请求文件前，我们需要准备一对对称密钥。私钥信息自己保存，请求中会附上公钥信息以及国家，城市，域名，Email等信息，CSR中还会附上签名信息。当我们准备好CSR文件后就可以提交给CA机构，等待他们给我们签名，签好名后我们会收到crt文件，即证书。
-
+- CSR(Certificate Signing Request)，它是向CA机构申请数字×××书时使用的请求文件。在生成请求文件前，我们需要准备一对对称密钥。私钥信息自己保存，请求中会附上公钥信息以及国家，城市，域名，Email等信息，CSR中还会附上签名信息。当我们准备好CSR文件后就可以提交给CA机构，等待他们给我们签名，签好名后我们会收到crt文件，即证书。
+  
   把CSR交给权威证书颁发机构,权威证书颁发机构对此进行签名,完成。保留好`CSR`,当权威证书颁发机构颁发的证书过期的时候,你还可以用同样的`CSR`来申请新的证书,key保持不变.
 
 # CFSSL
@@ -5087,7 +5129,7 @@ which cfssl-certinfo
 根证书及其私钥，也即CA证书和CA证书的私钥，是集群所有节点共享的，只需要创建一个 CA 证书即其私钥，后续创建的所有证书都由它签名。CA根证书创建后一般命名是ca.pem。 CA更证书私钥创建后一般命名是ca-key.pem。
 
 > 注意：
->
+> 
 > **CA根证书及其私钥，只需要创建一次即可。后续其他证书都由它签名，CA根证书及其私钥一旦改变，其它证书也就无效了。**
 
 创建CA根证书及其私钥过程可依照以下2个步骤：
@@ -5104,7 +5146,7 @@ ca-csr.json该如何配置呢？ 其实很简单，下图是截取的cfssl官网
 - CN：Common Name，所有csr文件都必须有字段，对于 SSL 证书，一般为网站域名；而对于代码签名证书则为申请单位名称；而对于客户端证书则为证书申请者的姓名。
 
 - hosts: 网络请求url中的合法主机名或域名集合。
-
+  
   下面给出2个hosts的例子：(都包含127.0.0.1,并且都使用的是域名或主机名，并且都预留了额外3个host名带extra字样的为预留host,以备后期扩容只用)
 
 ```prolog
@@ -5119,7 +5161,7 @@ ca-csr.json该如何配置呢？ 其实很简单，下图是截取的cfssl官网
      ]
 ```
 
-~~~
+```
      "hosts":[
      "127.0.0.1",
      "cent7ax",
@@ -5129,9 +5171,7 @@ ca-csr.json该如何配置呢？ 其实很简单，下图是截取的cfssl官网
      "extra-cent7bx",
      "extra-cent7cx"
     ]
-~~~
-
-
+```
 
 注意：
 
@@ -5150,7 +5190,7 @@ O：  (Organization Name) 单位名称，对于 SSL 证书，一般为网站域�
 OU： (other)显示其他内容,常见的内容值有“System"、"Website"等
 ```
 
-~~~
+```
 电子邮件 (Email)：    简称E 字段 
 多个姓名字段 ：        简称G 字段 
 介绍Description ：   介绍字段 
@@ -5158,9 +5198,7 @@ OU： (other)显示其他内容,常见的内容值有“System"、"Website"等
 地址：               STREET  字段 
 邮政编码:            PostalCode 字段 
 显示其他内容：        简称OU 字段
-~~~
-
-
+```
 
 综合上述，最终我们生成的ca-csr.json如下图所示：
 
@@ -5231,15 +5269,13 @@ CA根证书配置文件，一般命名为ca-config.json,它用于配置根证书
 }
 ```
 
-~~~
+```
 expiry: 175200h表示20年有效期
 profiles: 指定证书使用场景，下面的etcd-op是一个场景名称，后续签名生成证书及其私钥时需要指定该场景(profile)名称
 signing：表示该证书可用于签名其它证书，生成的 ca.pem 证书中 CA=TRUE
 server auth：表示 client 可以用该该证书对 server 提供的证书进行验证
 client auth：表示 server 可以用该该证书对 client 提供的证书进行验证
-~~~
-
-
+```
 
 #### 2.2.2 创建目标证书签名请求文件
 
@@ -5294,11 +5330,9 @@ cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=etcd
 
 执行命令：
 
-~~~shell
+```shell
 openssl x509  -noout -text -in  etcd.pem
-~~~
-
-
+```
 
 ```applescript
 [root@cent7ax cfssl_dir.bak]# openssl x509  -noout -text -in  etcd.pem 
@@ -5377,9 +5411,9 @@ Signature Algorithm: sha256WithRSAEncryption
 
 执行命令：
 
-~~~shell
+```shell
 cfssl-certinfo -cert etcd.pem
-~~~
+```
 
 ```undefined
 [root@cent7ax cfssl_dir.bak]# cfssl-certinfo -cert etcd.pem 
@@ -5445,8 +5479,6 @@ cfssl-certinfo -cert etcd.pem
 
 等场景都需要使用证书认证。
 
-
-
 # 安全
 
 ## 机制说明
@@ -5460,34 +5492,30 @@ API Server 是集群内部各个组件通信的中介，也是外部控制的入
 ### 认证方式
 
 - HTTP Token 认证: 通过一个 Token 来识别合法用户
-
+  
   HTTP Token 的认证是用一个很长的特殊编码方式的并且难以被模仿的字符串Token 来表达客户的-种方式。Token 是一个很长的很复杂的字符串，每一个 Tken 对应一个用户名存储在 API Server 能访问的文件中。当客户端发起 API 调用请求时，需要在 HTTP Header 里放入 Token
 
 - HTTP Base 认证: 通过 用户名+密码 的方式认证o 用户名+: +密码 用 BASE64 算法进行编码后的字符串放在 HTTP Request 中的 HeatherAuthorization 域里发送给服务端，服务端收到后进行编码，获取用户名及密码
 
 - 最严格的 HTTPS 证书认证: `基于 CA 根证书签名的客户端身份认证方式, 这是最常用的方式`
 
-
-
 ### 需要认证的节点
 
 1. kubernetes组件对api server的访问: kubectl, controller manager, scheduler, kubelet, kube proxy
-
+   
    1. 因为Controller Manager, Scheduler, API Server都在同一台机器, 所以直接通过127.0.0.1进行访问, 
-
+      
       当然也可以关闭API Server在本机上的非安全端口, 这样就必须使用https进行访问 
-
+   
    2. kubectl, kubelet, kube-proxy访问api server  必须使用https`双向认证`
 
 2. kubernetes管理的pod对 api server的访问
-
+   
    pod访问api server是通过Secret中的Service Account来进行认证的, 默认在容器的 `/run/secrets/kubernetes.io/serviceaccount/`下面, 有三个文件:
-
+   
    1. token:  通过api server私钥签名的jwt, 用于容器范围api server时进行认证
    2. ca.crt: 跟证书, 用于容器验证 api server发送过来的token确实是api server签名的
    3. namespace: 表示这个token的作用域空间
-
-
 
 ## 鉴权
 
@@ -5521,7 +5549,7 @@ https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/rbac/#default-role
 
 **api server会把客户端的证书申请文件(csr文件)中的`CN`字段作为User, 把`names.O`字段作为Group**
 
-~~~
+```
 {
   "CN": "admin",
   "hosts": [],
@@ -5539,7 +5567,7 @@ https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/rbac/#default-role
     }
   ]
 }
-~~~
+```
 
 Pod使用 ServiceAccount 认证时，service-account-token 中的 JWT 会保存 User 信息
 
@@ -5598,7 +5626,7 @@ Pod使用 ServiceAccount 认证时，service-account-token 中的 JWT 会保存 
 
 创建Role的案例
 
-~~~yaml
+```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -5608,9 +5636,11 @@ rules:
 - apiGroups: [""] # "" 标明 core API 组
   resources: ["pods"] # 角色能够控制的资源
   verbs: ["get", "watch", "list"] # 能够对资源进行的操作
-~~~
+```
+
 创建ClusterRole的案例
-~~~yaml
+
+```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -5621,11 +5651,11 @@ rules:
   # 在 HTTP 层面，用来访问 Secret 资源的名称为 "secrets"
   resources: ["secrets"]
   verbs: ["get", "watch", "list"]
-~~~
+```
 
 同时可以将操作的资源限制为资源的单个实例
 
-~~~yaml
+```yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -5637,11 +5667,11 @@ rules:
   resources: ["configmaps"]
   resourceNames: ["my-configmap"]
   verbs: ["update", "get"]
-~~~
+```
 
 同时还可以使用`*`来表示任何资源和任何操作
 
-~~~shell
+```shell
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -5651,13 +5681,11 @@ rules:
 - apiGroups: ["example.com"]
   resources: ["*"] # 任何资源
   verbs: ["*"] # 任何操作
-~~~
-
-
+```
 
 同时, 还可以将多个ClusterRole聚合在一起, 组合成一个新的ClusterRole, 他们的权限将会被叠加在一起
 
-~~~shell
+```shell
 # 创建一个带label的角色monitoring-endpoints
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -5683,7 +5711,7 @@ aggregationRule:
       # 即使在创建这个聚合ClusterRole后新建带有此标签的角色, 也会动态的将他的权限聚合带这个角色下面
       rbac.example.com/aggregate-to-monitoring: "true" 
 rules: [] # 控制面自动填充这里的规则
-~~~
+```
 
 #### 绑定
 
@@ -5692,8 +5720,8 @@ rules: [] # 控制面自动填充这里的规则
 `RoleBinding` 和 `ClusterRoleBinding`  与  `Role`和`ClusterRole`的使用方式一共有三种:
 
 1. 使用`RoleBinding`将用户和`Role`绑定, 使得用户具有某个namespace中的权限
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: rbac.authorization.k8s.io/v1
    kind: RoleBinding # 绑定的类型
    metadata:
@@ -5709,15 +5737,15 @@ rules: [] # 控制面自动填充这里的规则
      kind: Role        # 需要绑定的角色的类型: Role, ClusterRole
      name: pod-reader  # 角色的名称
      apiGroup: rbac.authorization.k8s.io
-   ~~~
-
+   ```
+   
    通过上面的yaml,  jane就具有了pod-reader的权限, 并且权限现在在了default namespace下
 
 2. 使用`RoleBinding`将用户和`ClusterRole`绑定, 虽然`ClusterRole`具有管理整个集群的权限, 但是因为是通过`RoleBinding`进行绑定的, 所以权限也会被现在在某个namesapce下
-
+   
    这种情况通常是使用在: 创建具有通用权限的, 能够操作整个集群的`ClusterRole`, 然后将他的权限通过`RoleBinding`现在在某个namespace下
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: rbac.authorization.k8s.io/v1
    
    kind: RoleBinding # 绑定类型
@@ -5735,13 +5763,13 @@ rules: [] # 控制面自动填充这里的规则
      kind: ClusterRole
      name: secret-reader
      apiGroup: rbac.authorization.k8s.io
-   ~~~
-
+   ```
+   
    这样dave就拥有了secret-reader的权限, 并且权限限制在了development namespace下
 
 3. 使用`ClusterRoleBinding`将`ClusterRole`和用户进行绑定, 使得用户具有管理整个集群的能力
-
-   ~~~yaml
+   
+   ```yaml
    # manager组中的所有人都拥有secret-reader的权限, 并且是在任何namespace下
    apiVersion: rbac.authorization.k8s.io/v1
    kind: ClusterRoleBinding
@@ -5756,10 +5784,11 @@ rules: [] # 控制面自动填充这里的规则
      kind: ClusterRole
      name: secret-reader
      apiGroup: rbac.authorization.k8s.io
-   ~~~
-~~~
+   ```
    
+   ```
    
+   ```
 
 #### 内置的ClusterRole
 
@@ -5767,15 +5796,11 @@ rules: [] # 控制面自动填充这里的规则
 
 面向系统的角色一般以`system:`为前缀, 比如如下:
 
-| 默认 ClusterRole              | 默认 ClusterRoleBinding                                   | 描述                                                         |
-| ----------------------------- | --------------------------------------------------------- | ------------------------------------------------------------ |
-| **system:basic-user**         | **system:authenticated** 组                               | 允许用户以只读的方式去访问他们自己的基本信息。在 v1.14 版本之前，这个角色在默认情况下也绑定在 `system:unauthenticated` 上。 |
-| **system:discovery**          | **system:authenticated** 组                               | 允许以只读方式访问 API 发现端点，这些端点用来发现和协商 API 级别。 在 v1.14 版本之前，这个角色在默认情况下绑定在 `system:unauthenticated` 上。 |
-| **system:public-info-viewer** | **system:authenticated** 和 **system:unauthenticated** 组 | 允许对集群的非敏感信息进行只读访问，此角色是在 v1.14 版本中引入的。 |
-
-
-
-
+| 默认 ClusterRole                | 默认 ClusterRoleBinding                                   | 描述                                                                                            |
+| ----------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| **system:basic-user**         | **system:authenticated** 组                              | 允许用户以只读的方式去访问他们自己的基本信息。在 v1.14 版本之前，这个角色在默认情况下也绑定在 `system:unauthenticated` 上。                |
+| **system:discovery**          | **system:authenticated** 组                              | 允许以只读方式访问 API 发现端点，这些端点用来发现和协商 API 级别。 在 v1.14 版本之前，这个角色在默认情况下绑定在 `system:unauthenticated` 上。 |
+| **system:public-info-viewer** | **system:authenticated** 和 **system:unauthenticated** 组 | 允许对集群的非敏感信息进行只读访问，此角色是在 v1.14 版本中引入的。                                                         |
 
 面向用户的角色一般不以`system:`开头, 主要包括`超级用户cluster-admin`, `建议使用ClusterRoleBinding进行绑定的cluster-status`, `建议使用RoleBinding在特定namespace中授权的角色admin edit view`
 
@@ -5787,8 +5812,8 @@ metadata:
     rbac.authorization.k8s.io/aggregate-to-admin: "true"
     rbac.authorization.k8s.io/aggregate-to-edit: "true"
     rbac.authorization.k8s.io/aggregate-to-view: "true"
-~~~
 
+```
 所以可以创建具有以上标签的角色, 来给`admin edit view`添加上权限
 
 
@@ -5812,28 +5837,28 @@ metadata:
 
   ```shell
   kubectl create role pod-reader --verb=get --verb=list --verb=watch --resource=pods
-  ```
+```
 
 - 创建名称为 “pod-reader” 的 Role 对象并指定 `resourceNames`：
-
+  
   ```shell
   kubectl create role pod-reader --verb=get --resource=pods --resource-name=readablepod --resource-name=anotherpod
   ```
 
 - 创建名为 “foo” 的 Role 对象并指定 `apiGroups`：
-
+  
   ```shell
   kubectl create role foo --verb=get,list,watch --resource=replicasets.apps
   ```
 
 - 创建名为 “foo” 的 Role 对象并指定子资源权限:
-
+  
   ```shell
   kubectl create role foo --verb=get,list,watch --resource=pods,pods/status
   ```
 
 - 创建名为 “my-component-lease-holder” 的 Role 对象，使其具有对特定名称的资源执行 get/update 的权限：
-
+  
   ```shell
   kubectl create role my-component-lease-holder --verb=get,list,watch,update --resource=lease --resource-name=my-component
   ```
@@ -5843,37 +5868,37 @@ metadata:
 创建 ClusterRole 对象。例如：
 
 - 创建名称为 “pod-reader” 的 ClusterRole 对象，允许用户对 Pods 对象执行 `get`、 `watch` 和 `list` 操作：
-
+  
   ```shell
   kubectl create clusterrole pod-reader --verb=get,list,watch --resource=pods
   ```
 
 - 创建名为 “pod-reader” 的 ClusterRole 对象并指定 `resourceNames`：
-
+  
   ```shell
   kubectl create clusterrole pod-reader --verb=get --resource=pods --resource-name=readablepod --resource-name=anotherpod
   ```
 
 - 创建名为 “foo” 的 ClusterRole 对象并指定 `apiGroups`：
-
+  
   ```shell
   kubectl create clusterrole foo --verb=get,list,watch --resource=replicasets.apps
   ```
 
 - 创建名为 “foo” 的 ClusterRole 对象并指定子资源:
-
+  
   ```shell
   kubectl create clusterrole foo --verb=get,list,watch --resource=pods,pods/status
   ```
 
 - 创建名为 “foo” 的 ClusterRole 对象并指定 `nonResourceURL`：
-
+  
   ```shell
   kubectl create clusterrole "foo" --verb=get --non-resource-url=/logs/*
   ```
 
 - 创建名为 “monitoring” 的 ClusterRole 对象并指定 `aggregationRule`：
-
+  
   ```shell
   kubectl create clusterrole monitoring --aggregation-rule="rbac.example.com/aggregate-to-monitoring=true"
   ```
@@ -5883,19 +5908,19 @@ metadata:
 在特定的名字空间中对 `Role` 或 `ClusterRole` 授权。例如：
 
 - 在名字空间 “acme” 中，将名为 `admin` 的 ClusterRole 中的权限授予名称 “bob” 的用户:
-
+  
   ```shell
   kubectl create rolebinding bob-admin-binding --clusterrole=admin --user=bob --namespace=acme
   ```
 
 - 在名字空间 “acme” 中，将名为 `view` 的 ClusterRole 中的权限授予名字空间 “acme” 中名为 `myapp` 的服务账户：
-
+  
   ```shell
   kubectl create rolebinding myapp-view-binding --clusterrole=view --serviceaccount=acme:myapp --namespace=acme
   ```
 
 - 在名字空间 “acme” 中，将名为 `view` 的 ClusterRole 对象中的权限授予名字空间 “myappnamespace” 中名称为 `myapp` 的服务账户：
-
+  
   ```shell
   kubectl create rolebinding myappnamespace-myapp-view-binding --clusterrole=view --serviceaccount=myappnamespace:myapp --namespace=acme
   ```
@@ -5905,19 +5930,19 @@ metadata:
 在整个集群（所有名字空间）中用 ClusterRole 授权。例如：
 
 - 在整个集群范围，将名为 `cluster-admin` 的 ClusterRole 中定义的权限授予名为 “root” 用户：
-
+  
   ```shell
   kubectl create clusterrolebinding root-cluster-admin-binding --clusterrole=cluster-admin --user=root
   ```
 
 - 在整个集群范围内，将名为 `system:node-proxier` 的 ClusterRole 的权限授予名为 “system:kube-proxy” 的用户：
-
+  
   ```shell
   kubectl create clusterrolebinding kube-proxy-binding --clusterrole=system:node-proxier --user=system:kube-proxy
   ```
 
 - 在整个集群范围内，将名为 `view` 的 ClusterRole 中定义的权限授予 “acme” 名字空间中名为 “myapp” 的服务账户：
-
+  
   ```shell
   kubectl create clusterrolebinding myapp-view-binding --clusterrole=view --serviceaccount=acme:myapp
   ```
@@ -5933,19 +5958,19 @@ metadata:
 例如:
 
 - 测试应用 RBAC 对象的清单文件，显示将要进行的更改：
-
+  
   ```shell
   kubectl auth reconcile -f my-rbac-rules.yaml --dry-run=client
   ```
 
 - 应用 RBAC 对象的清单文件，保留角色（`roles`）中的额外权限和绑定（`bindings`）中的其他主体：
-
+  
   ```shell
   kubectl auth reconcile -f my-rbac-rules.yaml
   ```
 
 - 应用 RBAC 对象的清单文件，删除角色（`roles`）中的额外权限和绑定中的其他主体：
-
+  
   ```shell
   kubectl auth reconcile -f my-rbac-rules.yaml --remove-extra-subjects --re
   ```
@@ -5969,26 +5994,24 @@ helm的作用是能让我们一键创建Deployment, Service等等东西,  他的
 ## 安装
 
 1. 从https://github.com/helm/helm/releases下载heml安装包, 并拷贝到linux上
-
+   
    注意查看自己的电脑使用的是arm还是amd
 
 2. 解压安装包
-
-   ~~~shell
+   
+   ```shell
    tar -xzvf helm-v3.13.1-linux-amd64.tar.gz
-   ~~~
+   ```
 
 3. 移动到/usr/bin目录下
-
-   ~~~shell
-   mv linux-amd64/helm /usr/bin/
-   ~~~
-
    
+   ```shell
+   mv linux-amd64/helm /usr/bin/
+   ```
 
 ## 添加仓库
 
-~~~shell
+```shell
 helm repo add microsoft http://mirror.azure.cn/kubernetes/charts
 helm repo add aliyun https://kubernetes.oss-cn-hangzhou.aliyuncs.com/charts
 
@@ -5996,26 +6019,24 @@ helm repo list
 helm repo update # 更新仓库
 
 helm repo delete microsoft # 删除仓库
-~~~
-
-
+```
 
 ## 创建自定义charts
 
-~~~shell
+```shell
 helm create chart_name 
 helm install release_name chart_dir # 根据创建出来的chart文件夹, 生成一个release
 helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
-~~~
+```
 
 1. 创建chart目录
-
-   ~~~shell
+   
+   ```shell
    helm create hello-world
-   ~~~
-
+   ```
+   
    <img src="img/k8s笔记/image-20231024153413429.png" alt="image-20231024153413429" style="zoom:50%;" />
-
+   
    该命令会在本地目录下创建一个chart_name目录, 里面有charts, templates目录和Charts.yaml, values.yaml文件
 
    - Chart.yaml: 当前chart属性配置文件, **通常不需要修改**
@@ -6026,13 +6047,11 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 
    - charts: 不知道干什么的目录, 没有用上
 
-   
-
 2. 将templates中的模板文件全部删除, 并在其中编写yaml文件, 我们现在添加两个
-
+   
    `deployment.yaml`
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: apps/v1
    kind: Deployment
    metadata:
@@ -6057,11 +6076,11 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
              ports:
                - name: http-web-svc # 端口名字
                  containerPort: 80
-   ~~~
-
+   ```
+   
    `service.yaml`
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: v1
    kind: Service
    metadata:
@@ -6076,28 +6095,26 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
          port: 80 # 访问service内部ip的端口
          protocol: TCP
          targetPort: http-web-svc # 转发到的端口, 可以直接写端口名字, 也可以使用数字
-   ~~~
-
+   ```
+   
    ![image-20231024154736774](img/k8s笔记/image-20231024154736774.png)
 
 3. 在values.yaml中添加变量
-
-   ~~~yaml
+   
+   ```yaml
    replicas: 3
    ns: default
    image:
      name: nginx
      tag: 1.24
-   ~~~
-
-   
+   ```
 
 4. 查看helm即将用于执行的yaml配置文件
-
-   ~~~shell
+   
+   ```shell
    helm install --dry-run web2 hello-world/
-   ~~~
-
+   ```
+   
    <img src="img/k8s笔记/image-20231024161010076.png" alt="image-20231024161010076" style="zoom:50%;" />
 
 5. 通过charts目录来安装一个release, 可以使用`--set image.tag=1.25`来覆盖Values中的值
@@ -6172,7 +6189,6 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
    ~~~
 
 
-
 ## 使用第三方charts
 
 我们这里以安装nginx为例, 首先访问https://artifacthub.io/, 搜索框中搜索 `nginx`
@@ -6217,7 +6233,7 @@ helm install my-nginx nginx --namespace my-ns --set aaa.bbb=xxx
 
 ## 相关shell
 
-~~~yaml
+```yaml
 # 仓库相关
 helm repo add microsoft http://mirror.azure.cn/kubernetes/charts
 helm repo add aliyun https://kubernetes.oss-cn-hangzhou.aliyuncs.com/charts
@@ -6267,8 +6283,8 @@ heml rollback release_name reversion # 回滚到指定的版本, 也可以回滚
 1. 通过`https://artifacthub.io/`查找要安装的charts, 这里以kubernetes-dashboard为例
 
 2. 通过命令行安装
-
-   ~~~shell
+   
+   ```shell
    # Add kubernetes-dashboard repository
    helm repo add kubernetes-dashboard https://kubernetes.github.io/dashboard/
    # Deploy a Helm Release named "kubernetes-dashboard" using the kubernetes-dashboard chart
@@ -6276,38 +6292,38 @@ heml rollback release_name reversion # 回滚到指定的版本, 也可以回滚
    
    kubectl get pods -n kubernetes-dashboard
    kubectl get svc -n kubernetes-dashboard
-   ~~~
-
+   ```
+   
    ![image-20231024170447590](img/k8s笔记/image-20231024170447590.png)
 
 3. 因为helm创建的service的类型为ClusterIp, 无法外部访问, 修改service的类型, 将ClusterIp类型改为NodePort类型
-
-   ~~~shell
+   
+   ```shell
    kubectl edit svc kubernetes-dashboard -n kubernetes-dashboard
-   ~~~
-
+   ```
+   
    ![image-20231024170503064](img/k8s笔记/image-20231024170503064.png)
 
 4. 访问node的32403端口,  注意上面开放的内部端口是443, 所以需要使用**https**协议
-
+   
    ![image-20231024170823865](img/k8s笔记/image-20231024170823865.png)
 
 5. 上面需要一个service account token才能够登录, 所以需要查看pod `kubernetes-dashboard`的token
-
-   ~~~shell
+   
+   ```shell
    kubectl get secret -n kubernetes-dashboard
    kubectl describe secret kubernetes-dashboard-tokn-dxjtv -n kubernetes-dashboard
-   ~~~
-
+   ```
+   
    ![image-20231024171438884](img/k8s笔记/image-20231024171438884.png)
-
+   
    ![image-20231024175647185](img/k8s笔记/image-20231024175647185.png)
 
 6. 将查出来的token复制到界面上, 即可登录成功
 
 7. 因为通过pod的sa进行登录, 所以没有权限调用各种api, 所以必须给sa分配权限, 通过如下文件
-
-   ~~~yaml
+   
+   ```yaml
    apiVersion: rbac.authorization.k8s.io/v1
    kind: ClusterRoleBinding
    metadata:
@@ -6321,9 +6337,7 @@ heml rollback release_name reversion # 回滚到指定的版本, 也可以回滚
      kind: ClusterRole
      name: cluster-admin # 这个是集群内置的角色, 超级管理
      apiGroup: rbac.authorization.k8s.io
-   ~~~
-
-   
+   ```
 
 # kubectl命令行自动补全
 
@@ -6335,7 +6349,7 @@ echo "source <(kubectl completion bash)" >> ~/.bashrc
 ```
 
 2. 在Master01节点上为 `kubectl` 使用一个速记别名`k`, 并给k添加自动补全
-
+   
    将该命令写入到`/etc/bashrc`中, 永久生效
 
 ```shell
@@ -6344,13 +6358,9 @@ echo "complete -o default -F __start_kubectl k" | sudo tee -a /etc/bashrc
 source /etc/bashrc
 ```
 
-
-
-
-
 # 卸载docker k8s kubeadmin
 
-~~~shell
+```shell
 # 删除所有容器和镜像
 docker kill $(docker ps -a -q)
 docker rm $(docker ps -a -q)
@@ -6389,13 +6399,11 @@ rm -rf /var/lib/etcd
 rm -rf /var/etcd
 #更新镜像
 yum -y update
-~~~
-
-
+```
 
 # CentOS使用Clash代理
 
-~~~shell
+```shell
 # 下载clash
 mkdir /opt/clash && cd /opt/clash
 wget https://dl.ssrss.club/clash-linux-amd64-v1.9.0.gz --no-check-certificate
@@ -6417,7 +6425,7 @@ EOF
 
 systemctl enable clash
 systemctl start clash
-~~~
+```
 
 查看clash的配置文件`config.yaml`
 
@@ -6427,7 +6435,7 @@ systemctl start clash
 
 `secret`表示连接的密码
 
-~~~shell
+```shell
 # 启动clash
 systemctl start clash
 systemctl enable clash
@@ -6436,9 +6444,9 @@ systemctl enable clash
 systemctl status clash
 netstat -antp | grep 7890
 netstat -antp | grep 9090
-~~~
+```
 
-~~~shell
+```shell
 # 设置临时代理
 export http_proxy=http://127.0.0.1:7890
 export https_proxy=http://127.0.0.1:7890
@@ -6451,16 +6459,12 @@ vim /etc/profile
 # 添加如下两行
 export http_proxy=http://127.0.0.1:7890
 export https_proxy=http://127.0.0.1:7890
-~~~
+```
 
-~~~shell
+```shell
 # 测试
 curl https://www.google.com.hk/
-~~~
-
-
-
-
+```
 
 访问`http://clash.razord.top`, 可以通过这个界面来控制clash
 
@@ -6476,12 +6480,12 @@ curl https://www.google.com.hk/
 
 ### 安装nfs
 
-~~~shell
+```shell
 # 在nfs服务器节点上执行
 yum install -y nfs-common nfs-utils rpcbind # 安装nfs组件
 mkdir -p /nfs/data # 创建挂载的目录
 chmod 666 /nfs/data
-   
+
 cat > /etc/exports << EOF # 指定要挂载的目录
 /nfs/data *(rw,no_root_squash,no_all_squash,sync)
 EOF
@@ -6498,20 +6502,20 @@ yum install -y nfs-common nfs-utils rpcbind
 cat << EOF > /nfs/data/test.txt
 hello world
 EOF
-   
+
 # 在k8s的node节点上执行
 mkdir /test
 showmount -e cdh107 # 查看能够挂载的目录
 mount -t nfs cdh107:/nfs/data  /test # 将/nfs/data挂载到/test目录下
 cat /test/test.txt # 查看挂载的文件
 umount -t nfs /test # 卸载挂载的目录
-~~~
+```
 
 ### 配置默认的存储类
 
 该存储类用于动态供应pv, 即不需要事先创建pv, 只需要创建一个pvc, 该存储类就能够动态的根据pvc创建对应的pv, 并将他们绑定在一起
 
-~~~yaml
+```yaml
 ## 创建了一个存储类
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -6637,11 +6641,11 @@ roleRef:
   kind: Role
   name: leader-locking-nfs-client-provisioner
   apiGroup: rbac.authorization.k8s.io
-~~~
+```
 
 测试:
 
-~~~shell
+```shell
 kubectl get sc
 cat << EOF > pvc-test.yaml
 apiVersion: v1
@@ -6659,7 +6663,7 @@ spec:
 EOF
 kubectl apply -f pvc-test.yaml
 kubectl get pvc, pv
-~~~
+```
 
 可以看到只创建了一个pvc, 就同时创建了对应的pvc
 
@@ -6668,44 +6672,45 @@ kubectl get pvc, pv
 ### 安装kubeSphere
 
 1. 执行如下命令进行安装
-
-   ~~~shell
+   
+   ```shell
    kubectl apply -f https://github.com/kubesphere/ks-installer/releases/download/v3.4.0/kubesphere-installer.yaml
    
    kubectl apply -f https://github.com/kubesphere/ks-installer/releases/download/v3.4.0/cluster-configuration.yaml
-   ~~~
+   ```
 
 2. 查看安装进度
-
-   ~~~shell
+   
+   ```shell
    kubectl logs -n kubesphere-system $(kubectl get pod -n kubesphere-system -l 'app in (ks-install, ks-installer)' -o jsonpath='{.items[0].metadata.name}') -f
-   ~~~
-
+   ```
+   
    如果这个名字执行的时候, pod还没有起来, 就会报如下错误, 耐心等待下就好了
-
-   ~~~shell
+   
+   ```shell
    [root@cdh105 ~]# kubectl logs -n kubesphere-system $(kubectl get pod -n kubesphere-system -l 'app in (ks-install, ks-installer)' -o jsonpath='{.items[0].metadata.name}') -f
    Error from server (BadRequest): container "installer" in pod "ks-installer-58f7c6477b-xfjfv" is waiting to start: ContainerCreating
-   ~~~
-
+   ```
+   
    <img src="img/k8s笔记/image-20231028234128548.png" alt="image-20231028234128548" style="zoom:50%;" />
-
+   
    打印上面界面就可以按ctrl+c结束任务了, 这个时候表示安装好了
 
 3. 查看kubeSphere开放的端口,  默认在`30880`, 记得访问node的地址
-
-   ~~~shell
+   
+   ```shell
    kubectl get svc/ks-console -n kubesphere-system
-   ~~~
+   ```
 
 4. 使用账号密码访问界面
-
-   ~~~shell
+   
+   ```shell
    账号: admin
    密码: P@88w0rd
    ~~~
 
 ## KubeSphere项目界面介绍
+
 
 主界面: 其中包括
 
@@ -6754,7 +6759,7 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 ### 安装mysql
 
 1. 通过dockerhub找到mysql容器, 发现他如下信息
-
+   
    - 端口映射: `3306`
    - 环境变量: `MYSQL_ROOT_PASSWORD`
    - 默认的配置文件为`/etc/mysql/my.cnf`
@@ -6763,8 +6768,8 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
    - 日志数据存放在`/var/log/mysql`下
 
 2. 根据如下信息编写docker命令
-
-   ~~~shell
+   
+   ```shell
    docker run -p 3306:3306 --name mysql-01 \
    -v /mydata/mysql/log:/var/log/mysql \ # 挂载日志目录
    -v /mydata/mysql/data:/var/lib/mysql \ # 挂载数据目录
@@ -6772,8 +6777,8 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
    -e MYSQL_ROOT_PASSWORD=root \ # 指定mysql root密码
    --restart=always \
    -d mysql:5.7 
-   ~~~
-   
+   ```
+
 3. 在kubesphere中创建pvc, 用于挂载数据, k8s会自动创建pv
    
    ![image-20231029165007496](img/k8s笔记/image-20231029165007496.png)
@@ -6797,54 +6802,55 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
    ![image-20231029165752396](img/k8s笔记/image-20231029165752396.png)
 
 4. 同理, 创建pvc和pv, 挂载mysql日志
-
+   
    ![image-20231029165924903](img/k8s笔记/image-20231029165924903.png)
 
 5. 创建ConfigMap, 用以保存mysql的配置文件
-
+   
    ![image-20231029170054059](img/k8s笔记/image-20231029170054059.png)
-
+   
    ![image-20231029170115307](img/k8s笔记/image-20231029170115307.png)
-
+   
    因为ConfigMap进行挂载之后, key作为文件名, data作为内容, 所以key一定要以conf结尾, 如下
-
+   
    ![image-20231029170300566](img/k8s笔记/image-20231029170300566.png)
-
+   
    创建完成
-
+   
    ![image-20231029170327203](img/k8s笔记/image-20231029170327203.png)
 
 6. 在kubesphere中, 创建StatefulSet类型的控制器和pod
-
+   
    <img src="img/k8s笔记/image-20231029170437460.png" alt="image-20231029170437460" style="zoom:50%;" />
-
+   
    指定基本信息
-
+   
    ![image-20231029170455969](img/k8s笔记/image-20231029170455969.png)
-
+   
    指定pod相关的设置, 如镜像,  容器名称, 资源限制
-
+   
    ![image-20231029170827946](img/k8s笔记/image-20231029170827946.png)
-
+   
    指定端口映射, 使用默认端口即可
-
+   
    ![image-20231029172650074](img/k8s笔记/image-20231029172650074.png)
-
+   
    指定环境变量, 和主机时间同步, 还有其他设置
-
+   
    ![image-20231029172727967](img/k8s笔记/image-20231029172727967.png)
-
+   
    挂载两个持久卷和ConfigMap
-
+   
    ![image-20231029173415668](img/k8s笔记/image-20231029173415668.png)
 
 7. 查看服务, 发现自动创建了对mysql的headless service
-
+   
    并且通过其中的DNS属性可以访问到mysql
-
+   
    ![image-20231029185548006](img/k8s笔记/image-20231029185548006.png)
 
 ### 安装redis
+
 
 <img src="img/k8s笔记/image-20231106184339682.png" alt="image-20231106184339682" style="zoom:50%;" />
 
@@ -6857,33 +6863,33 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 下面是创建过程
 
 1. 创建configmap配置文件, key为redis.conf, 内容如下:
-
-   ~~~txt
+   
+   ```txt
    appendonly yes
    port 6379
    bind 0.0.0.0
-   ~~~
+   ```
 
 2. 配置基础信息
-
+   
    <img src="img/k8s笔记/image-20231106184559304.png" alt="image-20231106184559304" style="zoom:80%;" />
 
 3. 设置端口
-
+   
    ![image-20231106190319104](img/k8s笔记/image-20231106190319104.png)
 
 4. 配置启动命令
-
+   
    ![image-20231106184616341](img/k8s笔记/image-20231106184808859.png)
 
 5. 设置同步时间![image-20231106184634784](img/k8s笔记/image-20231106184634784.png)
 
-5. 设置存储卷模板
-
+6. 设置存储卷模板
+   
    ![image-20231106190442867](img/k8s笔记/image-20231106190442867.png)
 
-6. 挂载配置文件
-
+7. 挂载配置文件
+   
    ![image-20231106190609977](img/k8s笔记/image-20231106190609977.png)
 
 ### 安装elasticsearch
@@ -6893,65 +6899,62 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 如上图所示, 有如下几个注意点
 
 1. 创建configmap, 有两个key `elasticsearch.yml`和`jvm.options`, 并且需要挂载到/usr/share/elasticsearch/config下面, 内容如下:
-
-   ~~~shell
+   
+   ```shell
    cluster.name: "docker-cluster"
    network.host: 0.0.0.0
-   ~~~
-
-   ~~~shell
+   ```
+   
+   ```shell
    # 
-   ~~~
-   
+   ```
 
-   
 2. 一个数据目录, 所以需要创建pvc挂载到/usr/share/elasticsearch/data下面
 
 下面是创建过程
 
 1. 创建configmap
-
+   
    ![image-20231106194038879](img/k8s笔记/image-20231106194038879.png)
 
 2. 设置基本信息
-
+   
    ![image-20231106193358488](img/k8s笔记/image-20231106193358488.png)
 
 3. 设置端口
-
+   
    ![image-20231106193419788](img/k8s笔记/image-20231106193419788.png)
 
 4. 设置时间同步
-
+   
    ![image-20231106193458563](img/k8s笔记/image-20231106193458563.png)
 
 5. 添加pv模板
-
+   
    ![image-20231106194516515](img/k8s笔记/image-20231106194516515.png)
 
 6. 挂载配置文件
 
 
 
-
-
 ## KubeSphere应用商店和应用仓库
+
 
 ### 应用商店
 
 1. 如果没有开启应用商店的话, 可以通过如下方式开启
-
-   ~~~shell
+   
+   ```shell
    # 编辑ks-installer
    kubectl edit -n kubesphere-system clusterconfigurations ks-installer
    # 将openpitrix修改为true
    openpitrix:
      store:
        enabled: true # 将“false”更改为“true”。
-   ~~~
+   ```
 
 2. 一段时间后从左上角可以看到应用商店即安装成功
-
+   
    ![image-20231108224435325](img/k8s笔记/image-20231108224435325.png)
 
 3. 可以通过应用商店来安装应用
@@ -6961,33 +6964,31 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 其实应用仓库就是helm中的仓库, 然后就可以通过仓库来安装应用
 
 1. 在https://artifacthub.io/中找到需要安装的charts, 这里以zookeeper为例
-
+   
    ![image-20231108224806355](img/k8s笔记/image-20231108224806355.png)
 
 2. 点击install, 会弹出zookeeper的应用仓库
-
+   
    ![image-20231108224841877](img/k8s笔记/image-20231108224841877.png)
 
 3. 在kubesphere中, 进入到企业空间  > 应用管理 > 应用仓库, 添加
-
+   
    ![image-20231108225119558](img/k8s笔记/image-20231108225119558.png)
 
 4. 添加应用仓库
-
+   
    ![image-20231108225212515](img/k8s笔记/image-20231108225212515.png)
 
 5. 通过应用仓库创建服务,  其实就是通过helm来安装pod
-
+   
    ![image-20231108225429331](img/k8s笔记/image-20231108225429331.png)
-
+   
    ![image-20231108225459043](img/k8s笔记/image-20231108225459043.png)
 
-####  todo
+#### todo
 
 数据卷的类型, 网络模型和iptables ipvs的关系, coredns, ingress, https
 
 容器的状态, pod的状态, statefull容器 dig
-
-
 
 ![image-20231012213607030](img/k8s笔记/image-20231012213607030.png)

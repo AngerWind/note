@@ -1,7 +1,5 @@
 ## 插件知识
 
-
-
 ### 生命周期
 
 在maven中定义了三套生命周期, 分别是default, clean, site
@@ -14,19 +12,15 @@
 
 phase就是maven中每个生命周期中要执行的步骤, 比如上面的compile, process-resources等等
 
-
-
 ### goal和mojo
 
 goal是由插件提供的一个个的任务, 每个插件包中可以包含多个goal
 
 在插件中每个goal都有具体的实现类, 这个实现类被称为mojo, 比如`compiler:compile` 这个 goal 由 `CompilerMojo` 类实现。
 
-
-
 我们可以通过如下代码在maven中添加插件
 
-~~~xml
+```xml
 <build>
   <plugins>
     <plugin>
@@ -44,13 +38,9 @@ goal是由插件提供的一个个的任务, 每个插件包中可以包含多�
     </plugin>
   </plugins>
 </build>
-~~~
+```
 
 当maven执行到phase compile的时候, 就会自动执行goal compile了, 然后找到这个goal对应的mojo, 执行其中的代码
-
-
-
-
 
 #### goal的手动触发
 
@@ -58,41 +48,37 @@ goal在绑定到特定的phase的时候, 会被指定自动执行
 
 同时我们也可以手动来触发某个goal的执行
 
-~~~shell
+```shell
 # 格式为: mvn group:artifact:goal
 # 比如
 mvn kr.motd.maven:show-goal-bindings:show
-~~~
+```
 
 上面的代码就触发了`compiler`插件的compile这个goal
 
 > 需要注意的时候, <font color=red>**手动执行 goal 时 Maven 不会自动处理依赖的前置 phase**</font>
->
+> 
 > 比如有些goal是有依赖任务的, 比如执行`test`这个goal之前必须先编译好class文件
->
+> 
 > 如果你没有编译好class文件, 那么手动执行`test`这个goal的话, 会失败的
 
-
-
 **在执行maven的时候, 你不必处于项目的根目录下, 项目内的任何路径都可以, 他会递归父目录来查找pom.xml, 直到根目录**
-
-
 
 #### goal的默认绑定
 
 如果我们导入了一个插件, 但是不绑定任何的goal, 是不是这个插件就没有作用了呢?
 
-~~~xml
+```xml
 <plugin>
   <groupId>org.apache.maven.plugins</groupId>
   <artifactId>maven-compiler-plugin</artifactId>
   <version>3.8.1</version>
 </plugin>
-~~~
+```
 
 其实不是的, 每个 Maven 插件在发布时，都会包含一个 `plugin.xml`（类似插件的元数据描述文件），**这个文件告诉 Maven：哪些 goal 默认绑定在哪些 phase 上**。
 
-~~~xml
+```xml
 <mojos>
   <mojo>
     <goal>compile</goal>
@@ -105,25 +91,21 @@ mvn kr.motd.maven:show-goal-bindings:show
     ...
   </mojo>
 </mojos>
-~~~
+```
 
 只要你执行了某个生命周期（比如 compile），Maven 就会自动找到那些默认绑定在这个 phase 的 goal 并执行它们。
 
-
-
 你可以通过如下命令来查看一个插件的所有goal, 以及他们是否默认绑定到phase上面
 
-~~~shell
+```shell
 mvn help:describe -Dplugin=groupId:artifactId:version -Dfull
-~~~
+```
 
 > 而对于没有默认绑定到特定的phase上的goal, 那么他就不会被执行, 除非你手动执行他, 或者手动将他绑定到特定的goal上
 
-
-
 你也可以通过这个插件来查看, phase上都绑定了哪些goal
 
-~~~xml
+```xml
 <build>
   <plugins>
     <plugin>
@@ -140,17 +122,13 @@ mvn help:describe -Dplugin=groupId:artifactId:version -Dfull
     </plugin>
   </plugins>
 </build>
-~~~
+```
 
 执行：
 
 ```bash
 mvn kr.motd.maven:show-goal-bindings:show
 ```
-
-
-
-
 
 ### 默认的插件
 
@@ -162,15 +140,11 @@ Maven 自己并不直接“干活”，它只是个调度者，真正干活的�
 
 这些插件中的goal会默认绑定到特定的phase上, 来保证最基本的功能
 
-
-
-
-
 你可以通过如下代码来查看真正的pom文件
 
-~~~shell
+```shell
 mvn help:effective-pom
-~~~
+```
 
 这个命令会输出 **Maven 实际使用的 POM**，包括：
 
@@ -180,7 +154,7 @@ mvn help:effective-pom
 
 下面是一个空的maven项目打印出来的
 
-~~~xml
+```xml
 <project
     xmlns="http://maven.apache.org/POM/4.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -410,15 +384,7 @@ mvn help:effective-pom
         <outputDirectory>C:\Users\Administrator\Desktop\untitled\target\site</outputDirectory>
     </reporting>
 </project>
-~~~
-
-
-
-
-
-
-
-
+```
 
 ### 查看哪些goal绑定到了phase
 
@@ -428,7 +394,7 @@ maven中并没有提供直接的命令来查看各个phase到底绑定了哪些g
 
 下面是Java代码的时候, 他在执行的时候, 会打印所有的phase上面绑定的goal, 同时你也可以使用`--phase xxx`来指定要打印的phase上面绑定的goal
 
-~~~java
+```java
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.DocumentBuilder;
 import org.w3c.dom.*;
@@ -525,13 +491,11 @@ public class MavenGoalBindings {
         return defaultValue;
     }
 }
-~~~
-
-
+```
 
 ## plugin标签
 
-~~~xml
+```xml
       <plugin>
         <groupId>com.groupId</groupId>
         <artifactId>com.artifactId</artifactId>
@@ -588,15 +552,13 @@ public class MavenGoalBindings {
             <!-- 这里还可以有另外一个execution, 他们可以有不同的configuration -->
           </execution>
         </executions>
-        
+
         <!-- 需要传递给插件的classloader的额外依赖 -->
         <dependencies>
 
         </dependencies>
       </plugin>
-~~~
-
-
+```
 
 ## Plexus Container
 
@@ -615,9 +577,9 @@ Plexus下面主要有如下几个模块:
 - Plexus Components: 
 
 - Maven的工作就是和各种文件、目录打交道，这期间，会沉淀出来很多公用组件:
-
+  
   - IO相关的，`Plexus IO Components`，它的maven坐标：
-
+  
   ```xml
   <dependency>
       <groupId>org.codehaus.plexus</groupId>
@@ -625,9 +587,9 @@ Plexus下面主要有如下几个模块:
       <version>3.2.0</version>
   </dependency>
   ```
-
+  
   - 归档相关的，Plexus Archiver Component，maven坐标：
-
+  
   ```xml
   <dependency>
       <groupId>org.codehaus.plexus</groupId>
@@ -635,15 +597,15 @@ Plexus下面主要有如下几个模块:
       <version>4.2.5</version>
   </dependency>
   ```
-
+  
   - cli相关，Plexus CLI
-
+  
   - 编译相关，Plexus Compiler
-
+  
   - Digest/Hashcode相关，Plexus Digest / Hashcode Components
-
+  
   - 国际化相关，i18n
-
+  
   还有些其他的，我懒得列举了，大家自己看吧，https://web.archive.org/web/20150225072024/http://plexus.codehaus.org/plexus-components/
 
 - Plexus Maven Plugin: 用来支持Maven插件
@@ -660,8 +622,6 @@ Plexus下面主要有如下几个模块:
 
 经过多年的迭代，在2010年前后，guice已经比较成熟了，在google内部也而得到了广泛应用，且依赖注入这个领域，也在持续不断地发展中，比如java官方定义了相关的标准api。
 
-
-
 ## maven官方插件
 
 ### maven-invoker-plugin
@@ -673,41 +633,39 @@ Plexus下面主要有如下几个模块:
 1. 比如我有一个项目a, b,c, 项目bc依赖项目a, 我希望a在构建的时候, 自动帮我构建项目bc, 并验证是否构建成功
 2. 我有一个插件a, 同时有两个测试项目bc, 我想插件a在构建的时候, 自动构建bc, 看看插件有没有达到预期
 
-
-
 maven-invoker-plugin一共提供了六个goal:
 
 1. `invoker:help`
-
+   
    执行他可以打印invoker插件的帮助文档,  有哪些goal, 他们的作用
-
+   
    还可以通过`-Ddetail=true`来打印详细的文档, 包括每个goal可以配置的参数
-
+   
    还可以通过`-Dgoal=<goal-name>`来打印指定goal的帮助文档
 
 2. `invoker:install`
-
+   
    在调用项目之前, 将**当前项目和他的父项目打包的jar包和他的需要的所有依赖**install到本地仓库, 这样如果调用的项目依赖了当前项目, 就可以直接**最新**的版本
-
+   
    默认绑定到`pre-integration-test`phase
-
+   
    参数有
-
-   | 参数名                                                       | 说明                                                         | 备注                                                         |
-   | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
-   | **extraArtifacts**                                           | 指定**额外**需要安装到本地仓库的依赖。 格式是： `groupId:artifactId:version:type:classifier`  **例子**： `org.apache.maven.plugins:maven-clean-plugin:2.4:maven-plugin` `org.apache.maven.plugins:maven-clean-plugin:2.4:jar:javadoc`  如果 `type` 是 `maven-plugin`，那么插件会用**plugin 仓库**而不是普通 artifact 仓库来解析。 | **注意**： 这里的依赖会被当做运行时（runtime scope）处理，且**会自动拉上它们的传递依赖（transitive dependencies）**。 |
-   | **localRepositoryPath**  (默认值：`${session.localRepository.basedir}`) | 指定要安装这些 artifacts 的本地仓库路径。 如果不设，默认就是 Maven 的本地仓库（通常是 `~/.m2/repository`）。  **推荐**设成一个独立路径，比如： `${project.build.directory}/it-repo` 避免污染你平常用的本地仓库。 | **必填**参数（Required: Yes） 也可以通过命令行属性传：`-Dinvoker.localRepositoryPath=xxx` |
-   | **scope**  (默认值：`runtime`)                               | 解析项目 artifact 时使用的依赖范围（scope）。 默认是 `runtime`，即运行时需要的依赖。 | 可以用 `-Dinvoker.install.scope=compile` 这样覆盖。          |
-   | **skipInstallation**  (默认值：`false`)                      | 是否跳过 install 过程。 比如，有时候你只是想临时调试，想跳过 install，节省时间。 | 可以用命令行设置： `-Dinvoker.skip=true`                     |
+   
+   | 参数名                                                                 | 说明                                                                                                                                                                                                                                                                                 | 备注                                                                                |
+   | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+   | **extraArtifacts**                                                  | 指定**额外**需要安装到本地仓库的依赖。 格式是： `groupId:artifactId:version:type:classifier`  **例子**： `org.apache.maven.plugins:maven-clean-plugin:2.4:maven-plugin` `org.apache.maven.plugins:maven-clean-plugin:2.4:jar:javadoc`  如果 `type` 是 `maven-plugin`，那么插件会用**plugin 仓库**而不是普通 artifact 仓库来解析。 | **注意**： 这里的依赖会被当做运行时（runtime scope）处理，且**会自动拉上它们的传递依赖（transitive dependencies）**。 |
+   | **localRepositoryPath**  (默认值：`${session.localRepository.basedir}`) | 指定要安装这些 artifacts 的本地仓库路径。 如果不设，默认就是 Maven 的本地仓库（通常是 `~/.m2/repository`）。  **推荐**设成一个独立路径，比如： `${project.build.directory}/it-repo` 避免污染你平常用的本地仓库。                                                                                                                                  | **必填**参数（Required: Yes） 也可以通过命令行属性传：`-Dinvoker.localRepositoryPath=xxx`           |
+   | **scope**  (默认值：`runtime`)                                          | 解析项目 artifact 时使用的依赖范围（scope）。 默认是 `runtime`，即运行时需要的依赖。                                                                                                                                                                                                                            | 可以用 `-Dinvoker.install.scope=compile` 这样覆盖。                                       |
+   | **skipInstallation**  (默认值：`false`)                                 | 是否跳过 install 过程。 比如，有时候你只是想临时调试，想跳过 install，节省时间。                                                                                                                                                                                                                                  | 可以用命令行设置： `-Dinvoker.skip=true`                                                   |
 
 3. `invoker:integration-test`
-
+   
    搜索需要执行的项目, 并执行他们, 然后收集执行日志
-
+   
    默认绑定到的生命周期: `integration-test`
-
+   
    参数有如下几个:
-
+   
    ```xml
    <plugin>
        <!--
@@ -749,8 +707,8 @@ maven-invoker-plugin一共提供了六个goal:
            <!-- 默认情况下, 项目的测试日志会被保存在项目根目录的build.log中,
                 可以通过这个参数来指定保存到其他位置 -->
            <!-- <logDirect></logDirect> -->
-   
-   
+   ```
+
            <!-- 需要调用和排除的项目的pom文件, 默认是${projectsDirectory}/*/pom.xml -->
            <pomIncludes>
                <pomInclude>*/pom.xml</pomInclude>
@@ -760,8 +718,8 @@ maven-invoker-plugin一共提供了六个goal:
            </pomExcludes>
            <!-- 搜索要调用项目的目录, 默认值${basedir}/src/it/ -->
            <projectsDirectory>${basedir}/src/it/</projectsDirectory>
-   
-   
+    
+    
            <!-- 执行构建后要运行的清理/验证钩子脚本的相对路径, 可以指定.bash和.groovy文件
                 如果省略文件后缀, 默认使用.bash和.groovy来匹配
                 比如verify等效于verify.bash和verify.groovy -->
@@ -796,30 +754,29 @@ maven-invoker-plugin一共提供了六个goal:
                </goals>
            </execution>
        </executions>
-   </plugin>
+
+</plugin>
    ```
 
 4. `invoker:verify`
-
+   
    检查项目构建是否成功, 测试是否执行成功, postBuildHookScript脚本是否执行成功
-
+   
    默认绑定到`verify`phase上
-
+   
    这个goal的参数没什么好说的, 都是一些没用的参数
 
 5. `invoker:run`
-
+   
    运行这个goal就等效于运行了integration-test和verify两个goal
-
+   
    并且integration-test和verify的参数, 在这里都可以配置
 
 6. `invoker:report`
-
+   
    将构建结果发布到站点中, 不知道有什么用
 
 具体的使用可以查看`maven-plugin-test`这个项目
-
-
 
 ### maven-assembly-plugin
 
@@ -828,18 +785,16 @@ maven-invoker-plugin一共提供了六个goal:
 这个插件有两个goal: `help`和`single`
 
 - `assembly:help`
-
+  
   主要的作用是输出帮助信息
 
 - `assembly:single`
-
-  打包发行版本
-
-  这个goal没有默认绑定的phase, 所以你如果要绑定到生命周期上的时候要指定phase, 如果不指定的话, 那么只能直接调用了
-
-  详细的使用你可以查看文档, 或者本地的`assembly-test`项目
-
   
+  打包发行版本
+  
+  这个goal没有默认绑定的phase, 所以你如果要绑定到生命周期上的时候要指定phase, 如果不指定的话, 那么只能直接调用了
+  
+  详细的使用你可以查看文档, 或者本地的`assembly-test`项目
 
 ### maven-jar-plugin
 
@@ -850,8 +805,6 @@ maven-invoker-plugin一共提供了六个goal:
 尽管他有一些可以自定义的参数, 但是都是无关紧要的, 直接使用默认值就可以了
 
 尽管jar这个goal可以打包可执行文件, 但是他并不会将所有的依赖一起打包进去, 你如果像打包可执行依赖, 还是使用maven-shade-plugin这个插件比较好
-
-
 
 ### maven-shade-plugin
 
@@ -864,8 +817,8 @@ maven-invoker-plugin一共提供了六个goal:
 这个插件的使用场景是:
 
 1. 我想将所有依赖都打包进来, 打包成一个可执行jar包
-
-   ~~~xml
+   
+   ```xml
    <build>
      <plugins>
        <plugin>
@@ -891,23 +844,15 @@ maven-invoker-plugin一共提供了六个goal:
        </plugin>
      </plugins>
    </build>
-   ~~~
+   ```
 
 2. 我想将当前项目的多个模块, 打包为一个uber包, 这样别人只需要引用这一个包, 就相当于使用了所有包
 
-
-
 具体的参数可以查看本地的`shade-plugin-test`项目
-
-
 
 ## 自定义插件
 
 查看本地项目的`maven-plugin-test`
-
-
-
-
 
 ## Maven隐含变量
 
@@ -923,20 +868,18 @@ project变量暴露了POM。可以使用点标记(.)的路径来引用POM元素�
 
 ```xml
 <project>
-	<modelVersion>4.0.0</modelVersion>
+    <modelVersion>4.0.0</modelVersion>
     <groupId>org.sonatype.mavenbook</groupId>
-	<artifactId>project-a</artifactId>
-	<version>1.0-SNAPSHOT</version>
-	<packaging>jar</packaging>
-	<build>
-		<finalName>${project.groupId}-${project.artifactId</finalName>
-	</build>
+    <artifactId>project-a</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+    <build>
+        <finalName>${project.groupId}-${project.artifactId</finalName>
+    </build>
 </project>
 ```
 
 当你使用mvn help:effective-pom 查看时,你会看到<finalName>org.sonatype.mavenbook-project-a</finalName>
-
-
 
 ${basedir} 项目根目录 ​
 
@@ -959,20 +902,20 @@ settings变量暴露了Maven settings信息。可以使用点标记(.)的路径�
 ## maven 获取编译时间和pom中的版本号
 
 1. Maven中获得编译时间
-
+   
    在 pom文件`properties` 中添加两个属性
-
-   ~~~xml
+   
+   ```xml
    <properties>
        <!--maven.build.timestamp保存了maven编译时间戳-->
        <timestamp>${maven.build.timestamp}</timestamp>
        <!--指定时间格式-->    
        <maven.build.timestamp.format>yyyy-MM-dd HH:mm:ss</maven.build.timestamp.format>
    </properties>
-   ~~~
+   ```
 
 2. 在pom文件`build`中配置
-
+   
    ```xml
    <build>
        <resources>
@@ -986,9 +929,9 @@ settings变量暴露了Maven settings信息。可以使用点标记(.)的路径�
    ```
 
 3. 在`application.yml`中配置
-
+   
    > 不能使用`${}`
-
+   
    ```yml
    app:
      version: @project.version@
@@ -997,7 +940,7 @@ settings变量暴露了Maven settings信息。可以使用点标记(.)的路径�
    ```
 
 4. 提供接口
-
+   
    ```java
    package com.example.demo;
    
@@ -1040,7 +983,7 @@ settings变量暴露了Maven settings信息。可以使用点标记(.)的路径�
 
 要么自己处理, 加上八个小时, 或者使用插件`build-helper-maven-plugin`获得本时区的时间
 
-~~~xml
+```xml
     <build>
         <plugins>
             <plugin>
@@ -1077,7 +1020,7 @@ settings变量暴露了Maven settings信息。可以使用点标记(.)的路径�
         </resources>
 
     </build>
-~~~
+```
 
 经过上述处理后，属性`${build.time}`已经代表GMT-8时区的时间
 
@@ -1089,10 +1032,6 @@ app:
   build:
     time: @build.time@
 ```
-
-
-
-
 
 #### 把时间戳加到包名
 
@@ -1118,13 +1057,13 @@ app:
             ${project.artifactId}-${project.version}-${build.time}
         </finalName>
     </build>    
-    
+
 </project>
 ```
 
 ## maven 属性过滤
 
-~~~xml
+```xml
    <build>
         <resources>
             <resource>
@@ -1152,7 +1091,7 @@ app:
             </resource>
         </resources>
     </build>
-~~~
+```
 
 然后在resources下面的properties文件中, 可以使用`${xxx}`或者`@xxx@`来获取maven中的变量
 
@@ -1164,7 +1103,7 @@ app:
 
 所有的项目都自带一个仓库, 他定义在`pom-4.0.0.xml`中,这个就是所有Maven POM的父POM，所有Maven项目继承该配置
 
-~~~xml
+```xml
     <repository>
       <id>central</id>
       <name>Central Repository</name>
@@ -1175,9 +1114,7 @@ app:
       </snapshots>
     </repository>
   </repositories>
-~~~
-
-
+```
 
 **仓库的分类**
 
@@ -1186,7 +1123,7 @@ app:
 - 从远程仓库拉取的release版本依赖,如果远程仓库的该依赖版本升级,并且依赖的名称没有更改,那么本地项目的依赖就无法更新,比如Junit-4.10.jar,如果远程仓库版本升级,如果还采用Junit-4.10.jar名称,那么本地项目的依赖就无法更新,只有升级为Junit-4.11.jar,才会更新.
 - snapshot版本依赖每次都会去远程仓库中检查该依赖是否更新,即使名称一样也会去检查,如果有更新则下载到本地仓库.推荐禁止从公共仓库下载snapshot构件，因为这些构件不稳定且不受控制，避免使用
 
-~~~xml
+```xml
 <repositories>
   <repository>
     <id>aliyun-releases</id>
@@ -1202,43 +1139,35 @@ app:
     </snapshots>
   </repository>
 </repositories>
-~~~
-
-
-
-
+```
 
 **pom.xml中配置多个远程仓库**
 
 项目所需的依赖,可能不在中央仓库中,可能只存在于某个特定的公共仓库,这时就需要配置多个远程仓库了.比如:
 
 ```xml
- 	<repository>
- 		<id>aliyun</id>
- 		<name>aliyun Repository</name>
- 		<url>http://maven.aliyun.com/nexus/content/groups/public</url>
- 		<snapshots>
- 			<enabled>false</enabled>
- 		</snapshots>
- 	</repository>
- 	<repository>
- 		<id>jeecg</id>
- 		<name>jeecg Repository</name>
- 		<url>http://maven.jeecg.org/nexus/content/repositories/jeecg</url>
- 		<snapshots>
- 			<enabled>false</enabled>
- 		</snapshots>
- 	</repository>
+     <repository>
+         <id>aliyun</id>
+         <name>aliyun Repository</name>
+         <url>http://maven.aliyun.com/nexus/content/groups/public</url>
+         <snapshots>
+             <enabled>false</enabled>
+         </snapshots>
+     </repository>
+     <repository>
+         <id>jeecg</id>
+         <name>jeecg Repository</name>
+         <url>http://maven.jeecg.org/nexus/content/repositories/jeecg</url>
+         <snapshots>
+             <enabled>false</enabled>
+         </snapshots>
+     </repository>
  </repositories>
 ```
-
-
 
 **仓库的优先级**
 
 仓库优先级为：本地仓库(localRepositories) > profile中配置的repositories仓库 > pom中配置的repository仓库 > settings.xml中配置的mirrors
-
-
 
 **通过mirror配置**
 
@@ -1264,7 +1193,7 @@ app:
 
 上面提到，`<mirrorOf></mirrorOf>`的设置很重要，比如上面我设置的mirrorOf为`<mirrorOf>central</mirrorOf>`，如果`<mirrorOf></mirrorOf>`我随便设置一个参数，如`<mirrorOf>abc</mirrorOf>`，这时候我们配置的仓库就不起作用了，**这是因为maven默认内置了如下一个仓库，这个默认仓库的id为central，**当我们把mirrorOf设置为`<mirrorOf>central</mirrorOf>`时，maven就会查找有没有id为central的仓库，然后把id为central的仓库地址换成我们`<mirror>`标签配置的那个url，这样我们配置的mirror才会起作用。**当然我们也可以把mirrorOf设置为`<mirrorOf>\*</mirrorOf>`，表示所有仓库都使用我们配置的这个mirror作为jar包下载地址。**
 
-~~~xml
+```xml
 <repositories>
   <repository>
    <id>central</id>
@@ -1276,15 +1205,13 @@ app:
    </snapshots>
   </repository>
 </repositories>
-~~~
-
-
+```
 
 **通过repositories配置**
 
 通过setting.xml方式配置会对所有maven项目生效，如果只想在本项目中配置一个maven仓库，可以通过在pom.xml中配置`<repositories>`标签来实现。在自己的maven项目的pom.xml中添加如下配置，就配置好了一个仓库。这时候，maven会优先采用这个配置，而不会去读setting.xml中的配置了。这样配置好后，maven就会自动从aliyun下载jar包了。
 
-~~~xml
+```xml
 <repositories>
   <repository>
     <id>aliyun-releases</id>
@@ -1292,9 +1219,7 @@ app:
     <url>https://maven.aliyun.com/repository/public</url>
   </repository>
 </repositories>
-~~~
-
-
+```
 
 我们知道，repositories标签下可以配置多个repository，如果我们配置了多个repository，maven会用哪个呢，答案是按出现顺序使用，如果第1个可用，就用第一个，如果不可用，就依次往下找，下面的2张图片可以说明这个问题。
 
@@ -1308,8 +1233,6 @@ app:
 
 ![img](img/maven/47ceaf2e8e80f505cc206ae805a42c32.png)
 
-
-
 ## pluginManagement标签
 
 pluginManagement主要有两个作用
@@ -1319,7 +1242,7 @@ pluginManagement主要有两个作用
 
 假如我们的父模块有如下的pom.xml
 
-~~~xml
+```xml
     <build>
         <pluginManagement>
             <plugins>
@@ -1345,11 +1268,11 @@ pluginManagement主要有两个作用
             </plugins>
         </pluginManagement>
     </build>
-~~~
+```
 
 假设我们的子模块如下
 
-~~~xml
+```xml
     <dependencies>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -1366,19 +1289,15 @@ pluginManagement主要有两个作用
             </plugin>
         </plugins>
     </build>
-~~~
+```
 
 此时我们如果执行子模块的`compile`命令, 会自动执行tree这个goal, 因为他会从父模块中继承
-
-
-
-
 
 ## Maven profile
 
 在maven中, 你可以通过如下方式来指定多个profile
 
-~~~xml
+```xml
     <profiles>
         <profile>
             <id>dev</id>
@@ -1393,19 +1312,19 @@ pluginManagement主要有两个作用
             <id>prod</id>
         </profile>
     </profiles>
-~~~
+```
 
 ### 激活profile
 
 对于一个profile, 有几种默认激活他的方式
 
 1. 手动激活
-
+   
    通过命令`mvn -P  dev, !prod`来指定启用dev配置文件, 并关闭prod配置文件(prod可能在默认情况下会激活)
 
 2. 默认激活
-
-   ~~~xml
+   
+   ```xml
            <profile>
                <id>mac</id>
                <activation>
@@ -1413,13 +1332,13 @@ pluginManagement主要有两个作用
                    <activeByDefault>true</activeByDefault>
                </activation>
            </profile>
-   ~~~
+   ```
 
 3. 在执行mvn命令的时候, 通过判断属性的值和有无来激活
-
+   
    要设置属性的话, 可以通过`mvn -Dxxx=bbb`来设置
-
-   ~~~xml
+   
+   ```xml
    <profile>
      <id>mac</id>
      <activation>
@@ -1444,7 +1363,7 @@ pluginManagement主要有两个作用
      <id>mac1</id>
      <activation>
        <property>
-   	  <!-- 当不存在xxx属性的时候, 该配置激活 --> 
+         <!-- 当不存在xxx属性的时候, 该配置激活 --> 
          <name>!xxx</name>
        </property>
      </activation>
@@ -1453,18 +1372,18 @@ pluginManagement主要有两个作用
      <id>mac2</id>
      <activation>
        <property>
-   	  <!-- 只要存在xxx属性的时候, 该配置激活 --> 
+         <!-- 只要存在xxx属性的时候, 该配置激活 --> 
          <name>xxx</name>
        </property>
      </activation>
    </profile>
-   ~~~
+   ```
 
 4. 特定的jdk版本
-
+   
    这里的jdk版本是指执行`mvn`命令的时候使用的jdk的版本, 而**不是** `pom.xml` 里 `maven.compiler.target` 或 `maven.compiler.source` 指定的编译 JDK 版本。
-
-   ~~~xml
+   
+   ```xml
    <profile>
      <id>mac</id>
      <activation>
@@ -1474,11 +1393,11 @@ pluginManagement主要有两个作用
        <jdk>1.8</jdk>
      </activation>
    </profile>
-   ~~~
+   ```
 
 5. 在特定的操作系统上激活
-
-   ~~~xml
+   
+   ```xml
    <profile>
      <id>mac</id>
      <activation>
@@ -1492,7 +1411,7 @@ pluginManagement主要有两个作用
        </os>
      </activation>
    </profile>
-   ~~~
+   ```
 
 下面还有一些需要注意的问题
 
@@ -1501,9 +1420,9 @@ pluginManagement主要有两个作用
 - jdk/os/file/property这些标签都只能指定**一个**, 不能指定多个
 
 - **注意: 以下代码, 如果设置了`-Dxxx=bbb`, 那么两个profile都会被同时激活, 并且如果设置了相同的property, 那么下面的会覆盖上面的**
-
-  ~~~xml
-  	<profile>
+  
+  ```xml
+      <profile>
           <activation>
               <property>
                   <!-- 在-Dxxx=bbb的时候激活 -->
@@ -1512,7 +1431,7 @@ pluginManagement主要有两个作用
               </property>
           </activation>
       </profile>
-  	<profile>
+      <profile>
           <activation>
               <property>
                   <!-- 在具有xxx属性的时候激活 -->
@@ -1520,9 +1439,7 @@ pluginManagement主要有两个作用
               </property>
           </activation>
        </profile>
-  ~~~
-
-  
+  ```
 
 ### 不同的profile能够拥有的东西
 
@@ -1537,7 +1454,7 @@ pluginManagement主要有两个作用
 7. build
 8. project
 
-~~~xml
+```xml
  <profile>
             <id>dev</id>
             <dependencies>
@@ -1582,7 +1499,7 @@ pluginManagement主要有两个作用
                 <!-- 这里面能写的东西很多, 看截图-->
             </project>
         </profile>
-~~~
+```
 
 project标签能写的内容太多了, 看截图
 
