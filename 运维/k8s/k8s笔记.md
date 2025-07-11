@@ -12,7 +12,11 @@ kubectl label nodes hostnamexxx  name=value- # 删除label标签
 kubectl get nodes --show-labels # 查看node状态, 带label
 
 kubectl apply -f xxx.yaml # 按照yaml的指示创建对应的资源
-kubectl delete -f xxx.yaml # 按照yaml的指示删除对应的资源, 与apply是反向操作
+kubectl delete -f xxx.yaml # 按照yaml的指示删除对应的资源, 
+
+kubectl edit svc svc_name # 直接修改已经创建的svc的配置, 直接生效
+kubectl edit deploy deployment_name # 直接修改已经创建的deployment的配置, 直接生效
+
 ~~~
 
 
@@ -2104,7 +2108,7 @@ spec:         #必选，Pod中容器的详细定义
 #----------- 端口暴露-----------------------------------------------------
     ports:       #需要暴露的端口库号列表
       - name: string     #端口号名称
-        containerPort: int   # 需要暴露的容器的端口号
+        containerPort: int   # 需要占用的容器的端口号
         hostPort: int    # 主机端口号，默认与Container相同, !!!!注意!!!!如果指定了hostPort, 那么同一台主机上无法启动两个相同的副本, 因为端口号会冲突
         protocol: string     #端口协议，支持TCP和UDP，默认TCP
 #---------------环境变量-----------------------------------------------------
@@ -2842,6 +2846,10 @@ Service 在 K8s 中有以下四种类型: ClusterIp,  NodePort, LoadBalancer, Ex
 ## ClusterIp
 
 默认类型，这种类型的Service会被分配一个**仅 cluster 内部**可以访问的虚拟IP, 访问该虚拟ip后会轮询的将请求转发到pod上
+
+> Note: 这里的转发是转发到容器内部的端口上, 即pod中指定的containerPort, 而不是hostPort
+
+> Note: 如果一个pod没有指定hostPort, 那么他就只能通过ClusterIp或者Service来提供服务了
 
 同时还会在集群内部的dns上创建一个A记录, 格式为`${service-name}.${namespace}.svc.cluster.local`, 当访问这个域名的时候, 访问到的就是service的ip
 
@@ -3969,8 +3977,19 @@ Secret 有三种类型:
 
 ### Service Account
 
-当一个pod被创建的时候，pod也需要去k8s-api注册自己的信息，这时候使用的身份验证就是service account
-相对于创建证书与私钥的方式，service account突出轻的特点，使用token认证
+每当我们创建一个namespace的时候, k8s就会自动在这个namespace下创建一个名为`default`的Service Account
+
+当我们在这个namespace下创建pod的时候, 每个Pod都会默认关联一个Service Account, 默认是`default`, 并且k8s还会将这个Service Account的token挂载到`/var/run/secrets/kubernetes.io/serviceaccount/token`文件中
+
+当k8s中的pod创建完成后, pod需要去k8s-api注册自己的信息，这个时候他会调用`https://kubernetes.default:443/api/xxx`这个链接, 并在header中指定`Authorization: Bearer token`和`Content-Type: application/json`和`Accept: application/json`, 类似如下的命令
+
+```shell
+curl -k \
+-H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+-H "Content-Type: application/json" \
+-H "Accept: application/json" \
+https://kubernetes.default:443/api/v1/xxx
+```
 
 对于k8s来说，会默认在每一个命名空间下面，创建一个token用于pod进行身份验证, 可以通过如下命令查看
 
@@ -4002,6 +4021,28 @@ $ ls
 ca.crt  namespace  token
 # ca.crt是访问apiserver的证书, namespace是当前容器的namespace, token是认证的秘钥信息
 ```
+
+
+
+其实Service Account的主要作用就是为了container中的进程能够调用k8s-api的接口而存在的, k8s内部实现了一套rbac的权限控制系统, 一个Service Account就相当于一个用户, 然后每个pod都会默认关联一个用户, 在pod启动的时候就会将这个Service Account对应的jwt token挂载到container的`/run/secrets/kubernetes.io/serviceaccount/`里面, 如果container中的进程需要调用k8s-api的接口, 那么就将token的内容, 放在在https请求的header的`Authorization`中, 这样k8s就知道是哪个用户发送过来的请求了, 就可以对这个请求进行权限控制了
+
+比如我们container的java进程需要调用k8s-api的接口, 来请求一个configmap中的内容, 那么可以调用如下的接口
+
+```shell
+curl -k \
+-H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+-H "Content-Type: application/json" \
+-H "Accept: application/json" \
+https://kubernetes.default:443/api/v1/namespaces/${namespace_name}/configmaps/${configmap_name}
+```
+
+调用上面的接口后, k8s会判断token是否正确, 关联的Service Account有没有权限能够访问configmap 这个资源
+
+
+
+
+
+
 
 ### Opaque
 
@@ -4351,7 +4392,7 @@ spec:
   # Retain(保留): 当对应的pvc被删除后, pv将被保留并被标记为已释放(released), 
   #                   但是不能重新和其他的pvc进行绑定, 因为pv中还保留着上次的数据
   # Delete(删除): 在对应的pvc被删除后, 将pv进行删除, 并删除物理层面的数据
-  # Recycle(回收): 已被废弃, 回收策略 Recycle 会在卷上执行一些基本的擦除 （rm -rf /thevolume/*）操作，之后允许该卷和其他的PVC绑定
+  # Recycle(回收): 已被废弃, 回收策略 Recycle 会在卷上执行一些基本的擦除 （rm -rf /thevolume/*）操作，之后允许该卷用于新的 PVC 申领
   persistentVolumeReclaimPolicy: Retain
   # 用于标记资源的特性和性能
   # 具有特定storageClassName的PV只能与相同storageClassName的PVC进行绑定。
@@ -4456,6 +4497,72 @@ spec:
 <img src="img/k8s笔记/image-20231024200104408.png" alt="image-20231024200104408" style="zoom: 33%;" />
 
 <img src="img/k8s笔记/image-20231024200232138.png" alt="image-20231024200232138" style="zoom:50%;" />
+
+
+## 特殊的变量
+
+在上面的内容中, 我们可以将ConfigMap, Qpaque的挂载到环境变量中, 当然k8s中还有一些特殊的变量, 可以让我们挂在到环境变量中
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example-pod
+  namespace: default
+spec:
+  containers:
+    - name: example-container
+      image: nginx:latest
+      env:
+        # spec.nodeName表示pod所在的node的名称, 可以通过kubectl get nodes来查看
+        # 下面代码将spec.nodeName设置为pod的环境变量NODENAME
+        - name: NODENAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        # metadata.name 表示当前pod的名称
+        # 下面代码将metadata.name 设置为pod的POD_NAME环境变量
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        # metadata.namespace 表示当前pod所在的命名空间
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        # status.podIP表示当前pod在docker中的ip
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        # status.hostIP表示当前pod所在的node的ip
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        # metadata.labels['app'] 表示当前pod的label app的
+        - name: POD_LABEL
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['app']
+        # 挂etadata.annotations['example-annotation'] 表示当前pod的annotations中的example-annotation的值
+        - name: POD_ANNOTATION
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['example-annotation']
+        # spec.containers[0].name表示pod中第一个容器的名字（容器索引从 0 开始）
+        - name: CONTAINER_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.containers[0].name
+
+
+```
+
+
+
+
 
 
 
@@ -4579,12 +4686,12 @@ spec:
            subPath: setenv.sh
        volumes:
        - name: volume-env
-           configMap:
-             name: env-config
-             items:
-             # 只挂载指定的文件
-               - key: setenv.sh
-                 path: setenv.sh # 文件别名
+         configMap:
+           name: env-config
+           items:
+           # 只挂载指定的文件
+           - key: setenv.sh
+             path: setenv.sh # 文件别名
    ~~~
 
    
@@ -4603,7 +4710,7 @@ Predicate 有一系列的算法可以使用：
 
 - `PodFitsResources` ：节点剩余资源是否大于 pod 请求的资源
 - `PodFitsHost` ：如果 pod 指定了 NodeName，检查节点名称是否和 NodeName 匹配
-- `PodFitsHostPorts` ：节点上已经使用的 port 是否和 pod 申请的 port 冲突
+- `PodFitsHostPorts` ：如果pod指定了hostPort, 那么说明这个pod需要将宿主机的端口, 映射到pod容器内的端口, 所以还需要检查宿主机的端口有没有被其他的节点占用
 - `PodSelectorMatches` ：过滤掉和 pod 指定的 label 不匹配的节点
 - `NoDiskConflict` ：已经 mount 的 volume 和 pod 指定的 volume 不冲突，除非它们都是只读
 
@@ -4655,11 +4762,11 @@ spec:
       # 硬亲和性, pod必须调度到label满足以下条件的node上
       requiredDuringSchedulingIgnoredDuringExecution: 
         nodeSelectorTerms:
-          # 指定了多个matchExpressions, 那么只要其中一个, 节点就满足了条件
+          # 如果在这里指定了多个matchExpressions, 那么只要其中一个, 节点就满足了条件
           # 即多个matchExpressions是或的关系
           - matchExpressions:
+            # 如果在这里指定了多个key, 那么他们之间的关系是且的关系
             # 被分配的节点的label必须满足含有key为disktype, 并且value为ssd或者disk
-            # 如果指定了多个条件, 那么他们的关系是且
             - key: disktype
               operator: In # 操作符[In NotIn Exists Gt Lt Equal DoesNotExists]
               values: 
@@ -4667,8 +4774,11 @@ spec:
               - disk
       # 软亲和性, pod优先调度到label满足以下条件的node上
       preferredDuringSchedulingIgnoredDuringExecution: 
-      - weight: 1 # 权重
+      # 符合条件的节点会获得weight指定的分数, 然后k8s会根据weight来计算总分, 分越高的节点优先级越高
+      - weight: 1 
         preference:
+          # 多个matchExpressions之间是或的关系
+          # 同一个matchExpressions下面的多个key, 是且的关系
           matchExpressions:
             - key: disktype # key
               operator: In  # 操作符[In NotIn Exists Gt Lt Equal DoesNotExists]
@@ -4689,9 +4799,9 @@ Pod 间亲和性与反亲和性使你可以基于已经在节点上运行的 **P
 
 <img src="img/k8s笔记/image-20231020224224332.png" alt="image-20231020224224332" style="zoom: 33%;" />
 
-我们可以通过`topology=location`将集群分为sh和sz两个拓扑区域
+- 我们可以通过`topology=location`将集群分为sh和sz两个拓扑区域
 
-也可以通过`topology=kubernetes.io/hostname`将集群的每一个节点划分为一个拓扑区域, 因为`kubernetes.io/hostname`这个label是每个node都默认有的, 值为每个节点的hostname, 所以能够将每个节点都划分为一个拓扑区域
+- 也可以通过`topology=kubernetes.io/hostname`将集群的每一个节点划分为一个拓扑区域, 因为`kubernetes.io/hostname`这个label是每个node都默认有的, 值为每个节点的hostname, 所以能够将每个节点都划分为一个拓扑区域
 
 > Note: 必须要每个节点上都有该label标签, 才能将label key作为topologyKey
 
@@ -4713,6 +4823,10 @@ spec:
     # pod亲和性
     podAffinity:
       # 如果某个拓扑区域上有pod的label满足条件, 就必须调度上这个拓扑区域的节点上
+
+      # 下面的作用是根据node的location label来划分拓扑区域
+      # 如果某个拓扑区域中有label为app=mysql或者app=pg的pod
+      # 那么当前的pod就必须分配在这个拓扑区域中
       requiredDuringSchedulingIgnoredDuringExecution:
       - labelSelector:
           matchExpressions:
@@ -4720,8 +4834,13 @@ spec:
             operator: In
             values:
             - mysql
-        topologyKey: location  # 指定通过location的label来划分拓扑区域
+            - pg
+        topologyKey: location
       # 如果某个拓扑区域上有pod的label满足条件, 就优先调度上这个拓扑区域的节点上
+
+      # 下面的作用是根据node的location label来划分拓扑区域
+      # 如果某个区域中有label为app=mysql或者app=pg的pod
+      # 那么当前pod就优先分配在这个拓扑区域中, 并且这些node的权重得分+100
       preferredDuringSchedulingIgnoredDuringExecution:
       - weight: 100
         podAffinityTerm:
@@ -4731,6 +4850,7 @@ spec:
               operator: In
               values:
               - mysql
+              - pg
           topologyKey: location # 指定通过location的label来划分拓扑区域
   containers:
   - name: java
@@ -4759,15 +4879,24 @@ spec:
     # 节点反亲和性
     podAntiAffinity:
       # 如果某个拓扑区域上有pod的label满足条件, 就一定不能调度将pod调度到这个区域的节点上
+
+      # 下面的作用是根据node的location label来划分拓扑区域
+      # 如果某个拓扑区域中有label为jdk=jdk11或者jdk=jdk18的pod
+      # 那么当前的pod就一定不能分配在这个拓扑区域中
       requiredDuringSchedulingIgnoredDuringExecution:
       - labelSelector:
           matchExpressions:
-          - key: app
+          - key: jdk
             operator: In
             values:
-            - java2
+            - jdk11
+            - jdk18
         topologyKey: location  # 指定通过location的label来划分拓扑区域
       # 如果某个拓扑区域上有pod的label满足条件, 就优先不将该pod调度到这个区域的节点上
+
+      # 下面的作用是根据node的location label来划分拓扑区域
+      # 如果某个区域中有label为security=S2或者security=S3的pod
+      # 那么当前pod就不优先分配在这个拓扑区域中, 并且这些node的不优先权重得分+100
       preferredDuringSchedulingIgnoredDuringExecution:
       - weight: 100
         podAffinityTerm:
@@ -4777,6 +4906,7 @@ spec:
               operator: In
               values:
               - S2
+              - S3
           topologyKey: location  # 指定通过location的label来划分拓扑区域
   containers:
   - name: java1
@@ -4793,7 +4923,7 @@ spec:
 
 ### NodeSelector
 
-nodeSelector是最简单的, 能够将pod指定分配到哪个节点上
+nodeSelector是最简单的, 将pod分配到符合label的node上
 
 ```yaml
 apiVersion: v1
@@ -4839,26 +4969,52 @@ spec:
 
 ### 污点和污点容忍
 
-Taint(污点)和Toleration(污点容忍) 可以用来避免pod被分配到不合适的节点上, 每个节点都可以有多个taint, 对于哪些不能容忍taint的pod, 是不会被分配到该节点上的.
+污点(Taints)和污点容忍(Tolerations) 主要解决了以下的作用
+
+- 节点排斥: 避免pod被调度到不合适的特定节点(专用于GPU的节点)上
+
+- 节点隔离: 标记故障或者维护中的节点, 防止pod被调度到这些节点上
+
+- 优先级调度: 运行特定的pod可以容忍污点, 调度到有污点的node上
+
+每个node都可以被设置多个污点Taints, 如果pod不能容忍这些污点, 那么不会调度到这个pod上, 如果pod能够容忍这些污点, 那么就有可能调度到这个node上
+
+
 
 #### 污点
 
-每个污点都有key, value, effect组成, 其中value可以为空, effect描述污点的作用, 有以下三个选项
+每个污点都有key, value, effect组成, 格式为`key=value:effect`
 
-- NoSchedule: 表示k8s不会将pod调度到当前节点上面
-- PreferNoSchedule: 表示k8s尽量避免将pod调度到该节点上面
-- NoExecute: 表示k8s不会将pod调度到当前节点上面, 同时会将节点上已经存在的pod驱逐(**如果被驱逐的pod被deployment控制, 那么他会漂到其他机器上, 否则就直接没有了**)
+- key表示当前污点的名称
 
-~~~~shell
-# 设置污点
-kubectl taint nodes xxx key1=value1:NoSchedule
+- value表示污点的值, 可选, 可以问空
 
-# 查看污点
-kubectl describe nodes xxx
+- effect决定了排斥pod的方式, 他的取值如下
+  
+  1. NoSchedule: 表示k8s不会将新的pod调度到这个node上面, 但是已经在这个node上面的pod可以继续运行
+  
+  2. PreferNoSchedule: 表示k8s尽量避免将pod调度到该节点上面, 已经在这个node上面的pod可以继续运行
+  
+  3. NoExecute: 表示k8s不会将新的pod调度到当前node上面, 同时会将节点上已经存在的, 不能容忍这个污点的pod驱逐
+     
+     (**如果被驱逐的pod被deployment控制, 那么他会漂到其他机器上, 否则就直接没有了**)
 
-# 去除污点
-kubectl taint nodes xxx key1=value1:NoSchedule-
-~~~~
+
+
+```shell
+# 设置污点到指定的node上
+kubectl taint nodes <node-name> key1=value1:effect
+# 案例: 禁止普通pod调度到GPU节点上
+kubectl taint nodes node1 gpu=true:NoSchedule
+
+# 查看node上面的污点
+kubectl describe nodes <node-name> | grep Taints
+
+# 去除指定node上的污点, 特别要注意后面有一个减号
+kubectl taint nodes <node-name> key-
+# 案例
+kubectl taint nodes node1 gpu-
+```
 
 #### 污点容忍
 
@@ -4880,8 +5036,10 @@ spec:
       operator: "Equal" # [In NotIn Exists Gt Lt Equal DoesNotExists], 当值为Exists时将会忽略value值
       value: "value1"
       effect: "NoSchedule"
-      tolerationSeconds: 3600 # 描述当 Pod 需要被驱逐时可以在 Pod 上继续保留运行的时间
-~~~
+      # 这个配置仅对NoExecute有效
+      # 描述当node被标记为NoExecute污点后, Pod再被关闭之前, 还可以运行多长时间
+      tolerationSeconds: 3600
+```
 
 当不指定 key 值时，表示容忍所有的污点 key：
 
@@ -5609,7 +5767,9 @@ rules:
   resources: ["pods"] # 角色能够控制的资源
   verbs: ["get", "watch", "list"] # 能够对资源进行的操作
 ~~~
+
 创建ClusterRole的案例
+
 ~~~yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -6103,13 +6263,12 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 5. 通过charts目录来安装一个release, 可以使用`--set image.tag=1.25`来覆盖Values中的值
 
    ~~~shell
-   # hello-world
-   install web2 hello-world/
+   install web2 hello-world/ --set image.tag=1.25
    ~~~
 
    ![image-20231024160700995](img/k8s笔记/image-20231024160700995.png)
 
-5. 更新release
+6. 更新release
 
    想要更新release, 有两种办法
    
@@ -6136,7 +6295,7 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 
 <img src="img/k8s笔记/image-20231024161436643.png" alt="image-20231024161436643" style="zoom:50%;" />
 
-6. 查看历史记录
+7. 查看历史记录
 
    ~~~shell
    helm history web2 # 查看名为web2的release的更新记录
@@ -6144,7 +6303,7 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 
    ![image-20231024161536371](img/k8s笔记/image-20231024161536371.png)
 
-7. 回滚
+8. 回滚
 
    ~~~shell
    helm rollback web2 # 回滚是按照上一个版本的内容,  新生成了一个版本
@@ -6152,7 +6311,7 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 
    ![image-20231024161705618](img/k8s笔记/image-20231024161705618.png)
 
-8. 删除
+9. 删除
 
    ~~~shell
    # 使用这种方式删除release, 会删除掉k8s相关的Deployment, Service等等, 
@@ -6237,7 +6396,7 @@ heml install release_name chart_name --set aa.bb=xxx # 根据chart安装release,
 
 
 # release 相关
-helm ls # 查看所有的release
+helm ls # 查看所有的未被删除的release
 helm status release_name # 查看release的状态
 
 # 删除release
