@@ -1,6 +1,4 @@
-# k8s相关命令
-
-## 集群相关
+#### k8s相关命令
 
 ```shell
 # 切换当前命令行默认使用的namespace
@@ -11,102 +9,28 @@ kubectl label nodes hostnamexxx  name=value # 给node打label标签
 kubectl label nodes hostnamexxx  name=value- # 删除label标签
 kubectl get nodes --show-labels # 查看node状态, 带label
 
-kubectl apply -f xxx.yaml # 按照yaml的指示创建对应的资源
-kubectl delete -f xxx.yaml # 按照yaml的指示删除对应的资源, 与apply是反向操作
-~~~
+kubectl get pods # 查看pods状态
+kubectl get pods -o wild # 带ip, pods存在的node
+kubectl get pods -A # 查看所有namespace中的pods
+kubectl get pods -n namespace # 查看指定namespace中的pods
+kubectl get pod redis --watch # 监视pod的状态
 
+kubectl exec  pod_name -c container_name -it -- /bin/bash # 进入pod内部
 
+kubectl describe pod pod_name # 查看pod的详细信息
+kubectl log pod_name -c container_name # 查看pod中指定容器的镜像
 
-
-
-## pod相关命令
-
-~~~shell
-kubectl get pod # 查看默认namespace下有哪些pod, 默认的namespace默认情况下是default
-kubectl get pod -n namespace # 查看指定namespace下有哪些pod
-kubectl get pod -n namespace -o wild # 查看指定namespace下有哪些pod, 并附带pod的ip和存在的node
-kubectl get pod -A # 查看所有namespace中的pods
-kubectl get pod -n namespace # 查看指定namespace中的pods
-kubectl get pod -n namespace pod_name # 查看一个pod的状态
-kubectl get pod pod_name --watch # 监视pod的状态
-
-
-kubectl describe pod pod_name -n namespace # 查看指定namespace中的pod的详细信息
-kubectl describe pod pod_name -n namespace -o yaml # 查看指定namespace的pod的详细情况, 并以yaml的形式显示
-
-
-kubectl delete pod --all # 删除所有pod
-kubectl delete pod -n namespace_name --all # 删除一个namespace中所有的pod
-kubectl delete pod -n namespace_name pod_name # 删除一个pod, 如果这个pod被deployment管理了, 那么deployment还会重新创建出一个pod副本
-
-
-kubectl exec  -n namespace_name pod_name -c container_name -it -- /bin/bash # 进入容器内部, 如果pod只有一个container, 那么可以省略-c参数
-kubectl log -n namespace_name pod_name -c container_name # 查看pod中指定容器的日志
-
-kubectl get pod --show-labels # 查看pod的label
-kubectl label pod pod_name label1=value1 --overwrite=True # 给pod添加标签, 如果已经存在同名的标签就修改
-~~~
-
-如果想要查看当前这个pod是哪个controller创建出来的
-
-```shell
-[root@node173 ~]# kubectl describe pod -n service-software seasql-base-0
-Name:         seasql-base-0
-Namespace:    service-software
-Priority:     0
-Node:         node173/10.99.209.173
-Start Time:   Fri, 04 Jul 2025 14:38:35 +0800
-Labels:       ...
-Annotations:  ....
-Status:       Running
-Controlled By:  StatefulSet/seasql-base
-Containers:
-```
-
-可以通过`Controlled By:  StatefulSet/seasql-base`发现当前的pod是被`seasql-base`这个StatefulSet创建出来的
-
-
-
-
-
-
-
-## deployment相关命令
-
-~~~shell
 kubectl create deployment nginx --image=nginx
 kubectl expose deployment nginx --port=80 --type=NodePort
+
+kubectl apply -f xxx.yaml # 按照yaml的指示创建对应的资源
+kubectl delete -f xxx.yaml # 按照yaml的指示删除对应的资源, 与apply是反向操作
+
+kubectl edit svc svc_name # 修改svc的配置
 
 # 根据命令生成yaml文件, --dry-run表示不执行命令
 kubectl create deployment web1 --image=nginx:1.24 --dry-run -o yaml > deployment.yaml
 ```
-
-
-
-
-
-## svc相关命令
-
-~~~shell
-kubectl expose deployment deploy_name --port=xx --type=NodePort --targetPort=xx --nodePort=xx
-
-kubectl get svc # 查看default命名空间所有svc
-kubectl get svc -A # 查看所有命名空间的svc
-kubectl get svc -n namespace # 查看指定命名空间的svc
-kubectl get svc -n namespace svc_name # 查看指定命名空间的指定svc
-
-kubectl describe svc -n namespace svc_name # 查看svc的详细情况
-kubectl describe svc -n namespace svc_nam -o yaml # 以yaml的形式查看svc的详细情况
-
-kubectl delete svc --all # 删除所有的svc
-kubectl delete svc -n namespace_name svc_name # 删除指定命名空间的指定svc
-
-kubectl edit svc svc_name # 修改svc的配置
-~~~
-
-
-
-
 
 # 二进制方式安装kubernetes
 
@@ -1664,367 +1588,9 @@ kubectl get pod,svc
 
 <img src="img/k8s笔记/image-20231028211752090.png" alt="image-20231028211752090" style="zoom:33%;" />
 
-# K8S的网络模型
+# Pod文件格式解析
 
-Kubernetes的网络模型假定了所有的Pod都在一个现成可以直接连通的扁平的网络空间中, 这在GCE (Google Compute Engine) 里面是现成的网络模型,  Kubernetes假定这个网络已经存在了
-
-但是在私有云里面搭建Kubernetes集群, 就不能假定这个网络已经存在了, 我们需要自己实现这个网络, 将不同节点上的Docker容器之间的相互访问先打通, 然后才能运行Kubernetes
-
-
-
-在同一个Pod之间, 不同的容器因为共享`Pause`容器的网络栈, 所以可以直接通过`localhost`来调用
-
-而不同的Pod之间, 我们可以通过Overlay Network 来相互通讯, 而Overlay Network可以通过Flannel来实现
-
-Pod与Service之间的通讯, 我们可以通过各个节点的Iptables规则来实现
-
-Pod与外网通讯:  Pod向外网发送请求，查找路由表，转发数据包到宿主机的网卡，宿主网卡完成路由选择后，iptables执行Masquerade，把源IP更改为宿主网卡的IP，然后向外网服务器发送请求
-
-外网访问Pod:Service   
-
-
-
-# Namespace
-
-namespace主要用于隔离pod, controller, service, pv, pvc等资源
-
-如果我们直接调用`kubectl get xxx` 实际上获取的是`default`命名空间下的资源信息
-
-如果我们要查看其他命名空间中的资源的话, 那么可以调用`kubectl get xxx -n namespace_name` 来获取指定命名空间下的namespace
-
-
-
-相关命令
-
-1. 创建namespace
-
-   - 直接命令调用
-
-     ~~~shell
-     kubectl create ns xxx # 来创建namespace
-     ~~~
-
-   - 通过yaml来调用
-
-     ~~~yaml
-     kind: Namespace  #类型为Namespace
-     apiVersion: v1 #类型为Namespace
-     metadata:
-       name: orange-test  #命名空间名称
-       labels:
-         name: orange-test-v1 
-     ~~~
-
-     ```shell
-     kubectl create -f ns.yaml
-     ```
-
-2. 查看和设置默认的namespace
-
-   ~~~shell
-   kubectl config view --minify --output 'jsonpath={..namespace}' # 如果不输出任何内容, 那么使用的是默认的命名空间
-   
-   kubectl config set-context --current --namespace=<your-namespace> # 设置当前命令行默认使用的namespace, 这样就不用每次输入 -n xxx来指定需要使用的namespace了
-   ~~~
-
-   
-
-3. 其他的命令
-
-   ~~~shell
-   kubectl get ns # 查看所有的namespace
-   
-   kubectl delete ns xxx # 删除ns
-   ~~~
-
-   
-
-
-
-
-
-
-
-
-
-
-
-# Pod
-
-对于一个Pod, K8S首先会启动一个名为`Pause`的容器,  然后其他的业务容器会共享`Pause`的网络栈和数据卷, 他有业务容器就可以使用`localhost`的来调用其他的容器中的应用了
-
-同时多个业务容器的端口也不能冲突了, 因为他们共享`Pause`的网络栈
-
-
-
-## pod的生命周期以及创建的过程
-
-![image-20250704221832091](img/k8s笔记/image-20250704221832091.png)
-
-当我们通过`kubectl create -f xxx.yaml`来创建pod的时候,  Kubernetes
-
-- 首先会对容器的环境进行初始化
-
-- 创建出`Pause`容器, 并挂载数据卷到他身上
-
-- 创建InitC 容器, 来执行一些准备步骤
-
-  如果我们的业务Pod, 需要在存储卷中有特定的文件, 才能够启动, 那么我们就可以通过InitC容器, 让他来准备这些文件, 到存储卷中
-
-  InitC容器可以有多个, 只要上一个InitC容器执行完毕, 正常退出, 那么就会启动下一个InitC容器, 执行下一个步骤
-
-- 所有的InitC容器都正常执行完毕
-
-- **并行**创建Pod中所有的容器, 并且并发执行容器的`containers[].lifecycle.postStart`钩子
-
-- 对容器进行启动探针检测, 就绪探针/存活探针检测
-
-- 执行容器的`containers[].lifecycle.preStop`钩子, 并销毁容器
-
-
-
-## InitC容器
-
-一个Pod里面有多个容器,  并且也可以有多个先于业务容器启动的InitC容器
-
-InitC容器与业务容器非常的像, 除了如下两点:
-
-- InitC容器总是运行到完成为止
-- 每个InitC容器必须在上一个InitC容器完成后, 才能启动
-- 如果pod重启了, 那么所有的InitC容器都必须重新执行
-
-如果Pod的InitC容器启动失败, 那么Kubernetes会根据restartPolicy来重新处理这个Pod
-
-
-
-InitC的主要作用有
-
-- 因为InitC容器是在`pause`容器启动之后启动的, 所以可以访问数据卷, 所以可以帮助业务容器来准备一些启动时必须的文件
-
-~~~yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: multi-init-demo
-spec:
-  containers:
-    - name: main-container
-      image: nginx
-      ports:
-        - containerPort: 80
-      volumeMounts:
-        - name: shared-data
-          mountPath: /usr/share/nginx/html
-
-  initContainers:
-    - name: init-download-data
-      image: busybox
-      command: ['sh', '-c', 'echo "Downloading data..." > /data/index.html']
-      volumeMounts:
-        - name: shared-data
-          mountPath: /data
-    - name: init-permissions
-      image: busybox
-      command: ['sh', '-c', 'chmod 755 /data/index.html']
-      volumeMounts:
-        - name: shared-data
-          mountPath: /data
-  volumes:
-    - name: shared-data
-      emptyDir: {}
-~~~
-
-## 探针
-
-探针是由Kubelet对容器的定期诊断,  主要由三种形式的探测
-
-- startupProbe 启动探针
-
-  主要是用来检查容器中的应用是否启动成功, 特别是针对慢启动应用
-
-  如果在规定时间内没有启动成功就会杀死容器并执行restartPolicy
-
-  如果探测成功就表示应用成功启动了, 后续就不会再进行探测了
-
-- livenessProbe 存活探针
-
-  启动探针成功之后才会启动存活探针, 他主要用来检查容器中的应用是否存活
-
-  检查失败会杀死容器,然后根据restartPolicy来操作
-
-  存活探针会伴随pod的一生, 直到pod被删除
-
-- readinessProbe 就绪检查
-
-  启动探针成功之后才会启动继续探针, 他主要用来检查应用是否能够正常提供服务
-
-  检查失败表示当前应用不能正常提供服务, 就把pod的ready状态改为false并从Service的负载均衡中从剔除
-
-  检查成功后, 又会将pod的ready状态改为true,并重新加入到Service的负载均衡中
-
-  当一个 Pod 内的所有容器都就绪时，才能认为该 Pod 就绪
-
-  就绪检查会伴随pod的一生, 直到pod被删除
-
-
-
-同时上面的三种形式的探针, 都可以通过如下的三种形式来实现
-
-- ExecAction: 在容器内执行指定命令, 如果命令退出时返回码为0, 那么认为诊断成功
-- TCPSocketAction: 对指定容器的端口进行tcp检查,  如果端口打开, 那么认为是诊断成功
-- HTTPGetAction: 对指定容器的端口, 调用http get请求, 如果响应状态码 >=200 并且 < 400, 那么认为诊断成功
-
-~~~yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: jvm-app-with-cmd-probes
-spec:
-  containers:
-    - name: jvm-app
-      image: openjdk:17
-      # jvm启动之后, 会创建一个app-started文件
-      command: ["sh", "-c", "java -jar /app/myapp.jar & touch /tmp/app-started && wait"]
-
-      # 启动探针：
-      startupProbe:
-        exec:
-          # 检测 /tmp/app-started 是否存在, 如果存在, 那么命令的状态码为0, 表示检测成功
-          command: ["sh", "-c", "test -f /tmp/app-started"] 
-        iniinitialDelaySeconds: 10 # 延迟10s之后开始探测
-        timeoutSeconds: 1 # 如果命令1s内没有返回, 认为检测失败了
-        periodSeconds: 5  # 每5s执行一次探测
-        failureThreshold: 30 # 如果连续30次探测失败了, 那么认为启动失败, 根据restartPolicy处理
-        successThreshold: 1 # 连续1次探测成功了后, 认为探测成功了, 因为这里是启动探测, 必须设置为1
-        terminationGracePeriodSeconds: 30 # 如果探针失败, 会关闭容器, 然后根据restartPolicy来处理Pod, 这里表示等待容器停止的时间, 超过这个时间会强制停止
-
-      # 存活探针（容器是否挂掉）
-      livenessProbe:
-        tcpSocket:
-          port: 8080 # 看看8080端口是否开启了tcp, 如果开启了认为检测成功
-        iniinitialDelaySeconds: 10 
-        timeoutSeconds: 1 # 如果命令1s内没有返回, 认为检测失败了
-        periodSeconds: 5  # 每5s执行一次探测
-        failureThreshold: 30 # 如果连续30次探测失败了, 那么认为启动失败
-        successThreshold: 1 # 连续1次探测成功了后, 认为探测成功了, 存活探针这里必须是1
-        terminationGracePeriodSeconds: 30 # 如果探针失败, 会关闭容器, 然后根据restartPolicy来处理Pod, 这里表示等待容器停止的时间, 超过这个时间会强制停止
-
-      # 就绪探针（应用是否可以对外服务）
-      readinessProbe:
-        httpGet:
-          # 访问容器的http://8080:/read, 看看状态码是不是>=200 < 400, 如果是, 那么探测成功
-          path: /ready
-          port: 8080
-          HttpHeaders:
-          - name: aaa
-            value: bbb
-        iniinitialDelaySeconds: 10 
-        timeoutSeconds: 1 # 如果命令1s内没有返回, 认为检测失败了
-        periodSeconds: 5  # 每5s执行一次探测
-        failureThreshold: 30 # 如果连续30次探测失败了, 那么认为启动失败
-        successThreshold: 3 # 连续3次探测成功了后, 认为探测成功了, 因为这里是启动探测, 必须设置为1
-        terminationGracePeriodSeconds: 30 # 如果探针失败, 会关闭容器, 然后根据restartPolicy来处理Pod, 这里表示等待容器停止的时间, 超过这个时间会强制停止
-~~~
-
-## 容器的启动和关闭钩子
-
-Kubernetes在启动容器的时候, 会并行的调用`lifecycle.postStart`中的钩子
-
-同时在容器关闭之前, 会调用`lifecycle.preStop`中的钩子
-
-~~~YAML
-apiVersion: v1
-kind: Pod
-metadata:
-  name: jvm-lifecycle-demo
-spec:
-  containers:
-    - name: jvm-app
-      image: openjdk:17
-      command: ["sh", "-c"]
-      args:
-        - |
-          echo "Starting Java app..." && \
-          java -jar /app/myapp.jar
-
-      lifecycle:
-        postStart:
-          exec:
-            command:
-              - sh
-              - -c
-              - echo "[postStart] App started at $(date)" >> /tmp/lifecycle.log
-
-        preStop:
-          exec:
-            command:
-              - sh
-              - -c
-              - |
-                echo "[preStop] Cleaning up at $(date)" >> /tmp/lifecycle.log && \
-                sleep 5  # 模拟清理动作
-
-      volumeMounts:
-        - name: tmp-volume
-          mountPath: /tmp
-
-  volumes:
-    - name: tmp-volume
-      emptyDir: {}
-~~~
-
-
-
-## Pod的状态
-
-当我们调用`kubectl get pod -n namespace_name`的时候, 会显示pod的状态
-
-~~~shell
-kubectl get pods -A
-NAMESPACE          NAME                                        READY   STATUS              RESTARTS   AGE
-kube-system        calico-kube-controllers-68fb684666-lmrcn    1/1     Running             0          27h
-kube-system        calico-node-dq5lx                           1/1     Running             0          27h
-~~~
-
-status的状态有如下几种
-
-- Pending 挂起
-
-  表示创建Pod的命令已经被Kubernetes, 但是Pod中还有一个或者多个容器尚未创建. 
-
-  可能是因为还在调度Pod到特定的容器上, 或者通过网络下载镜像
-
-- Running 运行中
-
-  一个Pod已经被绑定到了一个Node上, Pod中所有的容器都已经创建完毕
-
-  至少有一个容器正在运行, 或者正在处于启动/重启状态
-
-- Succeeded 成功
-
-  Pod中所有的容器都一个成功停止, 执行完毕
-
-- Failed 失败
-
-  Pod中所有的容器都已经停止, 并且至少有一个容器是失败停止的
-
-- Unknown 未知
-
-  Kubernetes Master与Node网络通讯失败,  无法获取Pod的状态
-
-
-
-
-
-
-
-
-
-## Pod文件格式解析
-
-你可以通过`kubectl explain pod`来查看pod文件中可以写哪些内容
-
-如果你想要看特定的字段下, 有哪些子字段, 那么可以通过类似`kubectl explain pod.apiVersion`, `kubectl explian pod.spec.nodeSelector`的形式来查看
+一组容器的集合, 所有容器
 
 ```yaml
 apiVersion: v1       #必选，版本号，例如v1
@@ -2039,10 +1605,7 @@ metadata:       #必选，元数据
     name1: string1  
     name2: string2
 spec:         #必选，Pod中容器的详细定义
-#-----------------------重启策略-----------------------------------------------
-  # pod重启策略 [Always(默认, 容器退出后总是重启容器) | OnFailure(只有退出状态码为非0时才重启容器) | Never(不管什么情况退出, 都不重启)] 
-  # 注意: Always也不是立即重启容器, 而是随重启次数等待越来越长的时间, 在等待的时候会显示CrashLoopBackOff状态
-  restartPolicy: Always 
+  restartPolicy: Always # pod重启策略 [Always(默认, 容器退出后总是重启容器) | OnFailure(只有退出状态码为非0时才重启容器) | Never] 
 #-----------------------------节点选择器----------------------------------------    
   # 设置NodeSelector表示将该Pod调度到包含这个label的node上，以key：value的格式指定
   # 通过kubectl label node node_name  label_name=value  来给node设置label
@@ -2052,7 +1615,7 @@ spec:         #必选，Pod中容器的详细定义
     lable2: value
 #----------------------------------------------------------------------------
   affinity:
-#-----------------------节点亲和性------------------------------
+  #-----------------------节点亲和性------------------------------
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution: # 硬亲和性, 选择的节点的label必须满足这些条件
         nodeSelectorTerms:
@@ -2070,26 +1633,24 @@ spec:         #必选，Pod中容器的详细定义
               values: # value
               - ssd 
 #---------------------------------------------------------------
-  imagePullSecrets: #Pull镜像时使用的secret名称，以key：secretkey格式指定
-  - name: string
-  hostNetwork: false  #是否使用主机网络模式，默认为false，如果设置为true，表示使用宿主机网络,而不是docker网桥, 同时设置了true将导致同一台主机上无法启动两个相同的副本
 #---------------------container-----------------------------------
-  containers:      #必选，Pod中容器列表, 是一个数组, 可以指定多个containers
-  - name: string     #可选，容器名称, 不写随机创建
+  containers:      #必选，Pod中容器列表
+  - name: string     #必选，容器名称
     image: string    #必选，容器的镜像名称
-    # 可选, 获取镜像的策略 IfnotPresent(默认)表示优先使用本地镜像，否则下载镜像，Nerver表示仅使用本地镜像, Alawys表示总是下载镜像 
+    # 获取镜像的策略 IfnotPresent(默认)表示优先使用本地镜像，否则下载镜像，Nerver表示仅使用本地镜像, 
+    # Alawys表示总是下载镜像 
     imagePullPolicy: [Always | Never | IfNotPresent] 
-    # command和args都是可选的, 都是数组, command不指定时会使用打包时使用的启动命令, args默认为空
-    command: ["sh", "-c"]
-    args: ["echo Hello && sleep 3600"]
-    workingDir: string     #可选,容器的工作目录
-#----------- 端口暴露-----------------------------------------------------
+    command: [string]    #容器的启动命令列表，如不指定，使用打包时使用的启动命令
+    args: [string]     #容器的启动命令参数列表
+    workingDir: string     #容器的工作目录
+    imagePullSecrets:    #Pull镜像时使用的secret名称，以key：secretkey格式指定
+      - name: string
+    hostNetwork: true      #是否使用主机网络模式，默认为false，如果设置为true，表示使用宿主机网络
     ports:       #需要暴露的端口库号列表
-      - name: string     #端口号名称
+      - name: string     # 端口号名称
         containerPort: int   # 需要占用的容器的端口
-        hostPort: int    # 可选, 将宿主机上的指定端口, 映射到containerPort上, 不指定表示不映射 !!!!注意!!!!如果指定了hostPort, 那么同一台主机上无法启动两个相同的副本, 因为端口号会冲突
+        hostPort: int    # 可选, 将宿主机上的指定端口, 映射到containerPort上, 不指定表示不映射
         protocol: string     #端口协议，支持TCP和UDP，默认TCP
-#---------------环境变量-----------------------------------------------------
     env:       #容器运行前需设置的环境变量列表
       - name: string     #环境变量名称
         value: string    #环境变量的值
@@ -2106,7 +1667,6 @@ spec:         #必选，Pod中容器的详细定义
       requests:      #资源最小的设置
         cpu: string    #Cpu请求，容器启动的初始可用数量
         memory: string     #内存清楚，容器启动的初始可用数量
-#--------------资源调整时是否重启-------------------------------------
     # 指定在运行时, 重新分配资源时是否需要重启容器(一般调整cpu都无需重启容器, 而调整内存需要)
     # resourceName: 调整的资源 cpu, memory
     # restartPolicy: NotRequired(默认)不重启容器,  RestartContainer重启容器
@@ -2120,29 +1680,14 @@ spec:         #必选，Pod中容器的详细定义
       postStart: # 容器创建后立即执行, 和容器的代码是异步执行的
         exec:
           command: ["/bin/sh", "-c", "echo helloworld > /usr/share/message"]
-      preStop: # 容器结束前执行
+      postStart: # 容器结束前执行
         exec:
           command: ["/bin/sh", "-c", "echo stop > /usr/share/message"]
 #--------------------------健康检查和重启机制---------------
-    # 探针主要有三种: startupProbe, livenessProbe, readinessProbe
-    # 
-    # startupProbe 启动探针: 
-    #   主要是用来检查容器中的应用是否启动成功, 特别是针对慢启动应用
-    #   如果在规定时间内没有启动成功就会杀死容器并执行restartPolicy, 
-    #   如果探测成功就表示应用成功启动了, 后续就不会再进行探测了
-    # livenessProbe 存活探针: 
-    #   启动探针成功之后才会启动存活探针, 他主要用来检查容器中的应用是否存活
-    #   检查失败会杀死容器,然后根据restartPolicy来操作
-    #   存活探针会伴随pod的一生, 直到pod被删除
-    # readinessProbe 就绪检查: 
-    #   启动探针成功之后才会启动继续探针, 他主要用来检查应用是否能够正常提供服务
-    #   检查失败表示当前应用不能正常提供服务, 就把pod的ready状态改为false并从Service的负载均衡中从剔除
-    #   当检查成功后, 又会将pod的ready状态改为true,并重新加入到Service的负载均衡中
-    #   当一个 Pod 内的所有容器都就绪时，才能认为该 Pod 就绪
-    #   就绪检查会伴随pod的一生, 直到pod被删除
-    # 
+    # startupProbe(启动探针: 针对慢启动应用, 如果在规定时间内没有启动成功就会杀死容器并执行restartPolicy, 如果探测成功, 后续就不会再进行探测了)
+    # livenessProbe(存活探针: 启动探针成功之后才会启动, 检查失败杀死容器,然后根据restartPolicy来操作)
+    # readinessProbe(就绪检查: 启动探针成功之后才会启动, 检查失败就把pod的ready状态改为false并从负载均衡器中从剔除, 当一个 Pod 内的所有容器都就绪时，才能认为该 Pod 就绪)
     # 在实际中, 就绪探针和存活探针都使用相同的http, 但是存活探针的failureThreshold比较大, 这样如果短时间失败就把pod从负载均衡器中提出, 如果长时间失败就会杀死容器
-    
     livenessProbe:     
       # 检查方法有exec、httpGet和tcpSocket
       # exec: 执行command进行状态检查, 如果command的退出状态码是0, 表示成功, 其他表示不成功, 可以通过echo $? 来输出上一个命令的退出状态码
@@ -2191,136 +1736,17 @@ spec:         #必选，Pod中容器的详细定义
   initContainers:
   - name: install
     image: busybox:1.28
-    command: ["wget", "-O", "/work-dir/index.html", "http://info.cern.ch"] # 下载文件到挂载目录下, 给业务容器使用
+    command:
+    - wget
+    - "-O"
+    - "/work-dir/index.html"
+    - http://info.cern.ch
     volumeMounts:
     - name: workdir
       mountPath: "/work-dir"
 ```
 
-
-
-
-
-
-
-
-
-
-
 # Controller
-
-## ReplicationController 和 ReplicaSet
-
-ReplicationController用来确保容器的副本数始终保持在用户定义的副本数,  即如果有容器异常退出, 那么就会创建出新的Pod来替代;  而如果异常多出来的容器, 那么就会自动回收
-
-在新版本的Kubernetes中建议使用ReplicaSet来替代ReplicationController
-
-
-
-ReplicaSet相较于ReplicationController来说, 也是用于保存容器副本数处于用户的期望值上, 但是区别在于ReplicaSet支持集合式的Selector
-
-
-
-虽然ReplicaSet可以独立使用, 但是一般还是建议使用Deployment来自动管理ReplicaSet, 因为Deployment相较于ReplicaSet能够支持滚动更新
-
-
-
-### yaml
-
-详细的模板信息可以通过`kubectl explain rs `来查看
-
-如果想要查看更详细的字段, 可以通过`kubectl explain rs.spec.replicas`来查看spec下的replicas字段的说明
-
-~~~yaml
-apiVersion: extensions/v1beta1
-kind: ReplicaSet
-metadata:
-  name: frontend
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      tier: frontend
-  template:
-    metadata:
-      labels:
-        tier: frontend
-    spec: # 这一部分跟pod是一样的, pod中可以指定什么这里就能指定什么
-      containers:
-      - name: php-redis
-        image: gcr.io/google_samples/gb-frontend:v3
-        env:
-        - name: GET_HOSTS_FROM
-          value: dns
-        ports:
-        - containerPort: 80
-~~~
-
-然后通过`kubectl create -f rs.yaml`来创建这个ReplicaSet
-
-### 相关shell
-
-~~~ shell
-kubectl get rs -A # 查看所有namespace中的rs
-kubectl get rs -n namespace # 查看指定namespace中的rs
-kubectl get rs -n namespae -o wide # 查看指定namespace中的rs, 并显示相对详细的信息
-
-kubectl describe rs -n namespace rs_name # 描述rs的详细信息
-kubectl describe rs -n namespace rs_name -o json # 以json的形式显示rs的详细信息
-
-kubectl delete rs -n namespace_name rs_name # 删除指定的rs, 会连同pod一起删除
-~~~
-
-
-
-## 实践
-
-1. 查看当前的ReplicaSet是哪个Deployment创建的
-
-   ~~~shell
-   ​~~~shell
-   [root@node173 ~]# kubectl describe rs -n service-software   seasqlcache-cluster-live-68c59c7dd9
-   Name:           seasqlcache-cluster-live-68c59c7dd9
-   Namespace:      service-software
-   Selector:       app.kubernetes.io/name=seasql-base-live,pod-template-hash=68c59c7dd9
-   Labels:         app.kubernetes.io/name=seasql-base-live
-                   pod-template-hash=68c59c7dd9
-   Annotations:    deployment.kubernetes.io/desired-replicas: 1
-                   deployment.kubernetes.io/max-replicas: 2
-                   deployment.kubernetes.io/revision: 1
-                   meta.helm.sh/release-name: seasqlcache-cluster
-                   meta.helm.sh/release-namespace: service-software
-   Controlled By:  Deployment/seasqlcache-cluster-live
-   Replicas:       1 current / 1 desired
-   Pods Status:    1 Running / 0 Waiting / 0 Succeeded / 0 Failed
-   Pod Template:
-   ...................
-   ~~~
-
-   可以看到`Controlled By:  Deployment/seasqlcache-cluster-live`表示当前这个ReplicaSet是被Deployment中的`seasqlcache-cluster-live`创建并控制的
-
-2. 如何查看当前ReplicaSet管理了哪些pod?
-
-   可以通过名字来确认, 如果我们创建了一个名为`example`的ReplicaSet,  那么这个ReplicaSet创建的Pod就会名为`example-${random}`
-
-   ~~~shell
-   [root@node173 ~]# kubectl get rs -n service-software | grep seaio-6fc66db57f
-   seaio-6fc66db57f                      1         1         1       33h
-   [root@node173 ~]# kubectl get pod -n service-software | grep seaio-6fc66db57f
-   seaio-6fc66db57f-5nk4v                      1/1     Running             0          33h
-   ~~~
-
-   
-
-
-
-
-
-
-
-
-
-
 
 ## Deployment 控制器
 
@@ -2331,33 +1757,24 @@ kubectl delete rs -n namespace_name rs_name # 删除指定的rs, 会连同pod一
 Deployment控制器能够实现的功能
 
 1. 副本保持
-
-   Deployment并没有实现直接实现副本保持的功能, 而是通过控制ReplicaSet来间接实现副本控制的功能
-
-   在创建Deployment Controller的时候, 会创建出一个ReplicaSet Controller, 通过ReplicaSet控制器来控制pod的副本数量
-
-   <img src="img/k8s笔记/image-20231013150941431.png" alt="image-20231013150941431" style="zoom:33%;" />
-
 2. 滚动升级和回滚
-
-   在滚动升级的时候, Deployment Controller会再创建一个ReplicaSet Controller, 然后由这个ReplicaSet来产生新的版本的容器, 原来的ReplicaSet Controller将会被停用(不会删除)
-
-   并且更新过程是这样的:
-
-   1. 新的ReplicaSetController先创建25%replica的容器, 等他们启动
-   2. 旧的ReplicaSetController关闭25%replica的容器, 依次循环
-
-   <img src="img/k8s笔记/image-20231013151055594.png" alt="image-20231013151055594" style="zoom:33%;" />
-
-   而在回滚的时候, 旧的ReplicaSet会被重写启用, 重新创建旧版本的Pod, 而新的ReplicaSet会被停用,并关闭新版本的Pod
-
 3. 扩缩容
-
 4. 暂停和继续Deployment
 
+其中副本保持是通过ReplicaSet控制器来控制的, 即创建Deployment Controller的时候, 会创建出一个ReplicaSet Controller, 通过ReplicaSet控制器来控制pod的副本数量
 
+<img src="img/k8s笔记/image-20231013150941431.png" alt="image-20231013150941431" style="zoom:33%;" />
 
+而在滚动升级的时候, Deployment Controller会再创建一个ReplicaSetController来控制新的pod
 
+原来的ReplicaSetController将会被暂停掉
+
+并且更新过程是这样的:
+
+1. 新的ReplicaSetController先创建25%replica的容器, 等他们启动
+2. 旧的ReplicaSetController关闭25%replica的容器, 依次循环
+
+<img src="img/k8s笔记/image-20231013151055594.png" alt="image-20231013151055594" style="zoom:33%;" />
 
 ### yaml解析
 
@@ -2390,55 +1807,18 @@ spec:         #必填，部署的详细定义
       containers:      #必填，定义容器列表
 ```
 
-案例
+如果将Deployment生成的pod的标签改掉, 那么Deployment为了保持副本, 会重新生成pod
 
-~~~yaml
-apiVersion: extensions/v1beta1
-kind: Deployment
-metadata:
-  name: nginx-deployment
-spec:
-  replicas: 3
-  template:
-    metadata:
-      labels:
-        app: nginx
-    spec:
-      containers:
-      - name: nginx
-        image: nginx:1.7.9
-        ports:
-        - containerPort: 80
-~~~
-
-然后通过`kubectl create -f deployment.yaml`命令来创建这个deployment
-
-
-
-**如果将Deployment生成的pod的标签改掉, 那么Deployment为了保持副本, 会重新生成pod**
-
-**如果把原来的pod的label改回来, pod会被删除掉一个**
-
-
-
-
+如果把原来的pod的label改回来, pod会被删除掉一个
 
 ### 扩缩容
 
-
-~~~shell
-# 扩容到10个副本
-kubectl scale deployment deployment --replica 10 
-
+```shell
+kubectl scale deployment deployment --replica 10
 # 自动根据容器cpu使用率进行扩缩容
-# 最小副本10, 最大副本15
-# 当容器cpu使用率大于80%的时候进行扩容, 当cpu小于80%的时候缩容
+# 最小副本10, 最大副本15, 当容器cpu大于80%的时候进行扩容, 当cpu小于80的时候缩容
 kubectl autoscale deployment deployment_name --min=10 --max=15 --cpu-percent=80
 ```
-
-
-
-
 
 ### 镜像更新和回滚
 
@@ -2468,34 +1848,13 @@ kubectl rollout history deployment/deployment_name
 2. rollout虽然是回退版本, 但是还是会生成一个新的版本
 3. 上面创建了3个ReplicaSet控制器, 其中两个已经停止, 只有一个在运行, 用来控制副本数量
 
+#### 相关shell
 
-
-### 相关shell
-
-~~~shell
-kubectl get deploy -A # 查看所有的deploy
-kubectl get deploy -n namespace # 查看指定命名空间中的deploy
-
-kubectl describe deploy deploy_name -n namespace # 描述namespace中的deploy的详细信息
-
-kubectl delete deploy --all # 删除所有的deploy
-kubectl delete deploy -n namespae_name deploy_name # 删除指定命名空间中的deploy
-~~~
-
-
-### 实践
-
-1. 如何查看Deployment创建出来的ReplicaSet, 以及ReplicaSet控制的Pod
-
-   如果我们创建了一个名为`nginx-deployment`的Deployment, 那么这个Deployment创建出来的ReplicaSet的命名就是`nginx-deployment-${hash}`
-
-   同时这个ReplicaSet创建出来的Pod就会名为`nginx-deployment-${hash}-${random}`, 如下图所示
-
-   ![image-20250706001425007](img/k8s笔记/image-20250706001425007.png)
-
-
-
-
+```shell
+# 创建deployment并指定镜像
+kubectl create deployment deploy_name --image=nginx:1.24
+kubectl get deploy -n namespace # 查看指定ns中的deployment
+```
 
 ## StatefulSet 控制器
 
@@ -2583,17 +1942,17 @@ spec:
 ### StatefulSet的特点
 
 - 顺序部署, 扩展, 删除:
-
-  k8s会按照`{statefulset名称}-{index}`的名称来启动pod的多个副本, 并且多个副本会按照顺序启动,  如上图所示, 先启动web4-0, web4-1, web4-2, 只有前一个副本状态变为running和ready后才会启动下一个副本(基于initContainer实现)
-
+  
+  k8s会按照`{statefulset名称}-{index}`的名称来启动pod的多个副本, 并且多个副本会按照顺序启动,  如上图所示, 先启动web4-0, web4-1, web4-2, 只有前一个副本状态变为running和ready后才会启动下一个副本
+  
   当删除pod的时候, 会从N-1到0顺序删除所有副本
   
   **通过init containers来实现**
 
 - pod重新创建后名称不变
-
-  当delete其中一个pod之后, 因为副本原因会重新启动一个pod, pod名称不会变, hostname不会变, 但是ip会变, 如下图所示
-
+  
+  当delete其中一个pod之后, 因为副本原因会重新启动一个pod, pod名称不会变, 但是ip会变, 如下图所示
+  
   <img src="img/k8s笔记/image-20231024223456458.png" alt="image-20231024223456458" style="zoom:50%;" />
 
 - 删除pod并不会删除pvc, 需要手动处理
@@ -2604,9 +1963,9 @@ spec:
 
 ### 概述
 
-Daemon确保在每个node(除了有污点的node)上都运行一个pod副本,  当node加入到集群中时, 会在node上创建一个新的pod, 当node退出集群时, Daemon也会删除在node上的pod副本.
+Daemon确保在每个node上都运行一个pod副本,  当node加入到集群中时, 会在node上创建一个新的pod, 当node退出集群时, Daemon也会删除在node上的pod副本.
 
-删除DaemonSet会删除所有他创建所有的pod副本
+删除node会删除所有他创建的pod副本
 
 使用DaemonSet的典型用法:
 
@@ -2636,42 +1995,18 @@ spec:
           image: nginx:1.24
 ```
 
-然后通过`kubectl apply -f my-daemonset.yaml` 来创建这个DaemonSet
-
-### 相关shell
-
-~~~shell
-kubectl get ds -n <namespace> # 查看指定namespace中的ds
-kubectl get ds -A # 查看所有的ds
-
-kubectl describe ds <ds-name> -n <namespace> # 查看指定namepsace中的ds的详细信息
-
-kubectl delete ds <ds-name> -n <namespace> # 删除ds, 并删除相关的pod
-~~~
-
-
-
-
-
-
-
-
-
 ## Job控制器
 
-Job 负责批处理任务，我们可以定义并行执行Pod的个数, 多少个Pod执行成功后, Job才算执行成功, 
+Job 负责批处理任务，即仅执行一次的任务，它保证批处理任务的一个或多个 Pod 成功结束
 
-Pod最多重试次数等等
+> 相关shell
 
+```shell
+kubeclt get job # 查看job
+kubectl descirbe job job_name # 查看job详细信息
+```
 
-
-如果一个Pod失败了, 他会重新启动另外一个Pod来执行任务
-
-Pod执行完毕后, 状态为Completed
-
-
-
-### yaml解析
+> yml说明
 
 ```yaml
 apiVersion: batch/v1
@@ -2679,11 +2014,9 @@ kind: Job
 metadata:
   name: pi1
 spec:
-  completions: 4 # 总共需要有4个pod副本运行成功, 这个Job才算运行成功，默认为1
-  parallelism: 2 # 每次最多并发运行2个pod，默认为1
-  backoffLimit: 4 # 如果某个Pod运行失败了, 会重试, 总共最多重试4次, 如果超过了4次, 那么这个Job会被认为执行失败了
-  activeDeadlineSeconds: 10 # 整个Job从启动最多允许10s, 超过10s就认为失败了
-  ttlSecondsAfterFinished: 60  # Job执行成功60s后, 自动删除掉Job和对应的Pod, 防止占用空间
+  completions: 4 # 需要成功运行的Pod个数，默认为1
+  parallelism: 2 # 并行运行的Pod的个数，默认为1
+  activeDeadlineSeconds: 10 # 失败Pod的重试最大时间，超过这个时间不会继续重试
   template:
     metadata:
       name: pi
@@ -2697,23 +2030,6 @@ spec:
 
 <img src="img/k8s笔记/image-20231013155959022.png" alt="image-20231013155959022" style="zoom:50%;" />
 
-### 相关shell
-
-~~~shell
-kubectl get job -n <namespace> # 查看指定namespace中的ds
-kubectl get job -A # 查看所有的ds
-
-kubectl describe job <job-name> -n <namespace> # 查看指定namepsace中的ds的详细信息
-
-kubectl delete job <job-name> -n <namespace> # 删除ds, 并删除相关的pod
-~~~
-
-
-
-
-
-
-
 ## CronJob控制器
 
 CronJob 管理基于时间的Job，即:
@@ -2726,17 +2042,20 @@ CronJob 管理基于时间的Job，即:
 - 在给定的时间点调度Job 运行
 - 创建周期性运行的Job，例如: 数据库备份、发送邮件
 
+> cronjob的原理
 
+cronjob是通过job controller来控制pod的, 即每次到了运行周期, cronjob都会创建出一个job controller来执行一次任务
 
-CronJob的原理:
+所以删除cronjob并不会删除创建出来的pod,  还需要删除cronjob创建出来的job才会删除pod
 
-- cronjob是通过job controller来控制pod的, 即每次到了运行周期, cronjob都会创建出一个job controller来执行一次任务
+> 相关shell
 
-  所以删除cronjob并不会删除创建出来的pod,  还需要删除cronjob创建出来的job才会删除pod
+```shell
+kubectl get cronjob
+kubectl delete cronjob
+```
 
-
-
-### yaml解析
+> yaml解析
 
 ```yaml
 apiVersion: batch/v1
@@ -2745,17 +2064,17 @@ metadata:
   name: hello
 spec:
   schedule: "*/1 * * * *" # 必须, 任务运行周期
-  startingDeadlineSeconds: 10 # 因为某些原因, cronjob没有被准时的触发(controller manager不可用, kubelet宕机), 那么只要在触发点的10s内, 就可以补偿性触发, 超过了10s的话, 就需要等到下一次调度了
+  startingDeadlineSeconds: 10 # 启动job的期限, 秒, 可选. 如果因为任何原因而错过了被调度的时间, 那么错过执行时间的job将被任务是失败的. 如果没有指定, 就是没有期限
   # 并发策略, 可选, 指定如何处理被cron job创建的job的并发执行
   # Allow: 运行并发运行job
   # Forbid: 禁止并发运行, 如果前一个还没有完成, 则直接跳过下一个
   # Replace: 取消当前运行的job, 换新的来执行
   concurrencyPolicy: Allow
-  suspend: false # 可选, 是否要暂停当前的CronJob, 不执行调度, 默认为false, 如果设置为true的话, 那么就相当于暂停了定时调度一样
-  successfulJobsHistoryLimit: 3 # 保留最近3个成功执行的Job和关联的Pod, 旧的会被自动Job和Pod会被删除, 节省磁盘, 默认值为3
-  failedJobsHistoryLimit: 1 # 保留最近1个执行失败的Job和关联的Pod, 旧的会被自动Job和Pod会被删除, 节省磁盘, 默认值为1
-  ttlSecondsAfterFinished: 300 # 自动删除300s以前执行的Job和关联的Pod, 减少磁盘和内存的占用
-  jobTemplate:  # 需要运行的任务, 公式同pod
+  suspend: false # 可选, 默认为false, 如果设置为true表示后续所有执行都会被挂起, 他对已经开始执行的job不起作用
+  # 历史限制, 可选. 他们指定可以保留多少完成和失败的pod, 默认情况下为3和1.
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:  # 需要运行的任务, 公司同pod
     spec:
       template:
         spec:
@@ -2769,46 +2088,15 @@ spec:
           restartPolicy: OnFailure
 ```
 
-
-
-### 相关shell
-
-~~~shell
-kubectl get cronjob -n <namespace> # 查看指定namespace中的cronjob
-kubectl get cronjob -A # 查看所有的cronjob
-
-kubectl describe cronjob <cronjob-name> -n <namespace> # 查看指定namepsace中的cronjob的详细信息
-
-kubectl patch cronjob <cronjob-name> -n <namespace> -p '{"spec" : {"suspend" : true}}' # 暂停cronjob
-kubectl patch cronjob <cronjob-name> -n <namespace> -p '{"spec" : {"suspend" : false}}' # 恢复cronjob
-
-
-kubectl delete job <job-name> -n <namespace> # 删除cronjob, 不会删除job和关联的pod
-~~~
-
-
-
-
-
-
-
-
-
-## Horizontal Pod Autoscaling
-
-Horizontal Pod Autoscaling 仅适用于Deployment 和 ReplicaSet, 在v1版本中仅支持根据cpu的利用率扩容, 在vlapha版本中, 支持根据内存和用户自定义的metric扩缩容
-
 # Service
 
 **Service能够通过label匹配一组pod, 并记录这些pod的信息.** 
 
-当有一组java pod需要访问mysql pod的时候, 因为pod的ip是会变化的(pod挂掉了Deployment会重新启动一个pod, 并且这个pod与上一个pod的ip地址是不一样的), 这个时候就需要为mysql pod创建一个service.
+当有一组java pod需要访问mysql pod的时候, 因为pod的ip是会变化的, 这个时候就需要为mysql pod创建一个service.
 
 java pod只需要访问service的ip, service会把请求通过**轮询**转发到mysql pod中, 这样就可以无视mysql pod的ip变化了 
 
 **并且当pod的副本死亡以后, 创建出来新的pod, svc也能监控到, 并将其更新到负载策略里面**
-
-![image-20250706132011516](img/k8s笔记/image-20250706132011516.png)
 
 **只有访问service 的 ip才会进请求转发给后面的一组pod, 即只能进行四层代理, 访问service的hostname是不行的**
 
@@ -2818,9 +2106,9 @@ java pod只需要访问service的ip, service会把请求通过**轮询**转发�
 
 Service 在 K8s 中有以下四种类型: ClusterIp,  NodePort, LoadBalancer, ExternalName
 
-## ClusterIp
+### ClusterIp
 
-默认类型，这种类型的Service会被分配一个**仅 cluster 内部**可以访问的虚拟IP, 访问该虚拟ip后会轮询的将请求转发到pod上
+默认类型，分配一个**仅 cluster 内部**可以访问的虚拟IP, 访问该虚拟ip后会轮询的将请求转发到pod上
 
 > Note: 这里的转发是转发到容器内部的端口上, 即pod中指定的containerPort, 而不是hostPort
 
@@ -2878,9 +2166,9 @@ spec:
 
 可以看到, 通过nslookup进行域名解析, `myapp.default.svc.cluster.local`的ip就是service的ip
 
-## NodePort
+### NodePort
 
-这种类似的Service会在`custerlP` 基础上为 Service 在**每台node机器**上绑定一个端口，这样就可以通过访问Node上的端口来访问到容器了
+在 custerlP 基础上为 Service 在**每台node机器**上绑定一个端口，这样就可以通过访问Node上的端口来访问到容器了
 
 <img src="img/k8s笔记/image-20231013172823945.png" alt="image-20231013172823945" style="zoom:33%;" />
 
@@ -2926,61 +2214,31 @@ spec:
       protocol: TCP
       targetPort: http-web-svc # 转发到的端口, 可以直接写端口名字, 也可以使用数字
       nodePort: 30000 # 访问service的外部端口, 必须是在30000-32767, 同时要自己考虑端口冲突
-~~~
+```
 
-需要注意的是, 虽然我们访问任何一台机器的NodePort端口, 他都会将我们的请求轮询的转发给Pod, 但是如果我们访问的Node都挂掉了的话, 那么我们的请求是无效的
+### LoadBalancer
 
-所以在实际情况中, 我们的Client实际上是将请求发送到Nginx中, 然后通过Nginx做一个方向代理将请求发送到一台机器的NodePort的端口中
+LoadBalancer: 在 NodePort 的基础上，借助cloud provider 创建一个外部负载均衡器，并将请求转发到NodePort
 
-同时我们在Nginx中做健康检测, 监测哪些Node的端口是调不通的(Node挂掉了),  然后不将请求转发到这个Node上, 这样就实现了真正的负载均衡
+### ExternalName
 
-![image-20250706140502842](img/k8s笔记/image-20250706140502842.png)
-
-
-
-## LoadBalancer
-
-他的主要的功能和NodePort是一样的, 都是在每一台机器上创建一个端口, 访问这个端口就可以负载均衡的访问到对应的Pod
-
-但是他和NodePort的区别在于:
-
-- 我们不需要手动的在NodePort前面加一个nginx, 来实现高可用, 而是通过云供应商提供的服务, 将我们的请求负载均衡到各个Node节点上
-
-  当然了, 这种方式因为引入了云供应商, 所以是要收费的
-
-  ![image-20250706141257146](img/k8s笔记/image-20250706141257146.png)
-
-
-
-## ExternalName
-
-这种方式主要用于Pod访问集群外部的服务
-
-在集群内部创建一个Service, 这个Service会记录外部应用的ip和port,  这样内部的pod只需要访问这个service就可以范围到外部服务
-
-当外部服务改变时, 只需要修改这个service中记录的ip和port即可, 不需要修改pod中的ip和port
+ExternalName: 在集群内部创建一个Service, 这个Service会记录外部应用的ip和port,  这样内部的pod只需要访问这个service就可以范围到外部服务, 当外部服务改变时, 只需要修改这个service中记录的ip和port即可, 不需要修改pod中的ip和port
 
 ```yaml
 kind: Service
 apiVersion: v1
 metadata:
-  name: my-service
+  name: my-service-1
   namespace: default
 spec:
   type: ExternalName
   externalName: hub.atguigu.com
 ```
 
-当查询主机 `my-service.defalut.svc.cluster.local` ( SVC_NAME.NAMESPACE.svc.cluster.local )时，集群的
+当查询主机 my-service.defalut.svc.cluster.local ( SVC_NAME.NAMESPACE.svc.cluster.local )时，集群的
 DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
 
-
-
-
-
-
-
-## Headless Service
+### Headless Service
 
 对于ClusterIp和NodePort的方式
 
@@ -3004,7 +2262,12 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
 
 - 会为每一个pod都添加一个A记录, 格式为`pod-name.service-name.namespace.svc.cluster.local`, 解析出来就直接是pod的ip, 直接访问该域名就可以访问到对应的pod
 
+### 相关shell
 
+```shell
+kubectl expose deployment deploy_name --port=xx --type=NodePort --targetPort=xx --nodePort=xx
+kubectl get svc # 查看创建的svc
+```
 
 # Ingress
 
@@ -3784,10 +3047,13 @@ ConfigMap AP 给我们提供了向容器中注入配置信息的机制，ConfigM
    $ kubectl create configmap game-config --from-file=./
    # 只将指定的文件中的配置包含到configmap中
    $ kubectl create configmap game-config --from-file=./game.properties
-   ~~~
-
-
-   通过上面这种方式创建的configmap,  一个文件名就是一个key, 文件内容就是对应的value
+   
+   # 查看configmap
+   kubectl get cm
+   # 查看详细内容
+   kubectl get cm cm_name -o yaml
+   kubectl decribe cm cm_name
+   ```
 
 2. 通过命令行创建
    
@@ -3804,24 +3070,8 @@ ConfigMap AP 给我们提供了向容器中注入配置信息的机制，ConfigM
      name: env-config
      namespace: default
    data: 
-     key1: value1
-     key2: value2
-   ~~~
-
-### 相关命令行
-
-~~~shell
-kubectl get cm -n namespae # 查看指定命名空间中的configmap
-kubectl get cm cm_name -o yaml -n namespace # 以yaml的形式显示configmap的信息
-
-kubectl decribe cm -n namespace_name cm_name # 查看configmap的详细信息
-
-kubectl delete cm -n namespace_name cm_name # 删除configmap
-~~~
-
-
-
-
+     log_level: info
+   ```
 
 ### 使用configmap
 
@@ -3854,8 +3104,8 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
          image: bash
          command: ["/bin/sh", "-c", "env | grep color"]
          env:
-           - name: color.good 
-             valueFrom: # 将configmap中的keyvalue挂载到env中
+           - name: color.good # env中的环境变量名
+             valueFrom:
                configMapKeyRef:
                  name: env-config # configmap的名字
                  key: color.good # configmap中key的名字
@@ -3866,7 +3116,7 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
                  key: color.bad
          envFrom:
            - configMapRef:
-               name: env-config1 # configmap的名字, 将整个configmap中的key-value都加载进env
+               name: env-config1 # configmap的名字, 将整个configmap中的配置都加载进env
      restartPolicy: Never
    ```
    
@@ -3881,10 +3131,10 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
    ```
 
 2. 将configmap作为卷挂载进容器中, 作为配置文件
-
-   **默认configmap中的每一个key都作为作为文件名, value作为文件内容**
-
-   ~~~yaml
+   
+   **默认configmap中的key作为文件名, value作为文件内容**
+   
+   ```yaml
    apiVersion: v1
    kind: ConfigMap
    metadata:
@@ -3907,7 +3157,7 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
          volumeMounts:
           - name: v1
             mountPath: /etc/config # 将configmap env-config中的所有配置都挂载到/etc/config下
-     volumes: # 将名为env-config的configmap, 声明为v1的存储卷
+     volumes:
        - name: v1
          configMap:
            name: env-config
@@ -3942,8 +3192,19 @@ Secret 有三种类型:
 
 ### Service Account
 
-当一个pod被创建的时候，pod也需要去k8s-api注册自己的信息，这时候使用的身份验证就是service account
-相对于创建证书与私钥的方式，service account突出轻的特点，使用token认证
+每当我们创建一个namespace的时候, k8s就会自动在这个namespace下创建一个名为`default`的Service Account
+
+当我们在这个namespace下创建pod的时候, 每个Pod都会默认关联一个Service Account, 默认是`default`, 并且k8s还会将这个Service Account的token挂载到`/var/run/secrets/kubernetes.io/serviceaccount/token`文件中
+
+当k8s中的pod创建完成后, pod需要去k8s-api注册自己的信息，这个时候他会调用`https://kubernetes.default:443/api/xxx`这个链接, 并在header中指定`Authorization: Bearer token`和`Content-Type: application/json`和`Accept: application/json`, 类似如下的命令
+
+```shell
+curl -k \
+-H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+-H "Content-Type: application/json" \
+-H "Accept: application/json" \
+https://kubernetes.default:443/api/v1/xxx
+```
 
 对于k8s来说，会默认在每一个命名空间下面，创建一个token用于pod进行身份验证, 可以通过如下命令查看
 
@@ -3973,6 +3234,28 @@ $ ls
 ca.crt  namespace  token
 # ca.crt是访问apiserver的证书, namespace是当前容器的namespace, token是认证的秘钥信息
 ```
+
+
+
+其实Service Account的主要作用就是为了container中的进程能够调用k8s-api的接口而存在的, k8s内部实现了一套rbac的权限控制系统, 一个Service Account就相当于一个用户, 然后每个pod都会默认关联一个用户, 在pod启动的时候就会将这个Service Account对应的jwt token挂载到container的`/run/secrets/kubernetes.io/serviceaccount/`里面, 如果container中的进程需要调用k8s-api的接口, 那么就将token的内容, 放在在https请求的header的`Authorization`中, 这样k8s就知道是哪个用户发送过来的请求了, 就可以对这个请求进行权限控制了
+
+比如我们container的java进程需要调用k8s-api的接口, 来请求一个configmap中的内容, 那么可以调用如下的接口
+
+```shell
+curl -k \
+-H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+-H "Content-Type: application/json" \
+-H "Accept: application/json" \
+https://kubernetes.default:443/api/v1/namespaces/${namespace_name}/configmaps/${configmap_name}
+```
+
+调用上面的接口后, k8s会判断token是否正确, 关联的Service Account有没有权限能够访问configmap 这个资源
+
+
+
+
+
+
 
 ### Opaque
 
@@ -4111,10 +3394,6 @@ spec:
     - name: registrykey_name # 使用的docker registry
 ```
 
-
-
-
-
 ## Volume
 
 容器磁盘上的文件的生命周期是短暂的，这就使得在容器中运行重要应用时会出现一些问题。
@@ -4191,17 +3470,15 @@ spec:
 
 能够将网络上其他服务器上的目录挂载到本机下面
 
-我们现在需要将目标服务器上一个的目录,  挂载到客户机的一个目录下面, 步骤如下
-
-1. 在目标服务器上安装net, 并指定需要被挂载的目录
-
-   ~~~shell
+1. 在目标服务器上安装net, 并指定能够被挂载的目录
+   
+   ```shell
    yum install -y nfs-common nfs-utils rpcbind # 安装nfs组件
    
-   mkdir -p /nfs/data # 创建要被挂载的目录
+   mkdir -p /nfs/data # 创建挂载的目录
    chmod 666 /nfs/data
    
-   cat > /etc/exports << EOF # 导出要被挂载的目录, 是他能够被挂载到其他客户机的目录下
+   cat > /etc/exports << EOF # 指定要挂载的目录
    /nfs/data *(rw,no_root_squash,no_all_squash,sync)
    EOF
    ```
@@ -4228,8 +3505,8 @@ spec:
    
    # 在nfs客户机上执行
    mkdir /test
-   showmount -e cdh107 # 查看cdh107上被导出的, 能够被挂载的目录
-   mount -t nfs cdh107:/nfs/data  /test # 将cdh107下的/nfs/data挂载到客户机/test目录下
+   showmount -e cdh107 # 查看能够挂载的目录
+   mount -t nfs cdh107:/nfs/data  /test # 将/nfs/data挂载到/test目录下
    umount -t nfs /test # 卸载挂载的目录
    ```
    
@@ -4255,13 +3532,13 @@ spec:
          containers:
            - name: nginx
              image: nginx:1.24
-             volumeMounts: # 挂载volume
+             volumeMounts:
                - name: wwwroot
                  mountPath: /usr/share/nginx/html # 挂载到容器的目录
                  readOnly: false
              ports:
                - containerPort: 80
-         volumes: # 声明一个volume
+         volumes:
            - name: wwwroot
              nfs:
                server: cdh107 # 指定目标服务器
@@ -4272,9 +3549,9 @@ spec:
 
 ## PersistentVolume
 
-PersistentVolume类似Volume, 但是他具有独立的生命周期.
+PV类似Volume, 但是他具有独立的生命周期.
 
-PersistentVolumeClaim(PVC)是对PV的申请, 通过在Pod中指定PVC, 之后PVC会去寻找符合条件的pv进行绑定, **pvc和pv是一一映射的**, 即一个pv只能和一个pvc进行绑定, 一个pvc也只能和一个pv绑定
+PersistentVolumeClaim(PVC)是对PV的申请, 当一个pvc被创建之后, 他回去寻找符合条件的pv进行绑定, **pvc和pv是一一映射的**, 即一个pv只能和一个pvc进行绑定, 一个pvc也只能和一个pv绑定
 
 当pvc和pv绑定之后, pod就可以使用pvc了而无需关系pv的实现细节
 
@@ -4289,7 +3566,6 @@ apiVersion: v1
 kind: PersistentVolume
 metadata:
   name: pv0003 # pv的名字
-  namespace: default # pv所在的命名空间
   labels:  # 定义pv的label
     pv-type: example-label
     environment: dev
@@ -4310,7 +3586,7 @@ spec:
   # Retain(保留): 当对应的pvc被删除后, pv将被保留并被标记为已释放(released), 
   #                   但是不能重新和其他的pvc进行绑定, 因为pv中还保留着上次的数据
   # Delete(删除): 在对应的pvc被删除后, 将pv进行删除, 并删除物理层面的数据
-  # Recycle(回收): 已被废弃, 回收策略 Recycle 会在卷上执行一些基本的擦除 （rm -rf /thevolume/*）操作，之后允许该卷和其他的PVC绑定
+  # Recycle(回收): 已被废弃, 回收策略 Recycle 会在卷上执行一些基本的擦除 （rm -rf /thevolume/*）操作，之后允许该卷用于新的 PVC 申领
   persistentVolumeReclaimPolicy: Retain
   # 用于标记资源的特性和性能
   # 具有特定storageClassName的PV只能与相同storageClassName的PVC进行绑定。
@@ -4328,17 +3604,10 @@ spec:
 
 查看pv以及他的描述信息
 
-~~~shell
-kubectl create -f pv.yaml # 根据yaml创建pv
-
-kubectl get pv -n namespace # 查看指定命名空间中的pv
-kubectl get pv -A # 查看所有命名空间中的pv
-
-kubectl describe pv -n namespace_name pv0003 # 查看pv的详细情况
-kubectl describe pv -n namespace_name pv0003 -o yaml# 以yaml的形式查看pv的详细情况
-
-kubectl delete pv -n namespace_name pv0003 # 删除pv
-~~~
+```shell
+kubectl get pv
+kubectl describe pv pv0003
+```
 
 <img src="img/k8s笔记/image-20231024195234180.png" alt="image-20231024195234180" style="zoom:50%;" />
 
@@ -4351,7 +3620,6 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: myclaim # 定义pvc的名字
-  namespace: default # pvc所在的命名空间
 spec:
   accessModes:
     - ReadWriteOnce # 该pvc只会寻找同样accessModes的pv进行绑定
@@ -4366,23 +3634,6 @@ spec:
     matchExpressions: # 定义绑定的pv需要对应的label
       - {key: environment, operator: In, values: [dev]}
 ```
-
-相关的shell
-
-~~~shell
-kubectl create -f pvc.yaml
-
-kubectl get pvc -n namespace # 查看指定命名空间的pvc
-kubectl get pvc -A # 查看所有的pvc
-
-kubectl describe pvc -n namespace_name pvc_name # 查看指定命名空间中的指定pvc的详细情况
-
-kubectl delete pvc -n namespcae_name pvc_name # 删除指定命名空间中的pvc
-~~~
-
-
-
-
 
 ![image-20231024195827068](img/k8s笔记/image-20231024195827068.png)
 
@@ -4481,6 +3732,12 @@ spec:
 
 
 ```
+
+
+
+
+
+
 
 ## 存储卷的细节
 
@@ -4823,7 +4080,7 @@ spec:
 
 ### NodeSelector
 
-nodeSelector是最简单的, 能够将pod指定分配到哪个节点上
+nodeSelector是最简单的, 将pod分配到符合label的node上
 
 ```yaml
 apiVersion: v1
@@ -5975,23 +5232,33 @@ metadata:
   kubectl auth reconcile -f my-rbac-rules.yaml --remove-extra-subjects --re
   ```
 
+# Namespace
 
+#### Namespace yaml
 
-# Helm
+相关命令
 
-helm的作用是能让我们一键创建Deployment, Service等等东西,  他的作用就类似于Docker Compose
+~~~shell
+kubectl create ns xxx # 来创建namespace
+kubectl get ns # 查看namespace
+kubectl delete ns xxx # 删除ns
+kubectl config set-context --current --namespace=orange # 设置当前命令行默认使用的namespace, 这样就不用每次输入 -n xxx来指定需要使用的namespace了
 
-在helm中有两个重要的概念:
+```
+通过yaml创建namespace
 
-- chart:  chart是已经写好的, 告诉k8s要如何创建Deployment, Service等等东西的文件, 这个chart可以是我们自己创建的, 也可以使用别人创建好的
+```yml
+kind: Namespace  #类型为Namespace
+apiVersion: v1 #类型为Namespace
+metadata:
+  name: orange-test  #命名空间名称
+  labels:
+    name: orange-test-v1 
+```
 
-  同时chart也可以配置参数, 里面也可以写判断条件等等, 用于根据不同的参数, 来生成不同的内容
+# Heml
 
-- release:  我们可以根据chart来进行一次完整的应用的部署,  每次部署产生的Deployment, Service等等东西我们就成为一个release
-
-
-
-## 安装
+### 安装
 
 1. 从https://github.com/helm/helm/releases下载heml安装包, 并拷贝到linux上
    
@@ -6009,7 +5276,7 @@ helm的作用是能让我们一键创建Deployment, Service等等东西,  他的
    mv linux-amd64/helm /usr/bin/
    ```
 
-## 添加仓库
+### 添加仓库
 
 ```shell
 helm repo add microsoft http://mirror.azure.cn/kubernetes/charts
@@ -6021,7 +5288,11 @@ helm repo update # 更新仓库
 helm repo delete microsoft # 删除仓库
 ```
 
-## 创建自定义charts
+### 使用第三方charts
+
+查看安装kubernetes-dashboard部分
+
+### 创建自定义charts
 
 ```shell
 helm create chart_name 
@@ -6038,14 +5309,14 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
    <img src="img/k8s笔记/image-20231024153413429.png" alt="image-20231024153413429" style="zoom:50%;" />
    
    该命令会在本地目录下创建一个chart_name目录, 里面有charts, templates目录和Charts.yaml, values.yaml文件
-
-   - Chart.yaml: 当前chart属性配置文件, **通常不需要修改**
-
-   - templates: 编写的yaml模板文件放在这个目录
-
-   - values.yaml: 定义变量, 在templates中的文件可以引用到这些变量
-
-   - charts: 不知道干什么的目录, 没有用上
+   
+   Chart.yaml: 当前chart属性配置文件, **通常不需要修改**
+   
+   templates: 编写的yaml文件放在这个目录
+   
+   values.yaml: 定义变量, 在templates中的文件可以使用到这些变量
+   
+   charts: 不知道干什么的目录, 没有用上
 
 2. 将templates中的模板文件全部删除, 并在其中编写yaml文件, 我们现在添加两个
    
@@ -6055,13 +5326,10 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
    apiVersion: apps/v1
    kind: Deployment
    metadata:
-     # 这里引用了一个变量, 通过这个变量可以引用helm install 传入进来的release name
-     name: {{.Release.Name}}-deploy 
-     # 通过这个变量来引用values.yaml中的ns变量
-     namespace: {{.Values.ns}} 
+     name: {{.Release.Name}}-deploy # 通过这个变量可以引用helm install 传入进来的release name
+     namespace: {{.Values.ns}} # 通过这个变量来引用values.yaml中的ns变量
    spec:
-     # # 通过这个变量来引用values.yaml中的replicas变量
-     replicas: {{.Values.replicas}} 
+     replicas: {{.Values.replicas}} # 通过这个变量来引用values.yaml中的replicas变量
      selector:
        matchLabels:
          app: {{.Release.Name}}
@@ -6117,121 +5385,48 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
    
    <img src="img/k8s笔记/image-20231024161010076.png" alt="image-20231024161010076" style="zoom:50%;" />
 
-5. 通过charts目录来安装一个release, 可以使用`--set image.tag=1.25`来覆盖Values中的值
-
-   ~~~shell
-   # hello-world
-   install web2 hello-world/
-   ~~~
-
+5. 通过charts目录来安装一个release, 可以使用`--set tag=1.25`来覆盖Values中的值
+   
+   ```shell
+   helm install web2 hello-world/
+   ```
+   
    ![image-20231024160700995](img/k8s笔记/image-20231024160700995.png)
 
-5. 更新release
-
-   想要更新release, 有两种办法
+6. 更新镜像的版本为1.25,   可以直接修改values.yaml中的配置, 可以直接使用--set参数
    
-   - 我们直接修改chart中的文件,  比如这里我们将`values.yaml`中的`image.tag`修改为`1.25`, 然后调用如下命令
-   
-  ~~~shell
-     # 根据hello-world中的chart文件, 来更新web2这个release
-     # 不真正的更新, 而是查看即将用于执行的配置文件
-     helm upgrade web2 hello-world/ --dry-run
-     
-     # 根据hello-world中的chart文件, 来更新web2这个release
-     helm upgrade web2 hello-world/
-     ~~~
-   
-   - 我们也可以直接在命令行中指定属性, 来覆盖`values.yaml`中的`image.tag`属性
-   
-     ~~~shell
-     # 可以先通过helm upgrade web2 hello-world/  --set image.tag=1.25 --dry-run来查看即将用于执行的配置文件
-     
-     helm upgrade web2 hello-world/  --set image.tag=1.25 # --set会覆盖values.yaml中的属性
-     ~~~
+   ```shell
+   # 可以先通过helm upgrade web2 hello-world/  --set image.tag=1.25 --dry-run来查看即将用于执行的配置文件
+   helm upgrade web2 hello-world/  --set image.tag=1.25
+   ```
    
    <img src="img/k8s笔记/image-20231024161339519.png" alt="image-20231024161339519" style="zoom:50%;" />
 
 <img src="img/k8s笔记/image-20231024161436643.png" alt="image-20231024161436643" style="zoom:50%;" />
 
 6. 查看历史记录
-
-   ~~~shell
-   helm history web2 # 查看名为web2的release的更新记录
-   ~~~
-
+   
+   ```shell
+   helm history web2
+   ```
+   
    ![image-20231024161536371](img/k8s笔记/image-20231024161536371.png)
 
 7. 回滚
-
-   ~~~shell
-   helm rollback web2 # 回滚是按照上一个版本的内容,  新生成了一个版本
-   ~~~
-
+   
+   ```shell
+   helm rollback web2
+   ```
+   
    ![image-20231024161705618](img/k8s笔记/image-20231024161705618.png)
 
 8. 删除
-
-   ~~~shell
-   # 使用这种方式删除release, 会删除掉k8s相关的Deployment, Service等等, 
-   # 但是实际上他并不是删除, 而是生成了一个新的版本, 并将其标记为删除
-   # 这样你通过helm ls就看不到这个release了
-   # 并且如果你创建一个同名的release, 他会报错说release已经存在
-   helm del web2 # 删除名为web2的release
    
-   # 查看所有已经逻辑删除的release
-   helm ls --deleted
-   
-   # 对于已经删除的release, 你可以对他进行还原
-   helm rollback web2 5 # 5表示版本号, 可以通过helm status web2查看版本信息
-   
-   # 真正的完全删除release
-   helm delete --purge web2
-   ~~~
+   ```shell
+   helm del web2
+   ```
 
-
-## 使用第三方charts
-
-我们这里以安装nginx为例, 首先访问https://artifacthub.io/, 搜索框中搜索 `nginx`
-
-![image-20250708211107420](img/k8s笔记/image-20250708211107420.png)
-
-点击右侧的install
-
-![image-20250708211227876](img/k8s笔记/image-20250708211227876.png)
-
-首先添加通过`helm repo`添加仓库, 然后通过`helm install` 来安装这个nginx 
-
-![image-20250708211328021](img/k8s笔记/image-20250708211328021.png)
-
-~~~shell
-# 添加nginx的仓库
-helm repo add bitnami https://charts.bitnami.com/bitnami
-
-# 根据仓库中的nginx的chart, 创建一个my-nginx的release
-helm install my-nginx bitnami/nginx --version 21.0.6
-
-# 当然, 你也可以直接下载仓库中的nginx的chart, 这会下载一个nginx-21.0.6.tgz到本地
-helm pull oci://registry-1.docker.io/bitnamicharts/nginx --version 21.0.6
-tar -xzvf tar -zxvf nginx-21.0.6.tgz # 解压出一个nginx目录
-helm install my-nginx nginx # 根据nginx中的chart来创建my-nginx
-
-# 当然, 你也可以指定release安装到你想要的namespace中
-helm install my-nginx nginx --namespace my-ns # 指定安装到my-ns的命名空间中
-
-# 如果你不想要使用nginx/values.yaml来配置chart, 那么也可以自己指定一个文件来替代values.yaml
-helm install my-nginx nginx --namespace my-ns -f my-values.yaml # 不要使用默认的values.yaml而是使用my-values.yaml
-
-# 如果你不想要完全覆盖values.yaml中, 只想覆盖个别的属性, 那么可以使用--set属性来覆盖
-helm install my-nginx nginx --namespace my-ns --set aaa.bbb=xxx
-~~~
-
-
-
-
-
-
-
-## 相关shell
+### 相关shell
 
 ```yaml
 # 仓库相关
@@ -6244,37 +5439,22 @@ helm search repo charts_name # 从仓库中搜索charts
 helm pull chart_name # 将仓库中的chart下载到本地并解压
 
 
-# chart 相关
-helm create chart_name # 创建一个chart模板目录
-helm install release_name  charts_name # 根据chart安装release到默认的命名空间中
-helm install release_name --namespace <namespace> charts_name # 根据chart安装release到指定的命名空间中
-helm install release_name charts_name -f <my-values.yaml> # 根据chart安装release, 不要使用chart中的values.yaml变量文件, 而是使用-f指定的yaml文件
-heml install release_name chart_name --set aa.bb=xxx # 根据chart安装release, 并且使用aa.bb来覆盖values.yaml中的变量
-
-
 # release 相关
-helm ls # 查看所有的release
+helm install release_name  charts_name # 安装charts
+helm ls # 查看release
+helm del release_name # 删除一个release
 helm status release_name # 查看release的状态
 
-# 删除release
-helm del release_name # 逻辑删除一个release
-helm ls --deleted # 查看逻辑删除的release
-helm rollback release_name reversion # 还原一个逻辑删除的release到指定的版本
-heml del --purge release_name  # 完全删除一个release
 
+helm create chart_name # 创建一个chart目录
+helm history release_name # 查看版本
+helm rollback release_name # 回滚到上一个版本
 
 # install和upgrade都可以添加--dry-run来打印最终的yaml文件
 helm install chart_name # 根据chart目录中的配置文件, 创建一个release
 helm upgrade chart_name # 根据chart目录中的配置文件, 升级一个release
 helm template chart_name # 打印最终的yaml,  和上面两个命令添加--dry-run一样
-
-# 跟新和回滚
-helm history release_name # 查看版本
-helm rollback release_name # 回滚到上一个版本
-heml rollback release_name reversion # 回滚到指定的版本, 也可以回滚已经删除的release
-~~~
-
-
+```
 
 # kubernetes-dashboard
 
@@ -6343,7 +5523,7 @@ heml rollback release_name reversion # 回滚到指定的版本, 也可以回滚
 
 1. 在Master01节点上开启kubectl自动补全
 
-```shell
+```text
 source <(kubectl completion bash) 
 echo "source <(kubectl completion bash)" >> ~/.bashrc
 ```
@@ -6352,7 +5532,7 @@ echo "source <(kubectl completion bash)" >> ~/.bashrc
    
    将该命令写入到`/etc/bashrc`中, 永久生效
 
-```shell
+```text
 echo "alias k=kubectl" | sudo tee -a /etc/bashrc
 echo "complete -o default -F __start_kubectl k" | sudo tee -a /etc/bashrc
 source /etc/bashrc
@@ -6472,13 +5652,9 @@ curl https://www.google.com.hk/
 
 ![image-20231028210606345](img/k8s笔记/image-20231028210606345.png)
 
+# 在k8s上安装kubeSphere
 
-
-# KubeSphere
-
-## 在k8s上安装kubeSphere
-
-### 安装nfs
+## 安装nfs
 
 ```shell
 # 在nfs服务器节点上执行
@@ -6511,7 +5687,7 @@ cat /test/test.txt # 查看挂载的文件
 umount -t nfs /test # 卸载挂载的目录
 ```
 
-### 配置默认的存储类
+## 配置默认的存储类
 
 该存储类用于动态供应pv, 即不需要事先创建pv, 只需要创建一个pvc, 该存储类就能够动态的根据pvc创建对应的pv, 并将他们绑定在一起
 
@@ -6669,7 +5845,7 @@ kubectl get pvc, pv
 
 ![image-20231028232427663](img/k8s笔记/image-20231028232427663.png)
 
-### 安装kubeSphere
+## 安装kubeSphere
 
 1. 执行如下命令进行安装
    
@@ -6707,10 +5883,9 @@ kubectl get pvc, pv
    ```shell
    账号: admin
    密码: P@88w0rd
-   ~~~
+   ```
 
-## KubeSphere项目界面介绍
-
+# KubeSphere项目界面介绍
 
 主界面: 其中包括
 
@@ -6750,13 +5925,13 @@ kubectl get pvc, pv
 
 ![image-20231029162701636](img/k8s笔记/image-20231029162701636.png)
 
-## 通过kubesphere安装应用
+# 通过kubesphere安装应用
 
 https://www.bilibili.com/video/BV13Q4y1C7hS?p=82&vd_source=f79519d2285c777c4e2b2513f5ef101a
 
 https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 
-### 安装mysql
+## 安装mysql
 
 1. 通过dockerhub找到mysql容器, 发现他如下信息
    
@@ -6849,8 +6024,7 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
    
    ![image-20231029185548006](img/k8s笔记/image-20231029185548006.png)
 
-### 安装redis
-
+## 安装redis
 
 <img src="img/k8s笔记/image-20231106184339682.png" alt="image-20231106184339682" style="zoom:50%;" />
 
@@ -6892,7 +6066,7 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
    
    ![image-20231106190609977](img/k8s笔记/image-20231106190609977.png)
 
-### 安装elasticsearch
+## 安装elasticsearch
 
 ![image-20231106193035275](img/k8s笔记/image-20231106193035275.png)
 
@@ -6935,12 +6109,9 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 
 6. 挂载配置文件
 
+# KubeSphere应用商店和应用仓库
 
-
-## KubeSphere应用商店和应用仓库
-
-
-### 应用商店
+## 应用商店
 
 1. 如果没有开启应用商店的话, 可以通过如下方式开启
    
@@ -6959,7 +6130,7 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 
 3. 可以通过应用商店来安装应用
 
-### 应用仓库
+## 应用仓库
 
 其实应用仓库就是helm中的仓库, 然后就可以通过仓库来安装应用
 
