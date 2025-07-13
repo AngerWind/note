@@ -2963,6 +2963,8 @@ spec:
 
 
 
+
+
 ## LoadBalancer
 
 他的主要的功能和NodePort是一样的, 都是在每一台机器上创建一个端口, 访问这个端口就可以负载均衡的访问到对应的Pod
@@ -3031,7 +3033,37 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
 
 - 会为每一个pod都添加一个A记录, 格式为`pod-name.service-name.namespace.svc.cluster.local`, 解析出来就直接是pod的ip, 直接访问该域名就可以访问到对应的pod
 
-  
+
+
+
+## 实践
+
+如果你创建了一个ClusterIp, 或者NodePort类型的Service, 如果你想要知道这个Service会将请求转发到哪些Pod中, 你可以通过如下命令查看
+
+~~~shell
+[root@uc24020 record]# kubectl describe svc -n service-software syslog-receive-test
+Name:                     syslog-receive-test
+Namespace:                service-software
+Labels:                   app=itoa-syslog-receive
+Annotations:              <none>
+Selector:                 app=itoa-syslog-receive
+Type:                     NodePort
+IP Family Policy:         PreferDualStack
+IP Families:              IPv4,IPv6
+IP:                       10.96.0.224
+IPs:                      10.96.0.224,fd00:10:96::9613
+Port:                     <unset>  6003/TCP
+TargetPort:               5555/TCP
+NodePort:                 <unset>  6003/TCP
+Endpoints:                177.177.111.188:5555,177.177.140.18:5555,177.177.59.128:5555
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   <none>
+~~~
+
+从上面的`Endpoints`中可以看出来, 这个NodePort会将请求转发到ip地址为`177.177.111.188:5555,177.177.140.18:5555,177.177.59.128:5555`这三个ip地址的容器中, 并且请求转发到5555端口
+
+然后你就可以去看哪个容器占用了这三个端口
 
 # Ingress
 
@@ -3977,70 +4009,219 @@ Secret 有三种类型:
 
 ### Service Account
 
-每当我们创建一个namespace的时候, k8s就会自动在这个namespace下创建一个名为`default`的Service Account
+Service Account的主要作用就是为了container中的进程能够调用k8s-api的接口而存在的, 每个ServiceAccount都会有一个对应的jwt格式的token, 被称为Secret.
 
-当我们在这个namespace下创建pod的时候, 每个Pod都会默认关联一个Service Account, 默认是`default`, 并且k8s还会将这个Service Account的token挂载到`/var/run/secrets/kubernetes.io/serviceaccount/token`文件中
+k8s内部实现了一套rbac的权限控制系统, ServiceAccount就是rbac中的一种用户(还有其他类型的用户, 比如User, Group)
 
-当k8s中的pod创建完成后, pod需要去k8s-api注册自己的信息，这个时候他会调用`https://kubernetes.default:443/api/xxx`这个链接, 并在header中指定`Authorization: Bearer token`和`Content-Type: application/json`和`Accept: application/json`, 类似如下的命令
-
-```shell
-curl -k \
--H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
--H "Content-Type: application/json" \
--H "Accept: application/json" \
-https://kubernetes.default:443/api/v1/xxx
-```
-
-对于k8s来说，会默认在每一个命名空间下面，创建一个token用于pod进行身份验证, 可以通过如下命令查看
-
-```go
-kubectl get secret --all-namespaces # 查看所有的sa
-kubectl describe secret secret_name # 查看sa的内容
-```
-
-![image-20231024175342765](img/k8s笔记/image-20231024175342765.png)
-
-**横线标出来的就是sa的账户名, 如果给pod分配权限, 可以使用这个账户名来和Role进行绑定**
+一个Service Account就相当于一个用户, 然后我们可以赋予这个用户一些角色, 这些角色是权限的集合, 有了这个权限之后, container中的进程就可以通过这个ServiceAccount的Secret来调用k8s api-server中的一些接口了
 
 
 
-当pod启动的时候，会默认挂载当前namespace下secret进入pod，通过这个secret进行身份验证
+每当我们创建一个namespace的时候, k8s就会自动在这个namespace下创建一个名为`default`的Service Account并创建对应的Secret
 
-默认sa在容器的 `/run/secrets/kubernetes.io/serviceaccount/`下面, 有三个文件:
+当我们在这个namespace下创建pod的时候, 如果不在yaml文件中不指定这个pod关联的Service Account, 那么这个pod就会默认关联到`default`这个service account
 
-1. token:  通过api server私钥签名的jwt, 用于容器范围api server时进行认证
-2. ca.crt: 跟证书, 用于容器验证 api server发送过来的token确实是api server签名的
-3. namespace: 表示这个token的作用域空间
 
-```shell
+
+在pod启动的时候会将pod关联的ServiceAccount的信息挂载到容器的`/run/secrets/kubernetes.io/serviceaccount/`目录里面, 用于容器内的进程进行身份认证
+
+1. `token`文件: 文件的内容是ServiceAccount对应的jwt token, 也就是对应的Secret, 主要用于容器内的进程通过http方式访问api-server的时候, 用于身份认证和鉴权
+
+   如果container中的进程需要调用k8s-api的接口, 那么就将token的内容, 放在在https请求的header的`Authorization`中, 这样k8s就知道是哪个用户发送过来的请求了, 就可以对这个请求进行权限控制了
+
+   比如我们container的java进程需要调用k8s-api的接口, 来请求一个configmap中的内容, 那么可以调用如下的接口
+
+   ~~~shell
+   curl -k \
+   -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+   -H "Content-Type: application/json" \
+   -H "Accept: application/json" \
+   https://kubernetes.default:443/api/v1/namespaces/${namespace_name}/configmaps/${configmap_name}
+   ~~~
+
+   调用上面的接口后, k8s会判断token是否正确, 关联的Service Account有没有权限能够访问configmap 这个资源
+
+2. `ca.crt`: ServiceAccount对应的证书, 主要用户容器内的进程通过https双向认证的方式访问api-server的时候, 用于身份认证和鉴权
+
+3. `namespace`文件: 主要用于表示这个token的命名空间
+
+~~~shell
 $ kubectl run nginx --image nginx
 deployment "nginx" created
 $ kubectl exec nginx -it -- /bin/sh
 $ cd /run/secrets/kubernetes.io/serviceaccount
 $ ls
 ca.crt  namespace  token
-# ca.crt是访问apiserver的证书, namespace是当前容器的namespace, token是认证的秘钥信息
-```
+~~~
 
 
 
-其实Service Account的主要作用就是为了container中的进程能够调用k8s-api的接口而存在的, k8s内部实现了一套rbac的权限控制系统, 一个Service Account就相当于一个用户, 然后每个pod都会默认关联一个用户, 在pod启动的时候就会将这个Service Account对应的jwt token挂载到container的`/run/secrets/kubernetes.io/serviceaccount/`里面, 如果container中的进程需要调用k8s-api的接口, 那么就将token的内容, 放在在https请求的header的`Authorization`中, 这样k8s就知道是哪个用户发送过来的请求了, 就可以对这个请求进行权限控制了
+#### 相关shell
 
-比如我们container的java进程需要调用k8s-api的接口, 来请求一个configmap中的内容, 那么可以调用如下的接口
+1. 我们可以通过如下命令来查看k8s中有哪些ServiceAccount以及他们关联的Secret
 
-```shell
-curl -k \
--H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
--H "Content-Type: application/json" \
--H "Accept: application/json" \
-https://kubernetes.default:443/api/v1/namespaces/${namespace_name}/configmaps/${configmap_name}
-```
+   ~~~shell
+   kubectl get sa -A # 查看所有命名空间的ServiceAccount
+   kubectl get sa -n <namespace_name> # 查看指定命名空间中的ServiceAccount
+   kubectl describe sa secret_name -n <namespace_name> # 查看ServieAccount的详细信息
+   
+   
+   kubectl get secret -A # 查看所有命名空间的Secret, 也就是ServiceAccount对应的jwt token
+   kubectl get secret -n <namespace_name> # 查看指定命名空间中的Secret
+   kubectl describe secret secret_name -n <namespace_name> # 查看Secret的内容
+   ~~~
 
-调用上面的接口后, k8s会判断token是否正确, 关联的Service Account有没有权限能够访问configmap 这个资源
+2. 我们也可以通过如下的命令来创建一个ServiceAccount, 他会自动创建对应的Secret
 
+   1. 通过yaml来创建sa
 
+      ~~~yaml
+      # sa.yaml
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata:
+        name: my-sa
+        namespace: default
+      automountServiceAccountToken: true   # 自动挂载 token（默认 true）
+      ~~~
 
+      然后通过`kubectl create -f sa.yaml`来创建这个sa
 
+   2. 也可以你直接通过命令来创建service account
+
+      ~~~shell
+      kubectl create serviceaccount my-sa -n dev
+      ~~~
+
+3. 如果你想要查看Secret属于哪个ServiceAccount, 那么你可以通过如下命令来查看
+
+   ~~~shell
+   [root@uc24020 record]# kubectl describe secret -n service-software websocket-sa-token-h5w64
+   Name:         websocket-sa-token-h5w64
+   Namespace:    service-software
+   Labels:       <none>
+   # 这个websocket-sa就是这个secret对应的service account
+   Annotations:  kubernetes.io/service-account.name: websocket-sa 
+                 kubernetes.io/service-account.uid: def3535f-03df-44d1-bd5e-fab47a1cb0f1
+   
+   Type:  kubernetes.io/service-account-token
+   
+   Data
+   ====
+   ca.crt:     1070 bytes
+   namespace:  16 bytes
+   token:      eyJhbGciOiJSUzI1NiIsImtpZCI6Imw1MlFCVGRja2RQSk1JV0VSX2xkOV9EamFwRGRiczAyNV84QkhVZjBoMTgifQ.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJzZXJ2aWNlLXNvZnR3YXJlIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZWNyZXQubmFtZSI6IndlYnNvY2tldC1zYS10b2tlbi1oNXc2NCIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50Lm5hbWUiOiJ3ZWJzb2NrZXQtc2EiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC51aWQiOiJkZWYzNTM1Zi0wM2RmLTQ0ZDEtYmQ1ZS1mYWI0N2ExY2IwZjEiLCJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6c2VydmljZS1zb2Z0d2FyZTp3ZWJzb2NrZXQtc2EifQ.WDG1vCWpaFnb8VLJezxgBYjNoE7NZKPUo6mas8py0y7DAJTVFFAJBEyU1VwDHOsVPDP8V9EY7wUjI15dLTaQDwsy-aIgetzMvwZg-39XHyhUZwYeyp_PkprNJwSkRn5AKCijCtDk8soRCSbNoXuH_BbUpTZFrJk-wGA-0Z9x7I8l035yY__f1OlKcZO7hf-BEzXnJtEweFS1lBr0lP25z23OY-EqTzVdDmJDQyLAXyzxO-FAUKKT94cSKQnb_2rV5Fmia6NVtvPPYme1M0TVJsxAcGzmV9Vy3_fCnWf6fO-G4lzdDCnH95LFMHsA5JkDYZMqYfbgyItUH6V4J-53-g
+   ~~~
+
+   **如果给pod分配权限, 可以使用这个账户名来和Role进行绑定**
+
+4. 如果你想要指定pod关联的ServiceAccount, 那么你可以在pod的yaml文件中指定`spec.serviceAccountName`字段
+
+   ~~~yaml
+   apiVersion: v1
+   kind: ServiceAccount
+   metadata:
+     name: my-sa
+     namespace: default
+   ---
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: sa-test-deploy
+     namespace: default
+   spec:
+     replicas: 1
+     selector:
+       matchLabels:
+         app: sa-test
+     template:
+       metadata:
+         labels:
+           app: sa-test
+       spec:
+         serviceAccountName: my-sa # 指定关联的service acount
+         containers:
+         - name: curl
+           image: curlimages/curl:7.85.0
+           command: ["sleep", "3600"]
+   ~~~
+   
+5. 如果你想查看当前运行的 Pod 实际使用了哪个 ServiceAccount，可以用这个命令：
+
+   ~~~shell
+   kubectl get pod <pod-name> -o jsonpath='{.spec.serviceAccountName}'
+   # 如果输出为空, 那么使用的是当前命名空间中的default这个ServiceAccount
+   ~~~
+
+6. 如果你想要将ServiceAccount关联到角色上, 那么可以执行如下的yaml
+
+   ~~~yaml
+   # 1. 创建 ServiceAccount
+   apiVersion: v1
+   kind: ServiceAccount
+   metadata:
+     name: my-sa
+     namespace: default
+   ---
+   # 2. 创建 Role（允许读取 ConfigMap）
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: Role
+   metadata:
+     name: configmap-reader
+     namespace: default
+   rules:
+   - apiGroups: [""]
+     resources: ["configmaps"]
+     verbs: ["get", "list", "watch"]
+   ---
+   # 3. 绑定 Role 到 ServiceAccount
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: RoleBinding
+   metadata:
+     name: bind-my-sa
+     namespace: default
+   subjects:
+   - kind: ServiceAccount
+     name: my-sa
+     namespace: default
+   roleRef:
+     kind: Role
+     name: configmap-reader
+     apiGroup: rbac.authorization.k8s.io
+   ~~~
+
+   更详细的角色的信息, 可以查看安全 > 鉴权部分
+
+7. 如果你想要查看一个ServiceAccount绑定了哪些Role和ClusterRole, 有哪些权限, 实际上ServiceAccount是不记录这个东西的, 我们只能去RoleBinding/ClusterRoleBinding中查看哪些角色绑定了哪些账户, 然后去出对应的角色中查看他的权限
+
+   **但是你可以检测某个账户是否有什么的权限, 通过如下命令**
+
+   ~~~shell
+   kubectl auth can-i # 查收某个账户是否有操作某个资源的权限
+   [-n <namesapce_name>] \ # 可选, 资源的命名空间, 如果不指定表示default命名空间
+   <verb> \ # 操作的类型, 比如get,list,create,delete
+   # 资源的类型, pod,secret, cm,deploy,ds,svc
+   # 如果你想将资源限制在某个具体的资源, 那么可以通过跟在斜杠后面,  不指定的话表示同一个类型的所有资源
+   <resource>/[<resource-name>] \ 
+   # 指定要测试的账号
+   # 如果是User类型的账号, 可以通过--as=<user>来指定
+   # 如果是Group类型的账号, 可以通过--as-group=<group>来指定
+   # 如果是ServiceAccount类型的账号, 可以通过--as=system:serviceaccount:<namespace>:<serviceaccount-name>来指定
+   --as=<alice>
+   
+   # 案例: 测试ServiceAccount类型的账户kong, 能不能获取(get) service-software命名空间下的名为my-configmap的cm资源
+   kubectl auth can-i get cm/my-configmap -n service-software --as=system:serviceaccount:service-software:kong
+   
+   # 案例: 查看ServiceAccount类型的账户default, 能不能获取(Get) default命名空间下的所有的pod的信息
+   kubectl auth can-i get pod --as=system:serviceaccount:service-software:default
+   
+   # 案例: 测试User类型的账户default, 能不能获取(Get) default命名空间下名为my-pod的pod的信息
+   kubectl auth can-i get pod/my-pod --as=default
+   ~~~
+
+   
+
+   
 
 
 
@@ -5043,7 +5224,7 @@ spec:
 
 当不指定 key 值时，表示容忍所有的污点 key：
 
-~~~yaml
+​~~~yaml
 tolerations:
   - operator: "Exists"
 ~~~
@@ -5609,37 +5790,85 @@ cfssl-certinfo -cert etcd.pem
 
 ## 机制说明
 
-API Server 是集群内部各个组件通信的中介，也是外部控制的入口。所以 Kubernetes 的安全机制基本就是围绕保护 API Server 来设计的。Kubernetes 使用了认证 (Authentication) 、鉴权 (Authorization) 、准入控制 (AdmissionControl) 三步来保证API Server的安全
+Kubernetes 作为一个分布式集群的管理工具，保证集群的安全性是其一个重要的任务。API Server 是集群内部
+各个组件通信的中介，也是外部控制的入口。所以 Kubernetes 的安全机制基本就是围绕保护 API Server 来设计的。
+
+Kubernetes 使用了**认证**（Authentication）、**鉴权**（Authorization）、**准入控制**（Admission
+Control）三步来保证API Server的安全
 
 <img src="img/k8s笔记/image-20231019181146751.png" alt="image-20231019181146751" style="zoom:67%;" />
 
-## 认证Authentication
-
-### 认证方式
-
-- HTTP Token 认证: 通过一个 Token 来识别合法用户
-
-  HTTP Token 的认证是用一个很长的特殊编码方式的并且难以被模仿的字符串Token 来表达客户的-种方式。Token 是一个很长的很复杂的字符串，每一个 Tken 对应一个用户名存储在 API Server 能访问的文件中。当客户端发起 API 调用请求时，需要在 HTTP Header 里放入 Token
-
-- HTTP Base 认证: 通过 用户名+密码 的方式认证o 用户名+: +密码 用 BASE64 算法进行编码后的字符串放在 HTTP Request 中的 HeatherAuthorization 域里发送给服务端，服务端收到后进行编码，获取用户名及密码
-
-- 最严格的 HTTPS 证书认证: `基于 CA 根证书签名的客户端身份认证方式, 这是最常用的方式`
+不管是我们自己调用k8s-api-server, 还是pod调用k8s-api-server, 在api-server内部都要执行认证, 授权, 准入控制三个大模块, 然后才能够间接的访问到etcd中的资源信息
 
 
 
-### 需要认证的节点
+## 认证
 
-1. kubernetes组件对api server的访问: kubectl, controller manager, scheduler, kubelet, kube proxy
+### 认证的方式
 
-   1. 因为Controller Manager, Scheduler, API Server都在同一台机器, 所以直接通过127.0.0.1进行访问, 
+认证的主要作用就是, 当我们的程序, 或者pod在调用api-server的时候, 进行一个身份的识别, 在api-server中, 有三种认证的方式
 
-      当然也可以关闭API Server在本机上的非安全端口, 这样就必须使用https进行访问 
+1. HTTP Token 认证: 通过一个 Token 来识别合法用户
 
-   2. kubectl, kubelet, kube-proxy访问api server  必须使用https`双向认证`
+   HTTP Token 的认证是用一个很长的特殊编码方式的并且难以被模仿的字符串Token 来表达客户的一种方式。Token 是一个很长的很复杂的字符串，每一个 Token 对应一个用户名存储在 API Server 能访问的文件中。当客户端发起 API 调用请求时，需要在 HTTP Header 里放入 Token, 类似如下
 
-2. kubernetes管理的pod对 api server的访问
+   ~~~shell
+   # 在pod内部, 通过curl访问api-server, 获取指定namespae下的指定的configmap
+   curl -k \
+   -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+   -H "Content-Type: application/json" \
+   -H "Accept: application/json" \
+   https://kubernetes.default:443/api/v1/namespaces/${namespace_name}/configmaps/${configmap_name}
+   ~~~
 
-   pod访问api server是通过Secret中的Service Account来进行认证的, 默认在容器的 `/run/secrets/kubernetes.io/serviceaccount/`下面, 有三个文件:
+   api-server在接受到请求之后, 如果这个token能够匹配到对应的用户的话, 那么就会对这个用户的权限进行校验, 看能不能访问对应的资源
+
+2. HTTP Base 认证: 通过 **用户名+密码** 的方式认证
+
+   这种方式要求在访问api-server的时候, 需要在http的header上添加上`Authorization: base64(username:password)`, 比如如下的方式
+
+   ~~~shell
+   # 用户名: admin  , 密码: 123456
+   
+   curl -k \
+   -H "Authorization: Basic $(echo -n 'admin:123456' | base64)" \
+   -H "Content-Type: application/json" \
+   -H "Accept: application/json" \
+   https://kubernetes.default:443/api/v1/namespaces/${namespace_name}/configmaps/${configmap_name}
+   ~~~
+
+   > 非常不推荐这种方式, 因为
+   >
+   > 1. k8s默认情况下, 不开启http base的权限认证方式
+   > 2. Kubernetes 从 **v1.19 以后就完全废弃了 static password 文件**方式。
+
+3. 最严格的 HTTPS 证书认证: `基于 CA 根证书签名的客户端身份认证方式, 这是最常用的方式`
+
+   在整个k8s的集群中, 我们会签署一个ca根证书,  所有的其他子证书都是基于这个根证书
+
+   并且还是一个https的双向认证, 过程如下
+
+   ![image-20250712153244160](img/k8s笔记/image-20250712153244160.png)
+
+   首先客户端和服务器都需要向我们私有的ca机构申请证书, 然后客户端和服务器通讯的时候, 客户端会发送证书到服务器端, 服务器端也会返回自己的证书, 两者的证书都通过之后, 再通过随机的秘钥进行加密通讯
+
+### 不同组件的认证方式
+
+![image-20250712153606820](img/k8s笔记/image-20250712153606820.png)
+
+1. 在k8s中, kubectl, controller manager, scheduler, kubelet, kube proxy这些组件都需要访问api-server, 所以这些组件都要进行认证
+
+   1. 因为Controller Manager, Scheduler, API Server都在同一台机器, 所以使用https双向加密实在是没有必要, 他们可以通过api server的非安全端口`127.0.0.1`进行访问api server
+
+      当然也可以关闭API Server在本机上的非安全端口, 这样通过`127.0.0.1`就没有办法api server了, 这样就必须使用https进行访问 
+
+   2. kubectl, kubelet, kube-proxy访问api server  必须使用https`双向认证`, 因为这些组件和api-server不在同一个节点
+
+2. 同时在k8s中, 也有一些pod需要访问api-server, 比如kubernetes-dashboard, 所以这些pod也需要进行认证
+
+   pod或者pod中的进程访问api server是通过Secret中的Service Account来进行认证的, 因为pod的创建和销毁是动态的, 我们有可能会创建成千上百个pod, 如果使用https双向认证的方式的话, 那么就要创建出成千上百个整数, 并且这些pod是随时销毁的, 在pod销毁之后, 这些ca证书就相当于废弃了, 这个过程是非常消耗资源的, 所以pod或者pod中的容器在调用api server的时候, 都是使用`service account+http token`的方式来进行认证的
+
+   默认在容器的 `/run/secrets/kubernetes.io/serviceaccount/`下面, 有三个文件:
 
    1. token:  通过api server私钥签名的jwt, 用于容器范围api server时进行认证
    2. ca.crt: 跟证书, 用于容器验证 api server发送过来的token确实是api server签名的
@@ -5655,7 +5884,7 @@ API Server 是集群内部各个组件通信的中介，也是外部控制的入
 
 - AlwaysDeny: 表示拒绝所有的请求，一般用于测试
 - AIwaysAllow: 允许接收所有请求，如果集群不需要授权流程，则可以采用该策略
-- ABAC (Attribute-Based Access Control) : 基于属性的访问控制，表示使用用户配置的授权规则对用户请求进行匹配和控制
+- ABAC (Attribute-Based Access Control) : 基于属性的访问控制，表示使用用户配置的授权规则对用户请求进行匹配和控制, 修改完配置之后需要重启k8s才能生效
 - Webbook: 通过调用外部 REST 服务对用户进行授权
 - RBAC (Role-Based Access Control) : 基于角色的访问控制，**现行默认规则**
 
@@ -5663,25 +5892,36 @@ API Server 是集群内部各个组件通信的中介，也是外部控制的入
 
 https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/rbac/#default-roles-and-role-bindings
 
-在RBAC模型中, 有角色, 用户, 资源, 操作, 绑定五个类型
+RBAC（Role-Based Access Control）基于角色的访问控制，在 Kubernetes 1.5 中引入，现行版本成为默认标
+准, 相对其它访问控制方式，拥有以下优势：
 
-用户通过绑定获取角色身份, 角色可以对特定的资源具有某种操作权限
+1. 对集群中的资源(deployment, service, configmap等等)和非资源(cpu信息, 内存信息, 硬件信息等等)均拥有完整的覆盖
+2. 整个 RBAC 完全由几个 API 对象完成，同其它 API 对象一样，可以用 kubectl 或 API 进行操作
+3. 可以在运行时进行调整，**无需重启** API Server
+
+
+
+在RBAC模型中, 有**角色, 用户, 资源, 操作, 绑定**五个类型
+
+用户/组/ServiceAccount通过绑定(RoleBinding)来绑定到对应的角色(Role)上, 然后每个角色(Role)都有操作(create/get/update/delete)对应资源(Controller, Service...)的权限
+
+![image-20250712162259863](img/k8s笔记/image-20250712162259863.png)
 
 #### 用户
 
 在kubenetes中, 用户分为三类
 
-1. User
-2. Gorup
+1. User: 单个用户, 类似Linux中的User
+2. Gorup: 多个用户的集合, 类似Linux中的Group
 3. ServiceAccount: 用于容器和api server进行认证
 
-**需要说明的是kubernetes并没有提供用户的创建和删除功能, 而是kubernetes组件(kubectl, kube-proxy)或者是其他自定义用户在向ca申请证书时, 从csr文件中提取的**
+**需要说明的是kubernetes并没有提供User和Group的创建和删除功能, 而是kubernetes组件(kubectl, kube-proxy)或者是其他自定义用户在向ca申请证书时, 从csr文件中提取的**
 
 **api server会把客户端的证书申请文件(csr文件)中的`CN`字段作为User, 把`names.O`字段作为Group**
 
-~~~
+~~~json
 {
-  "CN": "admin",
+  "CN": "admin", // User
   "hosts": [],
   "key": {
     "algo": "rsa",
@@ -5692,41 +5932,156 @@ https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/rbac/#default-role
       "C": "CN",
       "ST": "HangZhou",
       "L": "XS",
-      "O": "system:masters",
+      "O": "system:masters", // Group
       "OU": "System"
     }
   ]
 }
 ~~~
 
-Pod使用 ServiceAccount 认证时，service-account-token 中的 JWT 会保存 User 信息
+而对于Pod使用 ServiceAccount , 我们可以通过kubectl命令, 或者yaml文件来创建, 详细的创建可以查看ServiceAccount部分
+
+
+
+
 
 #### 资源
 
-在kubernets中, 能够操作的资源有如下:
+在k8s中, 你可以通过如下命令来查看所有资源, 以及调用他们的url地址的说明
+
+~~~shell
+kubectl api-resources --verbs=list -o wide
+~~~
+
+下面只是列举了部分资源, 已经部分操作他们的api, 并不是全部
 
 1. Pods（Pod资源）：`pods`
+
+   ~~~shell
+   /api/v1/namespaces/{namespace}/pods
+   ~~~
+
 2. Services（Service资源）：`services`
+
+   ~~~shell
+   /api/v1/namespaces/{namespace}/services
+   ~~~
+
 3. ReplicationControllers（ReplicationController资源）：`replicationcontrollers`
-4. Deployments（Deployment资源）：`deployments`
-5. StatefulSets（StatefulSet资源）：`statefulsets`
-6. ConfigMaps（ConfigMap资源）：`configmaps`
-7. Secrets（Secret资源）：`secrets`
-8. PersistentVolumes（PersistentVolume资源）：`persistentvolumes`
-9. Namespaces（Namespace资源）：`namespaces`
-10. Nodes（Node资源）：`nodes`
-11. Events（Event资源）：`events`
-12. ServiceAccounts（ServiceAccount资源）：`serviceaccounts`
-13. Ingresses（Ingress资源）：`ingresses`
-14. HorizontalPodAutoscalers（HorizontalPodAutoscaler资源）：`horizontalpodautoscalers`
-15. LimitRanges（LimitRange资源）：`limitranges`
-16. ResourceQuotas（ResourceQuota资源）：`resourcequotas`
-17. NetworkPolicies（NetworkPolicy资源）：`networkpolicies`
-18. CustomResourceDefinitions（CustomResourceDefinition资源）：`customresourcedefinitions`
-19. Roles（Role资源）：`roles`
-20. RoleBindings（RoleBinding资源）：`rolebindings`
-21. ClusterRoles（ClusterRole资源）：`clusterroles`
-22. ClusterRoleBindings（ClusterRoleBinding资源）：`clusterrolebindings`
+
+4. ReplicaSets
+
+   ~~~shell
+   /apis/apps/v1/namespaces/{namespace}/replicasets
+   ~~~
+
+5. Deployments（Deployment资源）：`deployments`
+
+   ~~~shell
+   /apis/apps/v1/namespaces/{namespace}/deployments
+   ~~~
+
+6. DaemonSets
+
+   ~~~shell
+   /apis/apps/v1/namespaces/{namespace}/daemonsets
+   ~~~
+
+7. StatefulSets（StatefulSet资源）：`statefulsets`
+
+   ~~~shell
+   /apis/apps/v1/namespaces/{namespace}/statefulsets
+   ~~~
+
+8. Job
+
+   ~~~shell
+   /apis/batch/v1/namespaces/{namespace}/jobs
+   ~~~
+
+9. CronJobs
+
+   ~~~shell
+   /apis/batch/v1/namespaces/{namespace}/cronjobs
+   ~~~
+
+10. ConfigMaps（ConfigMap资源）：`configmaps`
+
+    ```shell
+    /api/v1/namespaces/{namespace}/configmaps
+    ```
+
+11. Secrets（Secret资源）：`secrets`
+
+    ~~~shell
+    /api/v1/namespaces/{namespace}/secrets
+    ~~~
+
+12. PersistentVolumes（PersistentVolume资源）：`persistentvolumes`
+
+13. Namespaces（Namespace资源）：`namespaces`
+
+    ~~~shell
+    /api/v1/namespaces
+    ~~~
+
+14. Nodes（Node资源）：`nodes`
+
+    ~~~shell
+    /api/v1/nodes
+    ~~~
+
+15. Events（Event资源）：`events`
+
+16. ServiceAccounts（ServiceAccount资源）：`serviceaccounts`
+
+17. Ingresses（Ingress资源）：`ingresses`
+
+    ~~~shell
+    /apis/networking.k8s.io/v1/namespaces/{namespace}/ingresses
+    ~~~
+
+18. HorizontalPodAutoscalers（HorizontalPodAutoscaler资源）：`horizontalpodautoscalers`
+
+19. LimitRanges（LimitRange资源）：`limitranges`
+
+20. ResourceQuotas（ResourceQuota资源）：`resourcequotas`
+
+21. NetworkPolicies（NetworkPolicy资源）：`networkpolicies`
+
+    ~~~shell
+    /apis/networking.k8s.io/v1/namespaces/{namespace}/networkpolicies
+    ~~~
+
+22. CustomResourceDefinitions（CustomResourceDefinition资源）：`customresourcedefinitions`
+
+23. Roles（Role资源）：`roles`
+
+    ~~~shell
+    /apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/roles
+    ~~~
+
+24. RoleBindings（RoleBinding资源）：`rolebindings`
+
+    ~~~shell
+    /apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/rolebindings
+    ~~~
+
+25. ClusterRoles（ClusterRole资源）：`clusterroles`
+
+    ~~~shell
+    /apis/rbac.authorization.k8s.io/v1/clusterroles
+    ~~~
+
+26. ClusterRoleBindings（ClusterRoleBinding资源）：`clusterrolebindings`
+
+    ~~~shell
+    /apis/rbac.authorization.k8s.io/v1/clusterrolebindings
+    ~~~
+
+    
+
+
 
 #### 操作
 
@@ -5746,13 +6101,21 @@ Pod使用 ServiceAccount 认证时，service-account-token 中的 JWT 会保存 
 
 这些是一些常见的操作，但还有其他更精细的操作，例如：`deletecollection`（允许删除一组资源）、`bind`（允许将 Pod 绑定到 Node）、`scale`（允许修改 Deployment 或 ReplicationController 的副本数）等
 
+
+
 #### 角色
+
+在k8s中, 角色是一组规则权限, 权限只会**累加**, 不存在一个资源一开始就用很多权限, 然后通过RBAC对其进行减少的操作
+
+
 
 在k8s中, 角色分为两类, `Role`和`ClusterRole`
 
-`Role`只能都对某一个namesapce中的资源进行操作
-
-而`ClusterRole`能够对整个集群中的资源都进行操作
+- `Role`只能都对某一个namesapce中的资源进行操作
+- `ClusterRole`能够对整个集群中的资源都进行操作, 比如
+  1. 集群级别的资源控制 (列如node访问权限)
+  2. 非资源型的信息的控制 (例如集群的健康信息, cpu和内存信息)
+  3. 所有命名空间的资源控制 (例如Controller, Service, Pod)
 
 创建Role的案例
 
@@ -5763,8 +6126,14 @@ metadata:
   namespace: default # 角色所属的namespace
   name: pod-reader # 角色名
 rules:
-- apiGroups: [""] # "" 标明 core API 组
-  resources: ["pods"] # 角色能够控制的资源
+  # apiGroups是一个列表, 用于指定下面的规则用于哪些apiGroup
+  # ""表示Core API Group, 即 Kubernetes 最基本的内置资源组。用于操作Pods/Service/ConfigMap等等资源
+  # apps: 用于操作Deployments
+  # networking.k8s.io: 用于操作ingress
+  # rbac.authorization.k8s.io: 用于操作Roles, RoleBindings
+  # 如果你不知道应该设置成什么, 那么就设置为""就好了, 有问题再说
+- apiGroups: [""] 
+  resources: ["pods"] # 角色能够控制的资源, default命名空间下的所有pod
   verbs: ["get", "watch", "list"] # 能够对资源进行的操作
 ~~~
 
@@ -5778,8 +6147,8 @@ metadata:
   name: secret-reader
 rules:
 - apiGroups: [""]
-  # 在 HTTP 层面，用来访问 Secret 资源的名称为 "secrets"
-  resources: ["secrets"]
+  # 能够对所有命名空间中的service account进行get, watch, list
+  resources: ["secrets"] 
   verbs: ["get", "watch", "list"]
 ~~~
 
@@ -5793,7 +6162,7 @@ metadata:
   name: configmap-updater
 rules:
 - apiGroups: [""]
-  # 只能够操作configmaps下的my-configmap
+  # 这个角色只能对default命名空间下的my-configmap这个configmap进行update, get的操作
   resources: ["configmaps"]
   resourceNames: ["my-configmap"]
   verbs: ["update", "get"]
@@ -5813,6 +6182,20 @@ rules:
   verbs: ["*"] # 任何操作
 ~~~
 
+如果你想要控制资源下面的子资源, 那么可以通过`/`来实现
+
+~~~yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  namespace: default
+  name: pod-and-pod-logs-reader
+rules:
+- apiGroups: [""]
+  resources: ["pods","pods/log"] # pods/log表示可以访问pod的日志
+  verbs: ["get""list"]
+~~~
+
 
 
 同时, 还可以将多个ClusterRole聚合在一起, 组合成一个新的ClusterRole, 他们的权限将会被叠加在一起
@@ -5824,7 +6207,7 @@ kind: ClusterRole
 metadata:
   name: monitoring-endpoints
   labels:
-  # 定义ClusterRole带有的标签
+    # 定义ClusterRole带有的标签
     rbac.example.com/aggregate-to-monitoring: "true"
 rules:
 - apiGroups: [""]
@@ -5845,6 +6228,40 @@ aggregationRule:
 rules: [] # 控制面自动填充这里的规则
 ~~~
 
+
+
+##### 相关shell
+
+Role和ClusterRole的相关shell
+
+~~~shell
+kubectl get role -A # 查看所有命名空间的role
+kubectl get role -n <namespace_name> # 查看指定命名空间中的role
+kubectl get role -n <namespae_name> <rolename> -o yaml # 以json的形式查看指定的role
+
+# 查看role的详细情况
+kubectl describe role -n <namespae_name> <rolename> 
+
+# 如果要查看clusterRole, 将命令中的role替换为clusterrole即可
+~~~
+
+~~~shell
+[root@uc24020 record]# kubectl describe role -n service-software kong
+Name:         kong
+Labels:       app=kong
+              app.kubernetes.io/managed-by=Helm
+Annotations:  meta.helm.sh/release-name: kong
+              meta.helm.sh/release-namespace: service-software
+PolicyRule:
+  Resources  Non-Resource URLs  Resource Names  Verbs
+  ---------  -----------------  --------------  -----
+  secrets    []                 []              [get]
+~~~
+
+从上面的信息可以看出, 这个Role被赋予了一条权限, 允许获取(Get)当前命名空间中的所有Secrets, 但是不能list,create,update,delete, 也不能访问其他操作
+
+
+
 #### 绑定
 
 在k8s中, 有两种绑定关系, `RoleBinding` 和 `ClusterRoleBinding`
@@ -5858,24 +6275,29 @@ rules: [] # 控制面自动填充这里的规则
    kind: RoleBinding # 绑定的类型
    metadata:
      name: read-pods #  RoleBinding的名字
-     namespace: default # 现在操作的namespace
+     namespace: default # 这里必须和Role的命名空间相同
    subjects:
    # 需要绑定的用户, 可以有多个
    - kind: User # 用户类型, User, Group, ServiceAccount
      name: jane # 用户名字
-     apiGroup: rbac.authorization.k8s.io #如果kind类型为ServiceAccount, 这里必须为""
-     namespace: xx # 如果kind为ServiceAccount, 必须自动sa的ns, 其他类型可以省略这个字段
+     # 使用的apiGroup
+     # 如果kind为User, 那么指定为rbac.authorization.k8s.io
+     # 如果kind类型为ServiceAccount, 那么指定为""
+     apiGroup: rbac.authorization.k8s.io 
+     # 如果kind为ServiceAccount, 必须指定sa的命名空间
+     # 其他类型的kind可以省略这个字段
+     namespace: xx 
    roleRef:
      kind: Role        # 需要绑定的角色的类型: Role, ClusterRole
      name: pod-reader  # 角色的名称
-     apiGroup: rbac.authorization.k8s.io
+     apiGroup: rbac.authorization.k8s.io # 这里固定就是rbac.authorization.k8s.io
    ~~~
 
-   通过上面的yaml,  jane就具有了pod-reader的权限, 并且权限现在在了default namespace下
+   通过上面的yaml,  jane就具有了pod-reader的权限, 并且权限现在在了`default` namespace下
 
-2. 使用`RoleBinding`将用户和`ClusterRole`绑定, 虽然`ClusterRole`具有管理整个集群的权限, 但是因为是通过`RoleBinding`进行绑定的, 所以权限也会被现在在某个namesapce下
+2. 使用`RoleBinding`将用户和`ClusterRole`绑定, 虽然`ClusterRole`具有管理整个集群的权限, 但是因为是通过`RoleBinding`进行绑定的, 所以权限也会被限制在某个namesapce下
 
-   这种情况通常是使用在: 创建具有通用权限的, 能够操作整个集群的`ClusterRole`, 然后将他的权限通过`RoleBinding`现在在某个namespace下
+   这种情况通常是使用在: 创建具有通用权限的, 能够操作整个集群的`ClusterRole`, 然后将他的权限通过`RoleBinding`限制在某个namespace下
 
    ~~~yaml
    apiVersion: rbac.authorization.k8s.io/v1
@@ -5883,18 +6305,23 @@ rules: [] # 控制面自动填充这里的规则
    kind: RoleBinding # 绑定类型
    metadata:
      name: read-secrets
-     namespace: development # 能够操作的namespace
+     namespace: development # 将ClusterRole的权限限制在哪个命名空间下
    subjects:
    # 绑定的用户
    - kind: User #[User | ServiceAccount | Group]
      name: dave 
-     apiGroup: rbac.authorization.k8s.io #如果kind类型为ServiceAccount, 这里必须为""
-     namespace: xx # 如果kind为ServiceAccount, 必须自动sa的ns, 其他类型可以省略这个字段
+     # 使用的apiGroup
+     # 如果kind为User, 那么指定为rbac.authorization.k8s.io
+     # 如果kind类型为ServiceAccount, 那么指定为""
+     apiGroup: rbac.authorization.k8s.io 
+     # 如果kind为ServiceAccount, 必须指定sa的命名空间
+     # 其他类型的kind可以省略这个字段
+     namespace: xx
    # 绑定的角色
    roleRef:
      kind: ClusterRole
      name: secret-reader
-     apiGroup: rbac.authorization.k8s.io
+     apiGroup: rbac.authorization.k8s.io # 这里固定就是rbac.authorization.k8s.io
    ~~~
 
    这样dave就拥有了secret-reader的权限, 并且权限限制在了development namespace下
@@ -5910,16 +6337,65 @@ rules: [] # 控制面自动填充这里的规则
    subjects:
    - kind: Group
      name: manager 
-     apiGroup: rbac.authorization.k8s.io #如果kind类型为ServiceAccount, 这里必须为""
-     namespace: xx # 如果kind为ServiceAccount, 必须自动sa的ns, 其他类型可以省略这个字段
+     # 使用的apiGroup
+     # 如果kind为User, 那么指定为rbac.authorization.k8s.io
+     # 如果kind类型为ServiceAccount, 那么指定为""
+     apiGroup: rbac.authorization.k8s.io 
+     # 如果kind为ServiceAccount, 必须指定sa的命名空间
+     # 其他类型的kind可以省略这个字段
+     namespace: xx
    roleRef:
      kind: ClusterRole
      name: secret-reader
      apiGroup: rbac.authorization.k8s.io
    ~~~
+
+
+
+##### 相关shell
+
+~~~shell
+kubectl get rolebinding  -A # 查看所有命名空间的rolebinding
+kubectl get rolebinding -n <namespace_name> # 查看指定命名空间中的rolebinding
+kubectl get rolebinding  -n <namespae_name> <rolename> -o yaml # 以json的形式查看指定的rolebinding
+
+# 查看rolebinding的详细情况
+kubectl describe role -n <namespae_name> <rolename> 
+
+# 如果要查看clusterRole, 将命令中的role替换为clusterrole即可
 ~~~
-   
-   
+
+
+
+~~~shell
+[root@uc24020 record]# kubectl describe rolebinding -n service-software kong
+Name:         kong
+Labels:       app=kong
+              app.kubernetes.io/managed-by=Helm
+Annotations:  meta.helm.sh/release-name: kong
+              meta.helm.sh/release-namespace: service-software
+# 下面是绑定的角色
+Role:
+  Kind:  Role 
+  Name:  kong
+# 下面是绑定的账户, 可以有多个
+Subjects:
+  Kind            Name  Namespace
+  ----            ----  ---------
+  ServiceAccount  kong  service-software
+~~~
+
+从上面的信息中可以看到, 通过kong这个rolebinding, 将kong这个Role绑定到了kong这个ServiceAccount上面, 并且权限限制在service-software的namespace中
+
+
+
+
+
+
+
+
+
+
 
 #### 内置的ClusterRole
 
@@ -5935,21 +6411,23 @@ rules: [] # 控制面自动填充这里的规则
 
 
 
+面向用户的角色通常不会以 `system:` 开头，主要包括以下几类：
 
+- **`cluster-admin`**：集群级超级管理员，拥有所有权限，通常通过 **ClusterRoleBinding** 进行绑定。
+- **`cluster-status`**：建议也通过 **ClusterRoleBinding** 授权，通常用于集群状态查看。
+- **`admin`、`edit`、`view`**：这三类角色推荐通过 **RoleBinding** 在指定的命名空间中授权给用户。
 
-面向用户的角色一般不以`system:`开头, 主要包括`超级用户cluster-admin`, `建议使用ClusterRoleBinding进行绑定的cluster-status`, `建议使用RoleBinding在特定namespace中授权的角色admin edit view`
+其中 `admin`、`edit` 和 `view` 是**聚合 ClusterRole**，它们的权限可以通过标签机制动态扩展。其聚合标签如下：
 
-其中`admin edit view`是`聚合ClusterRole`, 他们的clusterRoleSelectors如下:
-
-​~~~yaml
+```yaml
 metadata:
   labels:
     rbac.authorization.k8s.io/aggregate-to-admin: "true"
     rbac.authorization.k8s.io/aggregate-to-edit: "true"
     rbac.authorization.k8s.io/aggregate-to-view: "true"
-~~~
+```
 
-所以可以创建具有以上标签的角色, 来给`admin edit view`添加上权限
+因此，只要创建具有这些标签的 ClusterRole，就可以将其权限自动合并到对应的聚合角色中，从而扩展 `admin`、`edit`、或 `view` 的权限范围。
 
 
 
@@ -5961,6 +6439,164 @@ metadata:
 | **admin**         | 无                      | 允许管理员访问权限，旨在使用 **RoleBinding** 在名字空间内执行授权。如果在 **RoleBinding** 中使用，则可授予对名字空间中的大多数资源的读/写权限， 包括创建角色和角色绑定的能力。 此角色不允许对资源配额或者名字空间本身进行写操作。 此角色也不允许对 Kubernetes v1.22+ 创建的 EndpointSlices（或 Endpoints）进行写操作。 更多信息参阅 [“EndpointSlices 和 Endpoints 写权限”小节](https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/rbac/#write-access-for-endpoints)。 |
 | **edit**          | 无                      | 允许对名字空间的大多数对象进行读/写操作。此角色不允许查看或者修改角色或者角色绑定。 不过，此角色可以访问 Secret，以名字空间中任何 ServiceAccount 的身份运行 Pod， 所以可以用来了解名字空间内所有服务账户的 API 访问级别。 此角色也不允许对 Kubernetes v1.22+ 创建的 EndpointSlices（或 Endpoints）进行写操作。 更多信息参阅 [“EndpointSlices 和 Endpoints 写操作”小节](https://kubernetes.io/zh-cn/docs/reference/access-authn-authz/rbac/#write-access-for-endpoints)。 |
 | **view**          | 无                      | 允许对名字空间的大多数对象有只读权限。 它不允许查看角色或角色绑定。此角色不允许查看 Secret，因为读取 Secret 的内容意味着可以访问名字空间中 ServiceAccount 的凭据信息，进而允许利用名字空间中任何 ServiceAccount 的身份访问 API（这是一种特权提升）。 |
+
+
+
+
+
+#### 实践：创建一个devuser用户, 只能管理 dev 空间
+
+1. 创建dev命名空间
+
+   ~~~shell
+   kubectl create ns dev
+   ~~~
+
+2. 创建一个devuser用户, 并设置密码
+
+   ~~~shell
+   useradd devuser
+   passwd
+   ~~~
+
+3. 重新通过devuser用户来登录linux
+
+   ~~~shell
+   ssh devuser@192.168.1.100
+   ~~~
+
+4. 这个时候我们通过`kubectl`命令来访问k8s, 肯定是会被拒绝访问的, 因为还没有为这个用户创建证书
+
+   ```shell
+   kubect get pod
+   The connection to the server localhost:8080 was refused - did you specify the right host or port?
+   ```
+
+5. 为devuser这个用户创建相应的k8s证书, 使得这个用户可以通过kubectl来访问k8s集群
+
+   ~~~shell
+   cd /usr/local/install-k8s/ # 随便cd到一个目录下
+   mkdir -p cert/devuser
+   cd cert/devuser
+   touch devuser-csr.json # 这个文件可以随便命名
+   
+   cat <<EOF > devuser-csr.json
+   {
+     "CN": "devuser", // 这里是k8s用户的名字
+     "hosts": [], // 可以使用证书的主机, 不写的话是所有
+     "key": {
+       "algo": "rsa",
+       "size": 2048
+     },
+     "names": [
+       {
+         "C": "CN",
+         "ST": "BeiJing",
+         "L": "BeiJing",
+         "O": "k8s", // 这是k8s的用户的组名
+         "OU": "System"
+       }
+     ]
+   }
+   EOF
+   ~~~
+
+6. 下载证书生成工具
+
+   ~~~shell
+   wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+   mv cfssl_linux-amd64 /usr/local/bin/cfssl
+   
+   wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+   mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
+   
+   wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+   mv cfssl-certinfo_linux-amd64 /usr/local/bin/cfssl-certinfo
+   ~~~
+
+7. 通过证书生成工具生成证书
+
+   ~~~shell
+   # 这个目录下都是k8s的秘钥信息
+   cd /etc/kubernetes/pki 
+   
+   # -ca表示指定生成的ca证书
+   # -ca-key表示生成的私钥
+   # ./devuser-csr.json表示根据整个文件来生成证书
+   cfssl gencert -ca=ca.crt -ca-key=ca.key -profile=kubernetes /usr/local/install-k8s/cert/devuser/devuser-csr.json | cfssljson -bare devuser
+   
+   ls
+   devuser.csr  devuser.pem  devuser-key.pem
+   ~~~
+
+8. 创建一个新的kubeconfig上下文文件, 并在其中添加一个名为`kubernetes`的k8s集群信息
+
+   ~~~shell
+   cd /usr/local/install-k8s/cert/devuser/
+   
+   export KUBE_APISERVER="https://172.20.0.113:6443" # 通过环境变量指定api-server的地址
+   
+   kubectl config \
+   set-cluster kubernetes \ # 指定集群的名字
+   --certificate-authority=/etc/kubernetes/pki/ca.crt \ #指定ca证书
+   --embed-certs=true \ # 指定是否要加密认证
+   --server=${KUBE_APISERVER} \ # 指定api-server的地址
+   --kubeconfig=devuser.kubeconfig # 创建出来的集群的信息文件
+   
+   ls
+   devuser.kubeconfig # 这个就是创建出来的集群的文件
+   ~~~
+
+9. 将名为 `devuser` 的用户凭据（使用客户端证书）配置到 `devuser.kubeconfig` 文件中，用于在 kubeconfig 中定义一个基于证书认证的 Kubernetes 用户
+
+   ~~~shell
+   cd /usr/local/install-k8s/cert/devuser/
+   
+   kubectl config set-credentials devuser \
+   --client-certificate=/etc/kubernetes/pki/devuser.pem \ # 客户端证书（用户身份）
+   --client-key=/etc/kubernetes/pki/devuser-key.pem \ # 客户端私钥（用于身份验证）
+   --embed-certs=true \ # 将证书内容直接嵌入 kubeconfig 中，而不是引用外部路径
+   --kubeconfig=devuser.kubeconfig # 写入的 kubeconfig 文件
+   ~~~
+
+10. 创建一个新的kubeconfig上下文, 并保存到`devuser.kubeconfig`文件中
+
+    ~~~shell
+    kubectl config set-context kubernetes \ # 设置一个新的 context（上下文环境）名称为 kubernetes
+    --cluster=kubernetes \ # 指定关联的集群名字，必须之前通过 set-cluster 配置过
+    --user=devuser \ # 指定用于访问该集群的用户身份，必须之前通过 set-credentials 配置过
+    --namespace=dev \ # 设置默认命名空间为 dev，后续 kubectl 命令默认作用于此命名空间
+    --kubeconfig=devuser.kubeconfig # 将 context 写入到指定 kubeconfig 文件，而不是默认的 ~/.kube/config
+    ~~~
+
+11. 将`devuser`绑定到admin角色上, 并设置限制的命名空间为dev
+
+    admin这个角色拥有所有命名空间的所有权限
+
+    ~~~shell
+    kubectl create rolebinding devuser-admin-binding \ # 指定创建一个名为devuser-admin-binding的rolebinding
+    --clusterrole=admin \ # 指定绑定的角色
+    --user=devuser \ # 指定绑定的用户
+    --namespace=dev # 指定限制的命名空间
+    ~~~
+
+12. 将kubeconfig文件拷贝到devuser的家目录下
+
+    ~~~shell
+    mkdir -p /home/devuser/.kube
+    cp devuser.kubeconfig /home/devuser/.kube/config # 将devuser.kubeconfig拷贝到.kube目录下, 并重命名为config
+    chown devuser:devuser /home/devuser/.kube/config
+    ~~~
+
+13. 切换当前 kubeconfig 文件中的上下文（context）为 `kubernetes`，之后使用`kubectl`命令的时候, 都会使用这个配置文件中的信息
+
+    ~~~shell
+    kubectl config use-context kubernetes --kubeconfig=/home/devuser/.kube/config
+    ~~~
+
+    
+
+
 
 #### 相关的命令行
 
@@ -6112,6 +6748,29 @@ metadata:
 
 
 
+
+
+## 准入控制
+
+(没什么好看的)
+
+准入控制是API Server的插件集合，通过添加不同的插件，实现额外的准入控制规则。甚至于API Server的一些主
+要的功能都需要通过 Admission Controllers 实现，比如 ServiceAccount
+
+官方文档上有一份针对不同版本的准入控制器推荐列表，其中最新的 1.14 的推荐列表是：
+
+~~~
+NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,DefaultTolerationSeconds,MutatingAdmissionWebhook,ValidatingAdmissionWebhook,ResourceQuota
+~~~
+
+列举几个插件的功能：
+
+- NamespaceLifecycle： 防止在不存在的 namespace 上创建对象，防止删除系统预置 namespace，删除
+  namespace 时，连带删除它的所有资源对象。
+- LimitRanger：确保请求的资源不会超过资源所在 Namespace 的 LimitRange 的限制。
+- ServiceAccount： 实现了自动化添加 ServiceAccount。
+- ResourceQuota：确保请求的资源不会超过资源的 ResourceQuota 限制。
+
 # Helm
 
 helm的作用是能让我们一键创建Deployment, Service等等东西,  他的作用就类似于Docker Compose
@@ -6179,12 +6838,11 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
    该命令会在本地目录下创建一个chart_name目录, 里面有charts, templates目录和Charts.yaml, values.yaml文件
 
    - Chart.yaml: 当前chart属性配置文件, **通常不需要修改**
-
-   - templates: 编写的yaml模板文件放在这个目录
-
+- templates: 编写k8s的yaml模板文件放在这个目录, 在安装release的时候, helm会执行这些yaml文件并创建对应的k8s资源
+  
    - values.yaml: 定义变量, 在templates中的文件可以引用到这些变量
-
-   - charts: 不知道干什么的目录, 没有用上
+- charts: 不知道干什么的目录, 没有用上
+   - .helmignore: 可选的文件, 类似.gitignore, 在打包heml的时候, 指定不需要打包的文件
 
    
 
@@ -6281,8 +6939,8 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
      
      # 根据hello-world中的chart文件, 来更新web2这个release
      helm upgrade web2 hello-world/
-     ~~~
-   
+  ~~~
+
    - 我们也可以直接在命令行中指定属性, 来覆盖`values.yaml`中的`image.tag`属性
    
      ~~~shell
@@ -6290,7 +6948,7 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
      
      helm upgrade web2 hello-world/  --set image.tag=1.25 # --set会覆盖values.yaml中的属性
      ~~~
-   
+
    <img src="img/k8s笔记/image-20231024161339519.png" alt="image-20231024161339519" style="zoom:50%;" />
 
 <img src="img/k8s笔记/image-20231024161436643.png" alt="image-20231024161436643" style="zoom:50%;" />
@@ -6332,6 +6990,380 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 
 
 
+### templates文件中的语法
+
+在helm的chart文件夹中, 我们可以在template中编写yaml来定义我们要创建的k8s的资源, 比如Deployment, Service, Role, ConfigMap等等
+
+当然在templates中的yaml也可以使用values.yaml中的变量
+
+```yaml
+# chart目录结构
+# my-chart/
+# ├── Chart.yaml          # Chart 元数据
+# ├── values.yaml         # 默认配置值
+# └── templates/
+#     ├── deployment.yaml # 使用变量的 Deployment 模板
+#     └── service.yaml    # 使用变量的 Service 模板
+
+# values.yaml
+replicaCount: 2          # 副本数
+image:
+  repository: nginx      # 镜像名称
+  tag: "1.23.4"          # 镜像标签
+  pullPolicy: IfNotPresent
+service:
+  type: ClusterIP        # 服务类型
+  port: 80               # 服务端口
+resources:
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+# templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-nginx  # 使用 Release 名称, 通过helm install命令安装release的时候, 会传递进来
+  labels:
+    app: {{ .Values.image.repository }}  # 直接引用 values.yaml 的变量
+spec:
+  replicas: {{ .Values.replicaCount }}   # 引用副本数
+  selector:
+    matchLabels:
+      app: {{ .Values.image.repository }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.image.repository }}
+    spec:
+      containers:
+      - name: nginx
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"  # 拼接镜像名和标签
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - containerPort: 80
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}  # 引用嵌套的 resources 配置oyment.yaml
+```
+
+上面能够调用的语法, 本质上是Go模版语言的语法, 下面对能够使用的语法做详细的说明
+
+1. 直接获取values.yaml中的变量
+
+   ```yaml
+   # values.yaml
+   aa:
+     bb: "hello world"
+   
+   # templates/deployment.yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: myapp
+   spec:
+     replicas: {{ .Values.aa.}}
+   ```
+
+2. 获取values.yaml中的变量, 并用引号括起来
+
+   ~~~yaml
+   # values.yaml
+   image:
+     repository: nginx
+     tag: 1.21
+     pullPolicy: IfNotPresent
+   # templates/deployment.yaml
+   spec:
+     containers:
+       - name: nginx
+         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+         # 获取image.pullPolicy的值, 并用括号括起来, 等效于 "IfNotPresent"
+         imagePullPolicy: {{ .Values.image.pullPolicy | quote }} 
+   ~~~
+
+   
+
+3. 直接获取values.yaml中的变量, 并设置默认值
+
+   ```yaml
+   # values.yaml
+   replicaCount: 1
+   image:
+     repository: aaa
+     tag: bbb
+     
+   # templates/deployment.yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: myapp
+   spec:
+     replicas: {{ .Values.replicaCount | default 2 }}
+     template:
+       metadata:
+         labels:
+           app: myapp
+       spec:
+         containers:
+         - name: myapp
+           image: "{{ .Values.image.repository | default "nginx" }}:{{ .Values.image.tag | default "latest" }}"
+   ```
+
+3. 可以在yaml中使用if条件判断
+
+   ~~~yaml
+   # values.yaml
+   enabledFeature: true
+   
+   # templates/deployment.yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: myapp
+   spec:
+     replicas: 3
+     template:
+       metadata:
+         labels:
+           app: myapp
+       spec:
+         containers:
+         - name: myapp
+           image: "nginx:latest"
+   {{- if .Values.enabledFeature }}
+         env:
+           - name: FEATURE_ENABLED
+             value: "true"
+   {{- else }}
+         env:
+           - name: FEATURE_ENABLED
+             value: "false"
+   {{- end }}
+   ~~~
+
+4. 在if条件判断中, 可以使用各种比较运算符
+
+   ~~~yaml
+   # values.yaml
+   replicaCount: 3
+   env: "prod"
+   # templates/deployment.yaml
+   {{- if eq .Values.env "prod" }}
+   # 这是生产环境
+   {{- end }}
+   
+   {{- if ne .Values.env "dev" }}
+   # 不是开发环境
+   {{- end }}
+   
+   {{- if gt .Values.replicaCount 1 }}
+   # 副本数大于1
+   {{- end }}
+   
+   {{- if lt .Values.replicaCount 10 }}
+   # 副本数小于10
+   {{- end }}
+   ~~~
+
+5. 还可以使用if-elseif-else结构
+
+   ~~~yaml
+   {{- if eq .Values.env "dev" }}
+   # 开发环境
+   {{- else if eq .Values.env "prod" }}
+   # 生产环境
+   {{- else }}
+   # 其他环境
+   {{- end }}
+   ~~~
+
+6. 还可以使用与, 或, 非进行逻辑判断
+
+   ~~~yaml
+   # vlaues.yaml
+   enabled: true
+   env: "prod"
+   replicas: 3
+   
+   # templates/deployment.yaml
+   # 与 (and)：当 enabled 为 true 且 env 为 "prod" 才输出
+   {{- if (and .Values.enabled (eq .Values.env "prod")) }}
+   # 开启并且是生产环境
+   replicas: {{ .Values.replicas }}
+   {{- end }}
+   
+   # 或 (or)：env 为 "dev" 或者 "test" 时输出
+   {{- if (or (eq .Values.env "dev") (eq .Values.env "test")) }}
+   # 开发或测试环境
+   replicas: 1
+   {{- end }}
+   
+   # 非 (not)：当 enabled 不为 true 时输出
+   {{- if (not .Values.enabled) }}
+   # 功能被禁用
+   {{- end }}
+   ~~~
+
+   
+
+7. 直接嵌套yaml结构
+
+   ~~~yaml
+   # values.yaml
+   config:
+     database:
+       host: db.example.com
+       port: 5432
+       user: admin
+       password: secret
+   # templates/configmap.yaml
+   apiVersion: v1
+   kind: ConfigMap
+   metadata:
+     name: myapp-config
+   data:
+     config.yaml:
+   # 获取values.yaml中的config代码块, 然后直接将整个config代码块复制到这里, 并且设置缩进为4
+   {{ .Values.config | toYaml | nindent 4 }}
+   ~~~
+
+8. 使用range进行迭代
+
+   ~~~yaml
+   # values.yaml
+   services:
+     - name: service1
+       port: 8080
+     - name: service2
+       port: 9090
+   # templates/service.yaml
+   apiVersion: v1
+   kind: Service
+   metadata:
+     name: myapp
+   spec:
+     selector:
+       app: myapp
+     ports:
+   # 对values.yaml中的services元素进行迭代
+   {{- range .Values.services }}
+       - name: {{ .name }}
+         port: {{ .port }}
+   {{- end }}
+   ~~~
+
+
+
+
+### helm hook
+
+Helm 中的 hook（钩子）是一种特殊的模板资源机制，用于在 Helm 的安装、升级、删除等生命周期事件中，插入自定义行为（如执行一个初始化 Job、清理脚本等）。
+
+**如果hook 运行失败默认会中断 Helm 流程**
+
+
+
+
+
+helm支持如下类型的hook
+
+| Hook 类型       | 说明                                          |
+| --------------- | --------------------------------------------- |
+| `pre-install`   | 在 `helm install` **之前**执行                |
+| `post-install`  | 在 `helm install` **之后**执行                |
+| `pre-upgrade`   | 在 `helm upgrade` **之前**执行                |
+| `post-upgrade`  | 在 `helm upgrade` **之后**执行                |
+| `pre-rollback`  | 在 `helm rollback` **之前**执行               |
+| `post-rollback` | 在 `helm rollback` **之后**执行               |
+| `pre-delete`    | 在 `helm uninstall` **之前**执行              |
+| `post-delete`   | 在 `helm uninstall` **之后**执行              |
+| `test`          | 通过 `helm test` 触发，仅在手动运行测试时执行 |
+
+
+
+要想实现一个hook, 我们可以在`templates`下定义yaml文件
+
+- 如果helm没有在yaml中扫描到特殊的注解, 那么这些k8s资源文件就会被当做普通资源对待
+
+- 如果k8s在这些yaml中扫描到关于hook特殊的注解, 那么这些k8s资源文件就会被当做hook对待
+
+  hook创建的资源不会像普通资源一样长期存在于k8s集群中
+
+下面我们实现一个hook, 用于在升级release之前执行
+
+~~~yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: syslog-pre-upgrade-job
+  namespace: service-software
+  labels:
+    app: syslog
+    component: syslog
+  annotations:
+    # 通过这个注解, 将资源文件标记为hook, 并且在当前的release升级之前执行
+    "helm.sh/hook": pre-upgrade 
+    # 可选, 通过这个注解来指定helm何时自动清理这个hook资源, 可选的值有
+    #     hook-succeeded 当 hook 资源成功执行（退出码 0）后删除
+    #     hook-failed    当 hook 资源失败时删除
+    #     before-hook-creation	 当下一次执行 hook 前删除上次生成的hook资源
+    # 你可以组合上面三个值, 来表达不同的意思, 比如
+    #     hook-succeeded,hook-failed 无论hook成功失败都删除hook资源
+    #     before-hook-creation,hook-succeeded 在下一次执行hook的时候删除上一次的hook资源, 并且在hook成功的时候直接删除hook资源
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # 可选, 如果有多个相同阶段的hook, 那么可以通过weight来定义他们的先后执行顺序
+    # weight越小, 越先执行, weight可以为负数
+    "helm.sh/hook-weight": "0"
+    # 可选, 用于控制 Helm 在执行 uninstall（卸载）操作时是否删除hook资源
+    # 你可以指定为true, 那么即使uninstall的时候, 也不会删除hook资源
+    # 你也可以不指定这个值, 那么会使用Helm 默认行为，会删除该资源, 主要用于ConfigMap和PVC
+    "helm.sh/resource-policy": keep
+spec:
+  template:
+    metadata:
+      labels:
+        app: pre-upgrade
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: pre-upgrade
+        image: "matrix-registry.h3c.com:8088/middle/common-job:1.0"
+        imagePullPolicy: Always
+        # 执行这个job就会执行preUpdateHook.sh这个脚本
+        command: ["bash", "/opt/custom/preUpdateHook.sh"]
+        volumeMounts:
+        # 通过和release中的pod挂载同一个hostPath, 操作文件来影响release中的pod
+        - name: custom-path
+          mountPath: /opt/custom/
+        - name: log
+          mountPath: /var/deploy/
+    volumes:
+    - name: custom-path
+      hostPath:
+      {{- if eq .Values.normalPatch true }}
+        path: {{ .Values.patchcustomPath }}/syslog/scripts/
+      {{- else }}
+        path: {{ .Values.customPath }}/syslog/scripts/
+      {{- end }}
+        type: Directory
+    - name: log
+      hostPath:
+        path: /var/lib/ssdata/logcenter/SYSLOG/deploy
+~~~
+
+> 需要注意的是: 因为执行hook的pod和release中创建的pod不是同一个pod, 所以hook中的pod在执行的时候, 并不会影响到release中的pod, 所以hook能做的事情非常的有限, 比如
+>
+> 1. 将hostPath, PVC同时挂载到hook和release的pod中, 这样可以就可以对同一块磁盘做一些操作, 比如执行shell脚本等等, 或者脚本可以写文件作为“信号”，让主容器在启动时读取这些文件并做出反应
+> 2. 可以在hook中调用curl等工具来访问api-server, 进行一些操作
+>
+> 他不能做的事情有: 
+>
+> 1. 直接操作release的pod中的进程和文件, 因为hook是另外一个pod, 不能访问其他容器中的内容
+
+
+
+
+
 ## 使用第三方charts
 
 我们这里以安装nginx为例, 首先访问https://artifacthub.io/, 搜索框中搜索 `nginx`
@@ -6367,8 +7399,6 @@ helm install my-nginx nginx --namespace my-ns -f my-values.yaml # 不要使用�
 # 如果你不想要完全覆盖values.yaml中, 只想覆盖个别的属性, 那么可以使用--set属性来覆盖
 helm install my-nginx nginx --namespace my-ns --set aaa.bbb=xxx
 ~~~
-
-
 
 
 
