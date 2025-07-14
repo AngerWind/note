@@ -1224,6 +1224,170 @@ awk -F "," 'print FILENAME NR NF' test.txt
 
 
 
+## 其他命令
+
+### wc
+
+wc的意思是"word count", 主要用来获取文件的行数, 单词数, 字节数
+
+~~~shell
+# 格式: wc [选项] [文件]
+wc hello.txt
+10 200 300 hello.txt # 行数, 单词数, 字节数
+
+wc -l hello.txt
+10 hello.txt # 查看行数
+
+wc -w hello.txt
+200 hello.txt # 查看单词数
+
+wc -c hello.txt
+300 hello.txt # 查看字节数
+
+wc -m hello.txt
+400 hello.txt # 查看字符数
+
+wc  hello.txt world.txt # 查看多个文件
+
+wc * # 查看当前目录下所有文件的行数, 单词数量, 字节数, 并统计
+~~~
+
+
+
+### getopts
+
+getopts主要用来解析传入脚本的参数, 格式是: `getopts optstring name`
+
+- optstring主要用来告诉getopts你需要解析什么选项
+
+  比如`:ab`告诉getopts从脚本的参数中解析a,b这两个选项, 并且这两个选项不需要参数
+
+  `:abx:y:`告诉getopts从脚本中解析abxy这四个选项, ab不需要参数, xy需要参数
+
+- name用来接收getopts解析选项后的参数
+
+getopts常常和while-do-done,  case分支一起使用
+
+~~~shell
+#!/bin/bash
+
+# getopts解析脚本的abxy四个参数, 并将结果放到opt中
+while getopts ":abx:y:" opt; do
+  # opt是解析出来的选项
+  case ${opt} in
+    a)
+      # 这里会匹配a选项
+      echo "Option -a was triggered."
+      ;; # break
+    b)
+      echo "Option -b was triggered."
+      ;;
+    x)
+      # 这里会匹配x选项, 并将x选项的参数传入到OPTARG中
+      echo "Option -x was triggered, Argument: ${OPTARG}"
+      ;;
+    y)
+      echo "Option -y was triggered, Argument: ${OPTARG}"
+      ;;
+    :)
+      # 如果一个选项必须要参数, 但是调用脚本的时候没有传参数, 只是指定了选项, 那么就会匹配:
+      # 并且会将选项目名传入到OPTARG中
+      echo "Option -${OPTARG} requires an argument."
+      exit 1
+      ;;
+    ?)
+      # ?会匹配无效的选项, 并将选项传入到OPTARG中
+      # 比如传入了一个 -z选项, 那么就会匹配?, 并将z传入到OPTARG中
+      echo "Invalid option: -${OPTARG}."
+      exit 1
+      ;;
+  esac
+done
+~~~
+
+~~~shell
+[root@uc24023 ~]# ./test.sh -a
+Option -a was triggered.
+[root@uc24023 ~]# ./test.sh -a -b
+Option -a was triggered.
+Option -b was triggered.
+[root@uc24023 ~]# ./test.sh -a -b -x hello -y world
+Option -a was triggered.
+Option -b was triggered.
+Option -x was triggered, Argument: hello
+Option -y was triggered, Argument: world
+[root@uc24023 ~]# ./test.sh -x
+Option -x requires an argument.
+[root@uc24023 ~]# ./test.sh -z
+Invalid option: -z.
+~~~
+
+需要注意的是, getopts只负责解析参数, 他没有办法实现一定要指定某个选项的功能, 如果要实现这个功能, 你可以将参数赋值给某个变量, 然后等while循环结束后, 看看这个参数是否为空, 然后报错
+
+下面是实际脚本中的一段代码
+
+~~~shell
+function echoUsage() {
+    echo "Usage:"
+    echo "  ./package_Common_all.sh -c {SYSTEMNAME} -s {SBOM} -v {VERSION}"
+    echo "Options:"
+    echo "  -c: cpu enviroment; x86 or arm, default is x86"
+    echo "  -s:  build sbom files or not; true or false, default is false;"
+    echo "  -v:  version;"
+    exit 0
+}
+
+
+while getopts :u:c:s:v: opt
+do
+    case $opt in
+        u) BUILD=$OPTARG;;
+        c) SYSTEMNAME=$OPTARG;;
+        s) SBOM=${OPTARG};;
+        v) VERSION=${OPTARG};;
+        ?) echoUsage
+        ;;
+    esac
+done
+~~~
+
+
+
+### find
+
+find命令用于查找文件, 格式: `find path [args]`
+
+- `-name "filename"`: 按照名称查找
+- `-iname "filename"`: 按照名称查找, 并忽略大小写
+- `-type [f | d | l]`: 按照文件类型查找, f文件, d目录, l符号链接
+- `-size [+-]n[k|M|G|T]`: 按照文件带下来查
+- `-delete`: 删除查找到的文件, 常常用在shell中
+
+~~~shell
+# 查找名为filename的文件, 忽略大小写, 文件类型为file, 大小超过100G
+# 查找到后直接删除掉
+find /path/to/search -iname "filename" -type f -size +100G -delete
+~~~
+
+
+
+### pushd和popd
+
+格式:`pushd /path/to/directory` 和 `popd `
+
+- pushd: cd到指定的目录, 然后将当前目录压入目录栈中
+- popd: 从目录栈中pop出一个目录, 然后cd到这个目录
+
+这两个命令常常用在shell中, 切换到一个目录中执行命令, 然后切换回来
+
+~~~shell
+popd /root/hello/world # 切换到/root/hello/world目录, 并将目录压入栈
+pwd # 执行一系列命令
+popd # 将/root/hello/world弹出栈, 并cd到这个目录
+~~~
+
+
+
 
 
 ## 其他

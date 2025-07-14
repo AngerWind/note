@@ -3999,7 +3999,7 @@ Secret 解决了密码、token、密钥等敏感数据的配置问题，而不�
 Secret 可以以 Volume 或者环境变量的方式使用
 Secret 有三种类型:
 
-- **Service Account**: 用来访问 Kubernetes APl，由 Kubernetes 自动创建，并且会自动挂载到 Pod的`/run/secrets/kubernetes.io/serviceaccount` 目录中
+- **service-account-token**: 用来访问 Kubernetes api-server中的rest api接口
 
 - **Opaque**: Opaque和ConfigMap比较类似, 但是他要求value是base64编码的
 
@@ -4007,25 +4007,40 @@ Secret 有三种类型:
 
 - **docker-registry**:  在创建pod的时候, 如果镜像在私服, 那么我们将无法拉取进行, 这个时候要进行登录认证, 而登录认证所需要的信息就报错在docker-registry中
 
-### Service Account
-
-Service Account的主要作用就是为了container中的进程能够调用k8s-api的接口而存在的, 每个ServiceAccount都会有一个对应的jwt格式的token, 被称为Secret.
+### service-account-token
 
 k8s内部实现了一套rbac的权限控制系统, ServiceAccount就是rbac中的一种用户(还有其他类型的用户, 比如User, Group)
 
-一个Service Account就相当于一个用户, 然后我们可以赋予这个用户一些角色, 这些角色是权限的集合, 有了这个权限之后, container中的进程就可以通过这个ServiceAccount的Secret来调用k8s api-server中的一些接口了
+一个Service Account就相当于一个用户, 然后我们可以赋予这个用户一些角色, 这些角色是权限的集合, 有了这个权限之后, container中的进程就可以通过这个ServiceAccount来调用k8s api-server中的一些接口了, 同时k8s也会对请求进行认证, 鉴权, 看看是否有权限获取对应的资源
 
 
 
-每当我们创建一个namespace的时候, k8s就会自动在这个namespace下创建一个名为`default`的Service Account并创建对应的Secret
+Service Account的主要作用就是为了container中的进程能够调用k8s-api的接口而存在的
+
+我们可以为每个Service Account都关联一个`service-account-token`类型的Secret, `service-account-token`主要分为三个部分:
+
+1. token:  他是一个jwt格式的token, 主要用于容器内的进程通过https方式访问api-server的时候, 用于身份认证和鉴权
+2. ca.crt: ServiceAccount对应的证书, 主要用于容器内的进程通过https双向认证的方式访问api-server的时候, 用于身份认证和鉴权
+3. namespace: 主要用于表示这个token的命名空间
+
+
+
+每当我们创建一个namespace的时候, k8s就会自动在这个namespace下创建一个名为`default`的Service Account
+
+> 需要注意的是: 
+>
+> 1. 在k8s 1.24及其以下版本下, k8s 会自动为ServiceAccount创建一个关联service-account-token, 名称为`<sa-name>-token-<random>`
+> 2. 在k8s 1.24+, k8s不会为新创建的ServiceAccount创建关联的Secret, 而是需要手动申请一个关联Secret并指定他的有效期
+
+
 
 当我们在这个namespace下创建pod的时候, 如果不在yaml文件中不指定这个pod关联的Service Account, 那么这个pod就会默认关联到`default`这个service account
 
 
 
-在pod启动的时候会将pod关联的ServiceAccount的信息挂载到容器的`/run/secrets/kubernetes.io/serviceaccount/`目录里面, 用于容器内的进程进行身份认证
+在pod启动的时候, 会将pod关联的ServiceAccount的`service-account-token`信息写入到容器的`/run/secrets/kubernetes.io/serviceaccount/`目录里面, 用于容器内的进程进行身份认证
 
-1. `token`文件: 文件的内容是ServiceAccount对应的jwt token, 也就是对应的Secret, 主要用于容器内的进程通过http方式访问api-server的时候, 用于身份认证和鉴权
+1. `token`文件: 文件的内容是ServiceAccount对应的Secret的jwt token
 
    如果container中的进程需要调用k8s-api的接口, 那么就将token的内容, 放在在https请求的header的`Authorization`中, 这样k8s就知道是哪个用户发送过来的请求了, 就可以对这个请求进行权限控制了
 
@@ -4058,7 +4073,7 @@ ca.crt  namespace  token
 
 #### 相关shell
 
-1. 我们可以通过如下命令来查看k8s中有哪些ServiceAccount以及他们关联的Secret
+1. 我们可以通过如下命令来查看k8s中有哪些ServiceAccount以及他们关联的`service-account-token`
 
    ~~~shell
    kubectl get sa -A # 查看所有命名空间的ServiceAccount
@@ -4066,12 +4081,12 @@ ca.crt  namespace  token
    kubectl describe sa secret_name -n <namespace_name> # 查看ServieAccount的详细信息
    
    
-   kubectl get secret -A # 查看所有命名空间的Secret, 也就是ServiceAccount对应的jwt token
+   kubectl get secret -A # 查看所有命名空间的Secret, 其中包括了service-account-token, 也包括Qpaque
    kubectl get secret -n <namespace_name> # 查看指定命名空间中的Secret
    kubectl describe secret secret_name -n <namespace_name> # 查看Secret的内容
    ~~~
 
-2. 我们也可以通过如下的命令来创建一个ServiceAccount, 他会自动创建对应的Secret
+2. 我们可以通过如下的命令来创建一个ServiceAccount, 在k8s1.23及其以下会自动创建对应的service-account-token
 
    1. 通过yaml来创建sa
 
@@ -4093,7 +4108,19 @@ ca.crt  namespace  token
       kubectl create serviceaccount my-sa -n dev
       ~~~
 
-3. 如果你想要查看Secret属于哪个ServiceAccount, 那么你可以通过如下命令来查看
+3. 如果你是在k8s1.24+的版本, 那么在创建ServiceAccount的时候, 不会自动创建service-account-token, 而是需要手动申请一个关联的service-account-token
+
+   ~~~yaml
+   apiVersion: v1
+   kind: Secret
+   metadata:
+     name: my-service-account-token
+     annotations:
+       kubernetes.io/service-account.name: my-service-account
+   type: kubernetes.io/service-account-token
+   ~~~
+   
+4. 如果你想要查看service-account-token属于哪个ServiceAccount, 那么你可以通过如下命令来查看
 
    ~~~shell
    [root@uc24020 record]# kubectl describe secret -n service-software websocket-sa-token-h5w64
@@ -4115,7 +4142,7 @@ ca.crt  namespace  token
 
    **如果给pod分配权限, 可以使用这个账户名来和Role进行绑定**
 
-4. 如果你想要指定pod关联的ServiceAccount, 那么你可以在pod的yaml文件中指定`spec.serviceAccountName`字段
+5. 如果你想要指定pod关联的ServiceAccount, 那么你可以在pod的yaml文件中指定`spec.serviceAccountName`字段
 
    ~~~yaml
    apiVersion: v1
@@ -4145,15 +4172,15 @@ ca.crt  namespace  token
            image: curlimages/curl:7.85.0
            command: ["sleep", "3600"]
    ~~~
-   
-5. 如果你想查看当前运行的 Pod 实际使用了哪个 ServiceAccount，可以用这个命令：
+
+6. 如果你想查看当前运行的 Pod 实际使用了哪个 ServiceAccount，可以用这个命令：
 
    ~~~shell
    kubectl get pod <pod-name> -o jsonpath='{.spec.serviceAccountName}'
    # 如果输出为空, 那么使用的是当前命名空间中的default这个ServiceAccount
    ~~~
 
-6. 如果你想要将ServiceAccount关联到角色上, 那么可以执行如下的yaml
+7. 如果你想要将ServiceAccount关联到角色上, 那么可以执行如下的yaml
 
    ~~~yaml
    # 1. 创建 ServiceAccount
@@ -4192,7 +4219,7 @@ ca.crt  namespace  token
 
    更详细的角色的信息, 可以查看安全 > 鉴权部分
 
-7. 如果你想要查看一个ServiceAccount绑定了哪些Role和ClusterRole, 有哪些权限, 实际上ServiceAccount是不记录这个东西的, 我们只能去RoleBinding/ClusterRoleBinding中查看哪些角色绑定了哪些账户, 然后去出对应的角色中查看他的权限
+8. 如果你想要查看一个ServiceAccount绑定了哪些Role和ClusterRole, 有哪些权限, 实际上ServiceAccount是不记录这个东西的, 我们只能去RoleBinding/ClusterRoleBinding中查看哪些角色绑定了哪些账户, 然后去出对应的角色中查看他的权限
 
    **但是你可以检测某个账户是否有什么的权限, 通过如下命令**
 
@@ -6990,7 +7017,7 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 
 
 
-### templates文件中的语法
+### templates目录中的语法
 
 在helm的chart文件夹中, 我们可以在template中编写yaml来定义我们要创建的k8s的资源, 比如Deployment, Service, Role, ConfigMap等等
 
@@ -7302,6 +7329,7 @@ metadata:
     component: syslog
   annotations:
     # 通过这个注解, 将资源文件标记为hook, 并且在当前的release升级之前执行
+    # 如果不添加这个注解, 那么其他的htlm.sh注解也是无效的
     "helm.sh/hook": pre-upgrade 
     # 可选, 通过这个注解来指定helm何时自动清理这个hook资源, 可选的值有
     #     hook-succeeded 当 hook 资源成功执行（退出码 0）后删除
@@ -7359,6 +7387,115 @@ spec:
 > 他不能做的事情有: 
 >
 > 1. 直接操作release的pod中的进程和文件, 因为hook是另外一个pod, 不能访问其他容器中的内容
+
+
+
+### templates目录中文件的执行顺序
+
+有这样一种情况, 我的chart的templates目录中有创建role, service-account, namespace rolebinding, configmap, deploy的文件
+
+那么按照正常的逻辑, 我应该先创建namespace, 然后创建role, service-account, 然后创建rolebinding, configmap, 然后创建deploy
+
+但是helm在执行chart安装release的时候, 并不会去控制templates中的文件, 而是直接安装文件的字母属性来执行
+
+我们有两种办法来控制资源创建的先后
+
+1. 在文件名前面加上序号, 序号越小的越先执行
+
+   ~~~yaml
+   01-namespace.yaml
+   02-role.yaml
+   03-service-account.yaml
+   04-rolebinding.yaml
+   05-configmap.yaml
+   06-deploy.yaml
+   ~~~
+
+2. 通过helm hook来控制templates中文件执行的顺序
+
+   ~~~shell
+   apiVersion: v1
+   kind: Namespace
+   metadata:
+     name: my-namespace
+     annotations:
+       "helm.sh/hook": "pre-install"
+       "helm.sh/hook-weight": "0"  # 设置 weight 为 0，最先执行
+   ---
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: Role
+   metadata:
+     name: my-role
+     namespace: my-namespace
+     annotations:
+       "helm.sh/hook": "pre-install"
+       "helm.sh/hook-weight": "5"  # 设置 weight 为 5，优先执行
+   spec:
+     rules:
+     - apiGroups: [""]
+       resources: ["pods"]
+       verbs: ["get", "list", "watch"]
+   ---
+   apiVersion: v1
+   kind: ServiceAccount
+   metadata:
+     name: my-service-account
+     namespace: my-namespace
+     annotations:
+       "helm.sh/hook": "pre-install"
+       "helm.sh/hook-weight": "10"  # 设置 weight 为 10，第二优先
+   ---
+   apiVersion: rbac.authorization.k8s.io/v1
+   kind: RoleBinding
+   metadata:
+     name: my-rolebinding
+     namespace: my-namespace
+     annotations:
+       "helm.sh/hook": "pre-install"
+       "helm.sh/hook-weight": "15"  # 设置 weight 为 15，第三优先
+   subjects:
+     - kind: ServiceAccount
+       name: my-service-account
+       namespace: my-namespace
+   roleRef:
+     kind: Role
+     name: my-role
+     apiGroup: rbac.authorization.k8s.io
+   --- 
+   apiVersion: v1
+   kind: ConfigMap
+   metadata:
+     name: my-configmap
+     namespace: my-namespace
+   data:
+     key: value
+   --- 
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: my-deployment
+     namespace: my-namespace
+     annotations:
+       "helm.sh/hook": "post-install"  # 确保 Deployment 在安装后创建
+   spec:
+     replicas: 1
+     selector:
+       matchLabels:
+         app: my-app
+     template:
+       spec:
+         containers:
+         - name: my-app
+           image: my-app-image
+   ~~~
+
+**实际上, 我们根本就没有必要去控制templates目录中的资源创建的先后**
+
+因为在k8s中, 如果你RoleBinding依赖于Role和ServiceAccount, 那么k8s还是允许你创建RoleBinding的, 只是他暂时不会生效, 只有你创建了Role和ServiceAccount的时候, 才会生效
+
+如果Deploy依赖一个ConfigMap, 如果没有先创建ConfigMap, 而是先创建了Deploy, 那么Pod实际上会进入`CrashLoopBackOff`的状态, 等到ConfigMap创建好了之后, pod自然可以创建成功
+
+
 
 
 
