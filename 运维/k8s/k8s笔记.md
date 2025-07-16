@@ -2373,6 +2373,48 @@ Deployment控制器能够实现的功能
 
    而在回滚的时候, 旧的ReplicaSet会被重写启用, 重新创建旧版本的Pod, 而新的ReplicaSet会被停用,并关闭新版本的Pod
 
+   当然, 你也可以通过参数来控制升级和回滚过程中的策略
+
+   ~~~yaml
+   apiVersion: apps/v1
+   kind: Deployment
+   metadata:
+     name: my-app
+     labels:
+       app: my-app
+   spec:
+     replicas: 3
+     selector:
+       matchLabels:
+         app: my-app
+     template:
+       metadata:
+         labels:
+           app: my-app
+       spec:
+         containers:
+         - name: nginx
+           image: nginx:latest
+           ports:
+           - containerPort: 80
+     # 当我们使用kubectl upgrade更新pod的时候, 或者通过kubectl delete同时删除多个pod的时候
+     # 应该应该使用怎么样的策略去替换已经存在的pod
+     strategy:
+       # 可选地值有:
+       # RollingUpdate: 默认的选项, 删除一部分旧的pod然后启动一部分新版本的pod, 如此往复直到替换所有旧的pod, 确保服务不中断
+       # Recreate: 全部删除旧的pod, 然后再创建新版的pod, 会造成服务暂时不可用
+       type: RollingUpdate
+       # 只有在type为RollingUpdate的时候可以选择这个参数, 用于指定RollingUpdate的参数
+       rollingUpdate:
+         maxSurge: 25% # 允许临时超出副本数的最大比例（或固定数值，如 1）
+         # 更新过程中允许不可用的 Pod 比例（或固定数值，如 1）
+         # 默认值为25%, 此时会先删除25%的旧版本的pod, 然后创建25%新版本的pod, 如此往复
+         # 如果设置为1, 那么会先删除1个旧版本的pod, 然后创建1个新版本的pod, 直到更新完所有的pod
+         maxUnavailable: 25%
+   ~~~
+
+   
+
 3. 扩缩容
 
 4. 暂停和继续Deployment
@@ -2410,6 +2452,19 @@ spec:         #必填，部署的详细定义
         name: string #必填，遇上面matchLabels的标签相同
     spec: 
       containers:      #必填，定义容器列表
+#------------------pod的更新策略--------------------------------------------      
+  strategy:
+    # 可选地值有:
+    # RollingUpdate: 默认的选项, 删除一部分旧的pod然后启动一部分新版本的pod, 如此往复直到替换所有旧的pod, 确保服务不中断
+    # Recreate: 全部删除旧的pod, 然后再创建新版的pod, 会造成服务暂时不可用
+    type: RollingUpdate
+    # 只有在type为RollingUpdate的时候可以选择这个参数, 用于指定RollingUpdate的参数
+    rollingUpdate:
+      maxSurge: 25% # 允许临时超出副本数的最大比例（或固定数值，如 1）
+      # 更新过程中允许不可用的 Pod 比例（或固定数值，如 1）
+      # 默认值为25%, 此时会先删除25%的旧版本的pod, 然后创建25%新版本的pod, 如此往复
+      # 如果设置为1, 那么会先删除1个旧版本的pod, 然后创建1个新版本的pod, 直到更新完所有的pod
+      maxUnavailable: 25%
 ~~~
 
 案例
@@ -4944,7 +4999,7 @@ Predicate 有一系列的算法可以使用：
 
 
 
-## 亲和性
+## 亲和性和反亲和性
 
 ### 节点亲和性
 
@@ -5127,9 +5182,7 @@ spec:
 
 **这种情况适用于将同一服务的多个 Pod 分布到多个云提供商可用区中。**
 
-
-
-### NodeSelector
+## NodeSelector
 
 nodeSelector是最简单的, 将pod分配到符合label的node上
 
@@ -5150,7 +5203,32 @@ spec:
 
 ```
 
-### NodeName
+对于k8s的master节点, 他固定会有两个特定的label用来标识他的master身份, 分别是`node-role.kubernetes.io/control-plane=`和`node-role.kubernetes.io/master=`
+
+你可以通过`kubectl get nodes --show-labels`来查看到底有没有这两个label
+
+如果你想要pod只跑在master上面, 那么可以通过这两label来指定
+
+~~~shell
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod
+spec:
+  containers:
+    - name: my-container
+      image: nginx
+  nodeSelector:
+    node-role.kubernetes.io/master: ""
+~~~
+
+
+
+
+
+
+
+## NodeName
 
 **强制调度到指定的节点上面, 会跳过Scheduler的调度策略**
 
@@ -5173,9 +5251,7 @@ spec:
     imagePullPolicy: IfNotPresent
 ~~~
 
-
-
-### 污点和污点容忍
+## 污点和污点容忍
 
 污点(Taints)和污点容忍(Tolerations) 主要解决了以下的作用
 
@@ -5187,9 +5263,7 @@ spec:
 
 每个node都可以被设置多个污点Taints, 如果pod不能容忍这些污点, 那么不会调度到这个pod上, 如果pod能够容忍这些污点, 那么就有可能调度到这个node上
 
-
-
-#### 污点
+### 污点
 
 每个污点都有key, value, effect组成, 格式为`key=value:effect`
 
@@ -5224,7 +5298,7 @@ kubectl taint nodes <node-name> key-
 kubectl taint nodes node1 gpu-
 ```
 
-#### 污点容忍
+### 污点容忍
 
 
 设置了污点的 Node, Pod 将在一定程度上不会被调度到 Node 上。 但我们可以在 Pod 上设置污点容忍 ( Toleration ) , 使得当前pod可以被调度到有污点的节点上.
