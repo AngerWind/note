@@ -8391,3 +8391,97 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 
 
 ![image-20231012213607030](img/k8s笔记/image-20231012213607030.png)
+
+
+
+
+
+# 工作中的经验
+
+## DaemonSet的问题
+
+### 项目背景
+酒泉钢铁6月24日因集群中一个节点raid卡故障导致业务认证业务受到影响，已定位是k8s机制导致，或者说对deamonset使用不够规范。
+
+具体原因：集群中节点因为硬件故障导致异常时，该节点会变成notready状态，节点上的pod也会被驱逐走，但从k8s设计的角度上daemonset类型的服务默认会容忍这种notready状态，这就导致daemonset类型的pod不会被驱逐走，并且其service关联的endpoint也不会被摘除，通过svc的请求会概率负载到这个异常节点上的daemonset类型的pod，导致30000页面，eia等服务异常等。
+
+解决方案：使用daemonset类型的都不要通过svc提供对外服务，同步平台、AD、UC各组件排查修改，涉及的组件请给出版本计划时间点
+
+评估内容：所有组件排查使用service访问daemonset服务的场景，是否可以把daemonset换成deployment或statefulset（默认这两种资源类型不会容忍notready状态，也需要各组件排查确认有没有主动添加，容忍配置如下所示，如果添加了tolerationSeconds则说明容忍指定时间后会驱逐，无需修改）
+
+~~~yaml
+tolerations:
+  - effect: NoExecute
+    key: node.kubernetes.io/not-ready
+    operator: Exists
+  - effect: NoExecute
+    key: node.kubernetes.io/unreachable
+    operator: Exists
+~~~
+
+
+
+### 排查
+
+首先要知道的是, kubelet会定时的向control-plane定时的发送心跳, 如果超过一定的时间control-plane没有接收到心跳, 那么control-plane会将node的状态设置为notReady
+定时发送心跳的时间可以通过-node-status-update-frequency来控制，默认 10s
+超时时间可以通过--node-monitor-grace-period控制, 默认是40s
+
+你可以通过`kubectl describe node <节点名>` 来查看node的心跳记录以及当前的状态
+
+当节点变成NotReady之后, k8s会通过ping, ssh等手段来确定node物理机是否存在, 如果是云厂商的环境并且启用了Cloud Controller Manager功能, 那么还会调用云厂商的接口, 来确认宿主机的状态
+如果宿主机都已经不存在了, 那么k8s会将node的状态修改为Unreachable
+
+NotReady和Unreachable的区别在于:
+- NotReady是心跳超时了, 但是节点还存在, kubelet可能还在运行, 产生的情况有
+  1. Kubelet 崩溃
+  2. 节点 CPU/内存耗尽
+  3. 容器运行时（containerd/docker）挂掉
+  4. 证书过期
+  5. 磁盘空间不足
+- Unreachable表示的是control-plane完全不发连接到kubelet所在的机器, 产生的原因有
+  1. 物理机断电了
+  2. 网络中断了
+  
+
+如果可能的话, 你可以通过`kubectl describe node <节点名>`来查看node变成notReady的原因, 可能会显示MemoryPressure/DiskPressure
+也可以通过`journalctl -u kubelet -n 100`来查看kubelet的日志
+
+如果节点的状态变成NotReady/Unreachable后, 持续一定的时间, 那么就会开始驱逐pod
+这个时间可以通过--pod-eviction-timeout来控制, 默认是5分钟
+
+驱逐pod是通过污点来控制的, 对于NotReady/Unreachable的节点, control-plane会给节点添加上污点
+- 对于NotReady的node, 会添加上`node.kubernetes.io/not-ready=:NoSchedule`
+- 对于Unreachable的node, 会添加上`node.kubernetes.io/unreachable=:NoSchedule`
+
+如果你想要容忍这两个污点, 可以在生成pod的时候, 添加上污点容忍
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: resilient-pod
+  labels:
+    app: critical-service
+spec:
+  containers:
+  - name: main-container
+    image: nginx:latest
+    ports:
+    - containerPort: 80
+  # 容忍节点 NotReady 和 Unreachable 状态
+  tolerations:
+  - key: "node.kubernetes.io/not-ready"
+    operator: "Exists"
+    effect: "NoExecute"
+    tolerationSeconds: 600  # 容忍 NotReady 状态 10 分钟
+  - key: "node.kubernetes.io/unreachable"
+    operator: "Exists"
+    effect: "NoExecute"
+    tolerationSeconds: 300  # 容忍 Unreachable 状态 5 分钟
+```
+
+被驱逐的pod会在原节点被删除, 如果是裸pod那么会消失, Deployment/StatefulSet控制的pod会在其他的节点上重建, 如果有可能的话
+
+但是对于daemonset控制的pod, 这种pod默认是能够容忍上面两个污点的, 并且是无限的时长,  所以ds控制的pod不会被驱逐
+
+如果节点恢复后, 那么node的节点会先变成NotReady, 然后kubelet重新注册, 发送心跳, 然后node的状态变成Ready

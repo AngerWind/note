@@ -28,7 +28,7 @@ go build -o ./build/aaa.exe -ldflags "-w -s" aaa
 goos指定要编译的目标平台, goarch指定cpu的架构
 
 ~~~go
-// max下编译为Linux和Window64为可执行程序
+// max下编译为Linux和Window64为可执行程序, 或者在git bash下执行
 CGO_ENABLED=0 GOOS=linux  GOARCH=amd64  go build main.go
 CGO_ENABLED=0  GOOS=windows  GOARCH=amd64  go build main.go
 
