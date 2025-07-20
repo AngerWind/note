@@ -14,14 +14,26 @@ go run xxx.go # 执行xxx.go文件
 
 go build xxx.go # 编一个xxx.go, 生成xxx.exe
 
-go build -o aaa.exe bbb.go # 编译bbb.go, 生产aaa.exe
+go build -o aaa.exe bbb.go # 编译bbb.go, 生成aaa.exe
 
 # 编译根目录下的aaa文件夹, 将aaa.exe生成到./build下
 # -ldflags "-w -s"的作用是减少二进制文件的大小
 go build -o ./build/aaa.exe -ldflags "-w -s" aaa
+
+
+#------------------go install----------------------------------
+# go install主要用于编译并安装go程序到指定的项目
+# 他会将编译后的可执行文件放到$GOPATH/bin目录下
+# 他会将编译后的.a静态库文件放到$GOPATH/pkg目录下
+
+# 下载github项目并编译, 安装
+go install github/go-delve/delve/cmd/dlv@latest
+
+# 在项目目录下执行, 会编译当前目录中的main包, 安装可执行文件
+go install
 ~~~
 
-#### go 交叉编译
+### go 交叉编译
 
 在交叉编译的情况下, 必须关闭cgo功能, cgo的主要功能是在go中调用c语音的代码
 
@@ -50,13 +62,157 @@ go build main.go
 
 
 
+### dlv远程debug
+
+要使用dlv进行远程debug, 首先需要在远程的linux上安装go和git
+
+#### 安装git和go
+
+1. 安装go
+
+   ~~~shell
+   # 下载go1.22.12.linux-amd64.tar.gz到/opt/module/ 下面
+   unzip go1.22.12.linux-amd64.tar.gz
+   
+   mkdir -p /opt/module/go/go1.22.12 /opt/module/go/
+   cd /opt/module
+   tar -xzvf go1.22.12.linux-amd64.tar.gz -C /opt/module/go/go1.22.12/
+   mv go/go1.22.12/go/* go/go1.22.12/
+   rm -rf ./go/go1.22.12/go
+   ~~~
+
+2. 设置go环境变量
+
+   ~~~shell
+   cat <<EOF > /etc/profile.d/myenv.sh
+   export GOROOT=/opt/module/go/go1.22.12
+   export GOPATH=/opt/module/go/gopath
+   export PATH=\$PATH:\$GOROOT/bin
+   export PATH=\$PATH:\$GOPATH/bin
+   EOF
+   
+   source /etc/profile.d/myenv.sh
+   ~~~
+
+3. 查看go是否安装好
+
+   ~~~shell
+   go version
+   ~~~
+
+4. 安装git
+
+   ~~~shell
+   sudo yum install -y git
+   git --version
+   ~~~
+
+   
+
+#### 编译dlv
+
+1. 编译dlv
+
+   ~~~shell
+   # 方式1, 如果可以直接连接外网
+   go install github.com/go-delve/delve/cmd/dlv@latest
+   
+   # 方式2, 如果git install没有成功, 那么可以先git clone 先拉下代码来
+   git clone https://github.com/go-delve/delve
+   cd delve
+   go install github.com/go-delve/delve/cmd/dlv
+   
+   # 方式3, 如果无法访问github, 那么可以windows下载好代码, 传到linux上, 然后
+   cd delve
+   go install github.com/go-delve/delve/cmd/dlv
+   ~~~
+
+2. 编译好之后, 会在gopath/bin目录下生成dlv命令
+
+   ~~~shell
+   ls $(go env GOPATH)/bin/dlv
+   dlv --help # 因为我们之前将$GOPATH/bin 添加到了PATH下
+   ~~~
+
+#### 编译工程
+
+~~~shell
+# 如果你想项目是在windows下, 那么要交叉编译
+# -N 禁止编译器优化, -l 禁止内联, 用于debug
+CGO_ENABLED=0 GOOS=linux  GOARCH=amd64 go build -gcflags "all=-N -l" -o app main.go
+~~~
 
 
 
 
 
+#### 部署和debug
 
-#### go值类型与引用类型, 零值
+使用dlv有两种方式
+
+- 一种是通过dlv来启动go程序, 然后进行debug
+- 一种是go程序已经启动了, 通过dlv来attach到进程上面, 进行debug
+
+先说第一种
+
+~~~shell
+# --listen     表示要监听的端口
+# --headless   以非交互模式启动, 主要用于远程debug, 如果直接通过dlv来debug的话, 那么要设置为false
+# --api-version=2	指定 API 版本，当前主流 IDE（如 VSCode、GoLand）一般使用 v2
+# --accept-multiclient	允许多个客户端连接调试（否则默认只接受一个连接）
+# check-go-version=false	跳过 Go 版本检查（版本不匹配时不报错）
+# exec ./plutus       执行 plutus 这个可执行文件进行调试
+# --    分隔符，告诉 Delve 后面的参数是传给被调试程序的
+# -config=conf/conf.test.toml 是传给你自己程序 ./plutus 的参数，比如配置文件路径
+# --continue 告诉程序直接执行, 不用等goland的连接, 如果不指定这个参数, 那么程序不执行, 等到goland连接之后才执行
+
+
+# 连接之后, 通过ctrl+c 无法终端程序, 只能另外启动一个shell来kill程序
+# 或者通过goland连接dlv程序, 然后关闭goland debug的同时关闭dlv
+dlv \
+  exec ./hello \
+  --listen=:2345 \
+  --headless=true \
+  --api-version=2 \
+  --accept-multiclient \
+  --check-go-version=true \
+  --continue \
+  -- -config=conf/conf.test.toml
+~~~
+
+再说第二中, attach到一个程序上
+
+~~~shell
+# 首先要启动你的go程序
+./hello
+
+# 查看这个go程序的pid
+ps -ef | grep hello
+
+# 然后通过dlv attach到这个go程序上, 这样就能通过goland来debug了
+# 当你使用attach附加到一个正在运行的 Go 程序时，Delve 会暂停该程序的执行，等待你进行调试。
+# 如果你加上 --continue 参数,Delve 会在附加成功后立即让程序继续运行，这在使用 IDE（如 GoLand）远程 attach 时非常常见，因为你并不想手动 resume 程序。
+dlv attach <pid> \
+  --headless \
+  --listen=:2345 \
+  --api-version=2 \
+  --accept-multiclient \
+  --continue
+~~~
+
+
+
+只要通过上面两种方式启动程序之后, 在goland中添加debug程序
+
+![image-20250719123923324](img/go/image-20250719123923324.png)
+
+上面那个`On Disconnect`表示关闭goland上的debug程序的时候, 是继续运行dlv跑程序, 还是关掉dlv和程序
+
+
+
+
+
+## go值类型与引用类型, 零值
 
 值类型: 数字, string, bool, array, struct   
 
@@ -2274,8 +2430,12 @@ func main() {
 
    - 他首先会查找`$GOROOT/src`下去查找这个文件夹, 比如fmt
 
-   - 如果没有, 那么就去`$GOPATH/src`下查找这个文件夹, 比如第三方包
+     比如`import fmt`, 他会去查找`$GOROOT/src/fmt`
 
+   - 如果没有, 那么就去`$GOPATH/src`下查找这个文件夹, 比如第三方包
+   
+     比如`import "github.com/gin-gonic/gin"`, 他会去查找`$GOPATH/src/github.com/gin-gonic/gin`
+   
    - 如果是相对路径, 比如`./model` , 那么会去当前目录下查找model文件夹
 2. 找到模块的文件夹之后, 他会读取文件夹下的每一个文件
 
@@ -2284,7 +2444,7 @@ func main() {
    - 创建出全局的常量, 变量, 函数, 结构体等等
    - **执行文件内的init函数**
 
-3. 执行完文件夹中的每一个文件之后,  首字母大写的函数, 全局变量, 全局常量等等, 会被导出
+3. 执行完文件夹中的每一个文件之后,  首字母大写的函数, 全局变量, 全局常量等等, 会被**导出**
 
    之后就可以使用`模块名.xxx`来引用具体的定义了
 
@@ -2292,9 +2452,9 @@ func main() {
 
 可以看出, go path的方式有如下几个弊端
 
-1. 创建的项目必须放在`$GOPATH/src`下, 否则我们在导入当前项目的包的时候, 必须写相对于`$GOPATH/src`的相对路径,  如果是在其他目录下, 就会导致相对路径特别的长
+1. 创建的项目必须放在`$GOPATH/src`下, 否则我们在导入当前项目的包的时候, 必须写相对于`$GOPATH/src`的相对路径,  或者相对路径
 
-2. 我们创建的项目, 或者第三方项目, 必须放在`$GOPATH/src`下, 否则无法被本地的其他项目使用
+2. 我们创建的项目, 或者第三方项目, 必须放在`$GOPATH/src`下, 否则需要使用特别长的相对路径
 
 3. 对于模块, 不进行版本的管理
 
@@ -2304,7 +2464,6 @@ func main() {
    go env -w GO111MODULE=off
    ~~~
 
-   
 
 基于此, 所以这种方案比较繁琐, 但是勉强能用
 
@@ -2368,6 +2527,7 @@ go get -u // 同上, 但是会将go.mod中依赖包的版本更新为同一个�
 
 go get github.com/gin-gonic/gin // 如果go.mod中指定了版本, 那么下载指定, 否则下载最新版本, 并将依赖设置到go.mod中
 go get -u github.com/gin-gonic/gin // 如果go.mdo中指定了版本, 那么下载同一个大版本的最新版本, 否则下载最新的版本, 并更新go.mod
+go get github.com/gin-gonic/gin@latest // 下载最新版本的依赖, 并跟新go.mod
 go get -u github.com/gin-gonic/gin@1.6.2 // 下载指定版本的依赖, 并更新go.mod
 
 go mod tidy // 移除go.mod中没有用到的依赖
@@ -2492,6 +2652,94 @@ require (
 ```
 
 除了增加 `+incompatible`（不兼容）标识外，在其使用上没有区别。
+
+
+
+### vendor
+
+#### 历史背景
+
+>  go mod和go vendor都是go的包管理工具
+
+- 在2015年go1.5的时候, 实验性质添加了vendor的机制, 最开始的时候需要手动设置环境变量`GO15VENDOREXPERIMENT=1`来开启这个功能
+- 2016年2月 Go 1.6 vendor 机制 默认开启
+- 2016年8月 Go 1.7: vendor 目录永远启用, 并且去掉了`GO15VENDOREXPERIMENT=1`环境变量
+- 2018年8月 Go 1.11发布 Modules 作为官方试验
+- 2019年2月 Go 1.12发布 Modules 默认为 auto
+- 2019年9月 Go 1.13 版本默认开启 Go Mod 模式
+
+
+
+但是到了Golang 1.11之后，由于引入了Module功能，在运行go build时，优先引用的是Module依赖包的逻辑，所以Vendor目录就被“无视”了，进而可能发生编译错误， moudle 说还是很想他，于是 提供了 `go mod vendor `命令用来生成 vendor 目录。这样能避免一些编译问题，依赖可以先从 vendor 目录进行扫描。
+
+
+
+#### vendor的机制
+
+vendor允许你将项目所依赖的第三方包复制到项目的 `vendor` 目录中, 他有两个优点:
+
+1. 所有的依赖包都在vendor目录中, 使项目可以独立于外部环境构建(离线构建)
+2. 一旦依赖包复制到vendor目录中, 这些依赖包的版本就固定了, 不会因为外部包的更新而导致vendor中的包更新, 从而避免了兼容性的问题
+
+一旦启用了vendor功能, 并且在项目目录下有vendor这个目录, 那么`go build`或者`go run`命令在执行的时候, 会按照以下顺序去查找包
+
+- 当前包下的 vendor 目录
+- 向上级目录查找，直到找到 src 下的 vendor 目录
+- 在 GOROOT 目录下查找
+- 在 GOPATH 下面查找依赖包
+
+
+
+
+
+#### 未解决的问题
+
+vendor只是将外部包拷贝过来, 无法精确的引用 外部包进行版本控制，不能指定引用某个特定版本的外部包
+
+但是一旦外部包升级，vendor 下面的包会跟着升级，而且 vendor 下面没有完整的引用包的版本信息， 对包升级带来了无法评估的风险。
+
+
+
+#### 使用方式
+
+1. 启用 Go Modules：在 Go 1.11 及以上版本中，推荐使用 Go Modules 来管理依赖包。首先确保你的项目启用了 Go Modules：
+
+   ```ruby
+   go mod init <module-name>
+   ```
+
+2. 下载依赖包：使用 `go get` 命令下载项目所需的依赖包：
+
+   ```go
+   go get github.com/containrrr/shoutrrr@v0.8.0
+   ```
+
+3. 创建 `vendor` 目录：使用 `go mod vendor` 命令将所有依赖包复制到 `vendor` 目录中：
+
+   ```go
+   go mod vendor
+   ```
+
+4. 可以查看vendor中的模块
+
+   ~~~shell
+   # -v参数将vendor中的模块打印到控制台
+   go mod vendor -v
+   ~~~
+
+5. 构建项目：在构建项目时，可以使用 `mod=vendor` 标志来指定使用 `vendor` 目录中的依赖包：
+
+   ```shell
+   # -mod用于指定编译的时候的行为, 可选值有:
+   # readonly: 只读模式, 仅在go.sum和go.mod都齐全的情况下构建, 不会尝试联网下载依赖, 缺少依赖就报错
+   # vendor: 使用项目根目录下的 vendor/ 目录中的依赖。不会访问网络或 go.sum，要求使用 go mod vendor命令事先生成 vendor/。
+   # mod: (默认值), 正常模式。使用 go.mod 文件，并根据需要从网络下载依赖。如果缺少依赖或版本不一致，会修改 go.sum 并尝试下载依赖
+   go build -mod=vendor
+   ```
+
+
+
+
 
 
 
