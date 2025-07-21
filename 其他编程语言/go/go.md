@@ -5,9 +5,7 @@
 3. 配置`GOPATH`环境变量, 用以保存第三方jar包
 4. 执行`go version`
 
-
-
-### go命令行
+## go命令行
 
 ~~~bash
 go run xxx.go # 执行xxx.go文件
