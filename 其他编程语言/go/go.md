@@ -1143,7 +1143,7 @@ func main() {
     s2 := make([]int, 4) // 容量可以省略, 那么容量与长度相同
 	fmt.Println(s1, len(s1), cap(s1)) // [0 0 0 0] 4 20
 
-	// 方式3
+	// 方式3, 通过字面量的方式创建
 	s2 := []int{1, 2, 98}
 	fmt.Println(s2, len(s2), cap(s2)) // [1 2 98] 3 3
 }
@@ -1308,7 +1308,7 @@ func main() {
 	var map2 map[int]string = make(map[int]string) // 创建一个map, 初始容量为1
 	var map3 = make(map[int]string, 10)            // 创建一个map, 并指定初始容量
     
-    // 直接创建map
+    // 通过字面量的方式创建map
     map4 = map[int]string {
         1: "zhangsna",
         2: "lisi", // 注意这里有一个逗号
