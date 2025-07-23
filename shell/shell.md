@@ -1410,6 +1410,86 @@ echo "脚本的真实路径：$basedir"
 
 
 
+### timeout
+
+timeout的作用是: `在指定的时间内运行一个命令，如果超时则终止该命令的执行`
+
+他的格式如下:
+
+~~~shell
+# command表示要执行的命令, args表示执行命令的参数
+timeout [OPTION] DURATION COMMAND [ARG]...
+~~~
+
+1. duration是超时的时间, 可以指定1s, 3m, 4h, 7d这种格式
+2. 默认情况下, 如果超时了, 那么timeout会发送SIGTERM(信号15)给这个command, 如果这个command接受到信号后没有退出, 那么也不会强制kill这个命令, 而是继续等待command执行, 直到退出
+3. 默认情况下
+   - 如果命令在时间内执行完, 那么$?就是command的状态码
+   - 如果command超时了, 被timeout发送的信号15终止了, 那么返回码是124
+   - 如果command被其他程序发出的信号终止了, 那么返回码是128+信号, 比如137表示command被其他程序kill -9了
+
+~~~shell
+timeout 2m ./long_running_script.sh
+~~~
+
+参数:
+
+- `--preserve-status`: 告诉timeout, 即使超时了, 也使用command的状态码作为timeout命令的状态码
+
+  ~~~shell
+  # example.sh
+  #!/bin/bash
+  sleep 2
+  exit 42
+  
+  # 不加--preserve-status参数, 那么timeout的状态码是124, 因为超时了
+  timeout 1s ./example.sh
+  echo $?
+  
+  # 加--preserve-status参数, 那么timeout的状态码是42, 即使超时了也使用example.sh的状态码作为timeout的状态码
+  timeout --preserve-status 1s ./example.sh
+  echo $?
+  ~~~
+
+- `-s signale`: 指定在超时的时候, 要发送的终止command的信号, 默认是SIGTERM(信号15), 你也可以指定为SIGKILL(信号9)来强制杀死command
+
+  ~~~shell
+  timeout -s SIGKILL 5s ./hang_script.sh # 超时强制kill
+  timeout  5s ./hang_script.sh # 超时发送SIGTERM
+  ~~~
+
+- `--kill-after=5s`: 被 timeout 的命令是在 **子进程中执行**，所以如果该命令再 fork 出子进程，它们可能不会被一并杀掉。解决方案可以用 `--kill-after` 强制终止整个进程组。
+
+  ~~~shell
+  timeout --kill-after=5s 10s ./my_script.sh # 10s后超时, 并且在超时的5s后, 杀死整个进程组
+  ~~~
+
+- `--foreground`: 用于在交互式环境下（尤其是使用 Ctrl+C 等终端信号时）**让被执行的command接收输入和终端信号**，而不是由 `timeout` 命令本身处理这些信号。
+
+  如果你在脚本中执行timeout命令, 并且希望用户能随时用 `Ctrl+C` 终止的程序，加上 `--foreground` 是非常必要的
+
+  ~~~shell
+  # 如果不加--foreground, 我在终端按ctrl+c, 那么实际上终端信号被timeout处理掉了, timeout退出来了, 但是bash命令还在执行
+  timeout 10s bash
+  
+  # 加--foreground, 我在终端按ctrl+c, 那么是bash在处理ctrl+c信号, 那么是bash命令退出了, 然后timeout也退出了
+  timeout --foreground 10s bash
+  ~~~
+
+  
+
+### trap
+
+
+
+
+
+
+
+
+
+
+
 ## 其他
 
 
