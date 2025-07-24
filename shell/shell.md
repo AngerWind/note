@@ -1490,6 +1490,93 @@ timeout 2m ./long_running_script.sh
 
 
 
+### jq
+
+jq表示的是json query, 主要用于从json中取值, 格式为
+
+~~~shell
+jq <filter> <input file>
+~~~
+
+- 直接取值
+
+  ~~~shell
+  echo '{"name": "Alice", "age": 30}' | jq . # 输出整个json
+  echo '{"name": "Alice", "age": 30}' | jq .name # Alice
+  echo '[{"name": "Alice"}, {"name": "Bob"}]' | jq '.[1].name' # Bob
+  ~~~
+
+- filter中还可以指定select来对指定的元素进行过滤
+
+  ~~~shell
+  # .[]表示取数组中的每一个对象, select(.age > 28)表示对每一个对象, 查询出age>28的对象
+  echo '[{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]' | jq '.[] | select(.age > 28)'
+  
+  # 输出
+  {
+    "name": "Alice",
+    "age": 35
+  }
+  ~~~
+
+- filter还可以用来直接修改json中字段的值
+
+  ~~~shell
+  echo '{"name": "Alice", "age": 30}' | jq '.age = 35'
+  # 输出
+  {
+    "name": "Alice",
+    "age": 35
+  }
+  ~~~
+
+- filter还可以提取多个字段
+
+  ~~~shell
+  echo '{"name": "Alice", "age": 30, "city": "New York"}' | jq '{name, city}'
+  # 输出
+  {
+    "name": "Alice",
+    "city": "New York"
+  }
+  ~~~
+
+参数:
+
+-   jq默认会格式化json数据, 你也可以通过-c选项来获得紧凑的格式(没有空格和换行)
+
+  ~~~shell
+    echo '{"name": "Alice", "age": 30}' | jq -c .
+    # {"name":"Alice","age":30}
+  ~~~
+
+- 默认情况下, jq会将取到的值原样返回, 你也可以通过-r来指定返回真是的值
+
+  如果你只关心实际上值是什么东西, 那么`-r`参数非常有用
+
+  ~~~shell
+  echo '{"name": "Alice"}' | jq .name # "Alice"
+  echo '{"name": "Alice"}' | jq -r .name # Alice
+  ~~~
+
+jq常常用来获取k8s中secret, deployment的信息, 比如下面的shell获取secret中的配置
+
+~~~shell
+# 通过-o json指定输出的格式为json, 然后通过jq取secret中的值, 然后通过base64来解码
+kubectl -n service-software  get secrets middleware-unified-secrets -o json | jq -r .data.SEASQL_USER_BASE | base64 -d
+kubectl -n service-software  get secrets middleware-unified-secrets -o json | jq -r .data.SEASQL_PWD_BASE | base64 -d
+kubectl -n service-software  get configmap  middleware-unified-config -o json | jq -r .data.SEASQL_PORT_BASE
+
+# 当然你也可以直接通过 -ojsonpath来指定, 只是jq可以支持复杂的查询
+kubectl get cm -n service-software middleware-unified-config -ojsonpath={.data.SEASQL_HOST_BASE}
+~~~
+
+
+
+
+
+
+
 ## 其他
 
 

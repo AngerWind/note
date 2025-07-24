@@ -7,17 +7,46 @@
 kubectl config set-context --current --namespace=my-namespace
 
 kubectl get nodes # 查看node状态
+kubectl get nodes --show-labels # 查看node状态, 带label
+kubecttl get nodes -o wide # 查看node状态, 带node的ip地址, 当你想看集群中的所有节点的ip的时候特别有用
+
+
 kubectl label nodes hostnamexxx  name=value # 给node打label标签
 kubectl label nodes hostnamexxx  name=value- # 删除label标签
-kubectl get nodes --show-labels # 查看node状态, 带label
+
 
 kubectl apply -f xxx.yaml # 按照yaml的指示创建对应的资源
 kubectl delete -f xxx.yaml # 按照yaml的指示删除对应的资源, 
 
 kubectl edit svc svc_name # 直接修改已经创建的svc的配置, 直接生效
 kubectl edit deploy deployment_name # 直接修改已经创建的deployment的配置, 直接生效
-
 ~~~
+
+宿主机和Pod之间的文件复制
+
+~~~shell
+# 格式, source, destination可以是本地路径也可以是pod内的路径
+# -n 用于指定pod所在的namespace
+kubectl cp <source> <destination> [options] -n <namespace>
+~~~
+
+案例:
+
+~~~shell
+# 将本地的文件复制到pod中
+kubectl cp ./file.txt mypod:/tmp/file.txt -n my-namespace
+
+# 将mydir下的所有文件, 复制到/tmp/mydir下面
+kubectl cp ./mydir mypod:/tmp/mydir -n my-namespace
+~~~
+
+如果一个pod下面有多个容器, 那么你还要指定容器的名字格式为 `<pod-name>/<container-name>`：
+
+```
+kubectl cp mypod/mycontainer:/tmp/file.txt ./file.txt -n -n my-namespace
+```
+
+
 
 
 
