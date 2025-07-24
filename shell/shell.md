@@ -312,7 +312,7 @@ echo ${url}
 
 > 单引号和双引号的区别
 
-单引号直接输出，双引号会对变量取值
+单引号不允许插值, 直接输出，双引号会对变量取值
 
 ~~~shell
 url="http://c.biancheng.net"
@@ -344,7 +344,7 @@ unset不能删除只读变量
 
 
 
-### shell变量作用域
+### 变量作用域
 
 shell变量的作用域分为三种
 
@@ -379,7 +379,7 @@ local a=99
 
 
 
-### shell命令替换
+### 命令替换
 
 作用是将命令的**输出**结果复制给某个变量
 
@@ -431,7 +431,7 @@ $()支持嵌套，如`$(wc -l $(ls | sed -n '1p'))`
 
 
 
-### shell位置参数
+### 位置参数
 
 给shell脚本或者shell函数传递的参数，在内部可以使用$n的形式来接收，如$1表示第一个参数，$2 表示第二个参数，依次类推。如果参数个数太多，达到或者超过了 10 个，那么就得用`${n}`的形式来接收了，例如 ${10}、${23}
 
@@ -439,7 +439,7 @@ $()支持嵌套，如`$(wc -l $(ls | sed -n '1p'))`
 
 
 
-### shell特殊变量
+### 特殊变量
 
 $0 当前脚本文件名
 
@@ -496,6 +496,98 @@ a
 b
 c
 ~~~
+
+
+
+### 变量的插值
+
+在shell中, 你可以通过变量的插值来生成一个新的字符串, **插值是立即执行的**, 即定义字符串的时候, 就已经插值了
+
+~~~shell
+msg="hello world"
+echo "say: $msg"
+~~~
+
+如果有歧义的话, 那么可以使用`${}`的形式
+
+~~~shell
+msg="lisi"
+echo "haha ${msg}你好"
+~~~
+
+
+
+
+
+如果你的变量中包含了空格或者其他的特殊字符, 那么最好将他用引号括起来
+
+~~~shell
+msg="hello world"
+echo "say: $msg" # say: hello world
+echo "say: "$msg"" # say: hello world
+~~~
+
+在这里, 双引号不需要转义, 因为他不是作为普通的双引号存在, 他的作用是保证msg中的内容是一个整体, 如果其中有空格, 那么也不会被分开对待
+
+虽然在大部分的情况下, 使不使用引号是一样的
+
+案例1
+
+~~~shell
+function say() {
+  echo $1
+  echo $2
+}
+msg="hello world"
+
+say $msg
+#hello
+#world
+
+say "$msg"
+#hello world
+#
+~~~
+
+案例2
+
+~~~shell
+msg=("apple" "banana cherry")
+for ele in ${msg[@]}
+do
+  echo $ele
+done
+#apple
+#banana
+#cherry
+
+for ele in "${msg[@]}"
+do
+  echo $ele
+done
+#apple
+#banana cherry
+~~~
+
+
+
+注意: 在双引号中, 单引号只是作为普通的纯文本, 既没有不允许变量插值, 也没有让变量作为一个整体的作用, 单引号只有在最外层的时候, 才有不允许变量插值的作用
+
+~~~shell
+msg="hello world"
+echo "say: "$msg"" # say: hello world
+echo "say: '$msg'" # say: 'hello world'
+~~~
+
+
+
+如果你在字符串中, 想要表示一个普通的双引号, 那么你需要进行转义
+
+~~~shell
+echo "say:\"$msg\"" # say:"hello world"
+~~~
+
+
 
 
 
@@ -872,6 +964,102 @@ done
 ~~~shell
 for arg in "$@"; do
   echo "你传入的参数：$arg"
+done
+~~~
+
+
+
+你可以直接对字符串进行for循环, 他会将字符串按照空格和换行进行拆分
+
+~~~shell
+msg="hello world"
+for world in $msg
+do
+  echo $world
+done
+# 输出
+hello
+world
+~~~
+
+你也可以直接对其他命令的执行结果进行遍历, 即使他们是多行的
+
+~~~shell
+$ ll
+total 1
+-rw-r--r-- 1 sys49482 1049089   0 七月 24 20:27 1.txt
+-rw-r--r-- 1 sys49482 1049089   0 七月 24 20:27 2.txt
+-rw-r--r-- 1 sys49482 1049089   0 七月 24 20:28 3.txt
+-rw-r--r-- 1 sys49482 1049089 504 六月 24 17:45 desktop.ini
+
+$ msg=`ll`
+
+$ for word in $msg; do echo $word; done;
+total
+1
+-rw-r--r--
+1
+sys49482
+1049089
+0
+七月
+24
+20:27
+1.txt
+-rw-r--r--
+1
+sys49482
+1049089
+0
+七月
+24
+20:27
+2.txt
+-rw-r--r--
+1
+sys49482
+1049089
+0
+七月
+24
+20:28
+3.txt
+-rw-r--r--
+1
+sys49482
+1049089
+504
+六月
+24
+17:45
+desktop.ini
+~~~
+
+
+
+for循环也可以遍历数组
+
+~~~shell
+arr=("apple" "banana" "cherry dick")
+
+# ${arr[@]} 表示数组中所有的元素
+# 双引号防止有空格的字符串被拆分
+# 这就等效于 for element in "apple" "banana" "cherry dick"; do
+for element in "${arr[@]}"; do
+  echo "$element"
+done
+
+# 使用索引遍历数组
+arr=("apple" "banana" "cherry")
+# ${#arr[@]}表示数组的长度, ${arr[i]} 表示按照下表取值
+for ((i=0; i<${#arr[@]}; i++)); do
+  echo "${arr[$i]}"
+done
+
+# 遍历的时候, 获取下标
+arr=("apple" "banana" "cherry")
+for index in "${!arr[@]}"; do
+  echo "The element at index $index is ${arr[$index]}"
 done
 ~~~
 
@@ -1569,6 +1757,19 @@ kubectl -n service-software  get configmap  middleware-unified-config -o json | 
 
 # 当然你也可以直接通过 -ojsonpath来指定, 只是jq可以支持复杂的查询
 kubectl get cm -n service-software middleware-unified-config -ojsonpath={.data.SEASQL_HOST_BASE}
+~~~
+
+
+
+### grep
+
+grep用来查找包含指定内容的字符串, 不过他有几个选项在shell中比较有用
+
+~~~shell
+grep -i 'hello' file.txt # -i 不区分大小写
+grep -v 'hello' file.txt # 反选, 即选择不匹配的行
+grep -w 'hello' file.txt # 匹配一行中完整的单词, 他不会匹配 hellooo
+grep -x 'hello' file.txt # 精确匹配一行, 常常用来判断其他命令的输出是否包含指定的内容, 比如输出的内容中是否包含特定的数据库
 ~~~
 
 
