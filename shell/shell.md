@@ -2118,6 +2118,57 @@ timeout 2m ./long_running_script.sh
 
 ### trap
 
+trap用于在脚本中, 当**脚本接收到特定信号**或遇到某些事件（如退出、错误、终止）时，**自动执行指定命令**。
+
+语法:
+
+~~~shell
+trap '命令' SIGNAL1 SIGNAL2 ...
+~~~
+
+案例:
+
+~~~shell
+# 无论脚本正常结束还是被 exit、Ctrl+C、kill 等终止，都会执行清理操作
+trap 'rm -f /tmp/my_tmp_file' EXIT
+
+# 用户在执行脚本的过程中, 按下ctrl+c, 打印并退出
+trap 'echo "你按了 Ctrl+C，脚本被中断"; exit 1' SIGINT
+
+# 捕获SIGTERM信号, 比如timeout发出来的
+trap 'echo "收到终止信号，开始清理..."; cleanup; exit 1' SIGTERM
+
+# trap 'echo "发生错误，退出码为 $?"; exit 1' ERR
+trap 'echo "发生错误，退出码为 $?"; exit 1' ERR
+
+# 一次性捕获多个信号
+trap 'echo "被打断"; exit 1' SIGINT SIGTERM SIGQUIT
+~~~
+
+示例:
+
+~~~shell
+#!/bin/bash
+
+cleanup() {
+  echo "清理临时文件..."
+  rm -f /tmp/tmpfile
+}
+
+# 脚本退出的时候, 执行cleanup
+trap cleanup EXIT
+# 接受ctrl+c的型号, 并执行exit 2
+trap 'echo "收到 SIGINT，取消操作"; exit 2' SIGINT
+
+echo "创建临时文件"
+touch /tmp/tmpfile
+sleep 100
+
+# 运行中按下 Ctrl+C，会输出：
+收到 SIGINT，取消操作
+清理临时文件...
+~~~
+
 
 
 
