@@ -517,6 +517,21 @@ echo "haha ${msg}你好"
 
 
 
+你可以在变量插值的时候, 如果变量没有被设置, 或者为"", 那么直接取默认值
+
+~~~shell
+name="Alice"
+echo ${name:-"Unknown"}
+
+unset name
+ehco ${name:-"Unknown"}
+
+port=""
+echo ${port:-8080}
+~~~
+
+
+
 
 
 如果你的变量中包含了空格或者其他的特殊字符, 那么最好将他用引号括起来
@@ -589,13 +604,116 @@ echo "say:\"$msg\"" # say:"hello world"
 
 
 
+### 删除变量
+
+在 Bash 中，unset 是一个内置命令，用于 删除变量、数组元素或函数，释放它们占用的内存空间。它的主要作用是 清理不再需要的变量或数据，避免脚本中出现意外的值残留。
+
+1. 基本用法
+
+  ~~~shell
+  name="Alice"
+  echo $name  # 输出: Alice
+  
+  unset name  # 删除变量 name
+  echo $name  # 输出: (空)
+  ~~~
+
+2. 删除数组元素
+
+   ~~~shell
+   fruits=("apple" "banana" "orange")
+   echo ${fruits[1]}  # 输出: banana
+   
+   unset fruits[1]     # 删除索引为 1 的元素（banana）
+   echo ${fruits[@]}   # 输出: apple orange
+   ~~~
+
+   在删除数组中的元素, 后面的元素不会往前移动, 只是这个索引被删除了
+
+   实际上base中的数组是稀疏的, 而不是连续的
+
+   ~~~shell
+   $ fruit=("apple" "banana" "orange")
+   
+   $ echo ${fruit[@]}
+   apple banana orange
+   
+   $ unset fruit[1]
+   
+   $ echo ${fruit[@]}
+   apple orange
+   
+   $ echo ${#fruit[@]}
+   2
+   
+   $ echo ${!fruit[@]}
+   0 2
+   ~~~
+
+   
+
+3. 删除整个数组
+
+   ~~~shell
+   colors=("red" "green" "blue")
+   unset colors         # 彻底删除数组 colors
+   echo ${colors[@]}    # 输出: (空)
+   ~~~
+
+4. 删除关联数组的键值对
+
+   ```shell
+   declare -A user=(["name"]="Alice" ["age"]=25)
+   echo ${user["age"]}  # 输出: 25
+   
+   unset user["age"]    # 删除键 "age"
+   echo ${user["age"]}  # 输出: (空)
+   ```
+
+5. 删除函数
+
+   ~~~shell
+   greet() { echo "Hello!"; }
+   greet  # 输出: Hello!
+   
+   unset -f greet       # 删除函数 greet
+   greet  # 报错: greet: command not found
+   ~~~
+
+
+
+注意事项:
+
+1. 删除不存在的变量不会报错
+
+   ~~~shell
+   unset non_existent_var  # 静默执行，无错误
+   ~~~
+
+2. 对只读变量无效
+
+   ~~~shell
+   readonly PI=3.14
+   unset PI  # 报错: PI: readonly variable
+   ~~~
+
+3. 无法删除环境变量
+
+   ~~~shell
+   export PATH="/usr/bin"
+   unset PATH  # 可以删除，但会影响当前 shell
+   export -n PATH  # 更安全的做法：仅移除导出属性，保留变量值
+   ~~~
+
+   
 
 
 
 
 
+## 数学计算
 
-## 运算符
+### 整数计算
 
 在默认情况下, 如果你直接定义`a=1+1`, 你会发现shell将`1+1`当做了字符串
 
@@ -606,6 +724,8 @@ echo $a
 
 如果你想要进行数值运算的话, 可以使用`$((表达式))`或者`$[表达式]`
 
+这种方式的计算只支持整数, 除法也是返回整数
+
 ~~~shell
 a=$[( 2 + 3 ) * 4]
 echo $a # 20
@@ -613,6 +733,55 @@ echo $a # 20
 b=$(( (2+3) * 4 ))
 echo $b # 20
 ~~~
+
+需要注意的是: 在$(())中, 或者$[]中, 不需要使用$来取值
+
+~~~shell
+x=1
+echo $((x+2)) # 3
+~~~
+
+如果你是修改变量的值, 而不需要返回算数表达式的结果, 那么可以使用`(( 表达式 ))` 
+
+~~~shell
+x=1
+a=
+((a=x+2))
+echo $a # 3
+~~~
+
+
+
+
+
+
+
+使用let命令也可以直接进行数学计算, 变量在其中不需要使用$来取值
+
+~~~shell
+let "x = 5 + 2"
+echo $x
+~~~
+
+
+
+
+
+### 浮点数计算
+
+shell本身不支持浮点数计算, 如果要在shell中进行浮点数计算, 需要使用外部工具
+
+bc命令, 格式为`echo "scale=N; 表达式" | bc`
+
+~~~shell
+echo "scale=2; 10/3" | bc # 3.33
+~~~
+
+
+
+
+
+
 
 
 
@@ -1145,6 +1314,287 @@ echo "File is ready!"
 read -p "请输入你的名字: " -t 10 name 
 echo "你好，$name！"
 ~~~
+
+
+
+## 数组
+
+### 普通数组
+
+1. 定义数组
+
+   ~~~shell
+   # 方式 1：空格分隔的元素列表
+   arr=("apple" "banana" "cherry")
+   arr=(apple banana cherry)
+   arr=() # 空数组
+   
+   # 方式 2：也可以直接按照下标来定义, 没问题的
+   arr[0]="apple"
+   arr[1]="banana"
+   arr[2]="cherry"
+   ~~~
+
+2. 访问数组的元素
+
+   ~~~shell
+   echo ${arr[0]}  # 输出 apple
+   ~~~
+
+3. 修改数组的元素
+
+   ~~~shell
+   arr[0]=hello
+   ~~~
+
+4. 追加元素
+
+   ~~~shell
+   # 方式1, 直接通过索引追加
+   arr[3]="waterlemon"
+   
+   # 方式2, 使用+=来追加
+   arr+=("strawberry") # 追加单个元素
+   arr+=("longan" "haha") # 追加多个元素
+   
+   # 方式3, 两个数组的追加, 如果arr2中有删除元素, 那么会被自动忽略
+   arr=(1 2 3)
+   arr2=(4 5 6)
+   unset arr2[1]
+   arr+=("${arr2[@]}")
+   echo ${arr[@]} # 1 2 3 4 6
+   echo ${!arr[@]} # 0 1 2 3 4
+   echo ${#arr[@]} # 5
+   
+   # 方式4, 合并两个数组, 并创建新的数组, 如果arr2中有删除元素, 那么新的数组是连续的
+   arr=(1 2 3)
+   arr2=(4 5 6)
+   new_array=("${arr[@]}" "${arr2[@]}")
+   echo ${new_array[@]}
+   ~~~
+
+5. 获取所有的元素
+
+   ~~~shell
+   echo ${arr[@]}  # 输出 apple banana cherry
+   ~~~
+
+6. 获取数组的长度
+
+   ~~~shell
+   echo ${#arr[@]}  # 输出 3
+   ~~~
+
+7. 获取数组所有的索引
+
+   ~~~shell
+   echo ${!arr[@]} # 输出 0 1 2
+   ~~~
+
+8. for循环遍历数组
+
+   ~~~shell
+   for element in "${arr[@]}"; do
+     echo $element
+   done
+   
+   # 通过下标遍历
+   for i in "${!arr[@]}"; do
+     echo "Index $i has value: ${arr[$i]}"
+   done
+   ~~~
+
+   > 遍历数组的时候, 记得带上引号, 保证每个元素作为一个整体
+
+   ~~~shell
+   msg=("apple" "banana cherry")
+   for ele in ${msg[@]}
+   do
+     echo $ele
+   done
+   #apple
+   #banana
+   #cherry
+   
+   for ele in "${msg[@]}"
+   do
+     echo $ele
+   done
+   #apple
+   #banana cherry
+   ~~~
+
+9. 数组的切片
+
+   ~~~shell
+   arr=(apple banana cherry date elderberry)
+   echo ${arr[@]:1:3}  # 从索引1开始，取3个元素，输出 banana cherry date
+   ~~~
+
+   
+
+### 关联数组(map)
+
+从Bash4.0开始, 支持关联数组, 即使用字符串作为索引
+
+1. 创建关联数组
+
+   ~~~shell
+   # 先创建一个关联数组变量
+   declare -A fruits
+   fruits["a"]="apple" # 添加元素
+   fruits["b"]="banana"
+   fruits["c"]=25
+   
+   # 方式2, 一次性赋值
+   declare -A my_array=(
+     ["name"]="Alice"
+     ["age"]=25
+     ["city"]="new york"
+   )
+   ~~~
+
+2. 获取元素
+
+   ~~~shell
+   key=a
+   echo ${fruits["a"]}  # 输出 apple
+   echo ${fruits["$key"]}  # 输出 apple
+   ~~~
+
+3. 获取所有的key
+
+   ~~~shell
+   echo ${!my_array[@]} # name age city
+   ~~~
+
+4. 获取所有的value
+
+   ~~~shell
+   echo ${my_array[@]} # Alice 25 new york
+   ~~~
+
+5. 遍历map
+
+   ~~~shell
+   # 按照key来遍历
+   for key in "${!my_array[@]}"
+   do 
+     echo "key: $key, value: "${my_array["$key"]}"
+   done
+   
+   # 仅遍历value
+   for value in "${my_array[@]}"
+   do
+     echo "value: $value"
+   done
+   ~~~
+
+6. 添加元素
+
+   ~~~shell
+   # 直接通过key来追加
+   my_array["color"]=red # 有就修改, 没有就追加
+   
+   # 通过+=来添加元素
+   my_array+=(["debug"]="true" ["timeout"]="30")
+   
+   # 关联数组无法像普通数组一样, 通过+=来合并两个数组, 需要手动遍历
+   declare -A array1 array2 merged
+   array1=(["a"]=1 ["b"]=2)
+   array1=(["c"]=3 ["d"]=4)
+   for key in "${!array1[@]}" "${!array2[@]}"
+   do
+     merged+=(["$key"]="${array1["$key"]:-${arrray2["$key"]}}")
+   done
+   ~~~
+
+7. 修改和添加元素
+
+   ~~~shell
+   my_array["age"]=999 # 有就修改, 没有就追加
+   ~~~
+
+8. 删除元素
+
+   ~~~shell
+   unset my_array["color"] # 删除color和对应的value
+   ~~~
+
+9. 清空整个map
+
+   ~~~shell
+   unset my_array # 完全删除数组
+   ~~~
+
+10. 检查key是否存在
+
+    ~~~shell
+    if [[ -v my_array["name"] ]]
+    then
+      echo "key exists"
+    else 
+      echo "key not exists"
+    fi
+    ~~~
+
+关联数组并不支持内部的value还是数组或者关联数组, 如果你希望value还是一个数组, 那么使用带空格的字符串来表示
+
+~~~shell
+declare -A map=(
+["table1"]="hah1 world1 aa bb"
+["table2"]="aa bb cc dd"
+)
+~~~
+
+
+
+
+
+案例: word count
+
+~~~shell
+declare -A word_count
+text="apple banana apple orange banana apple"
+
+for word in $text; do
+    ((word_count["$word"]++)) # (())表示数学计算, 在其中不需要使用$取值, ++如果没有这个元素的话, 那么默认是0, 等效于
+    ((word_count["$word"] = ${word_count["$word"]:-0} +1 ))
+done
+
+for word in "${!word_count[@]}"; do
+    echo "$word: ${word_count[$word]}"
+done
+
+# 输出
+apple: 3
+banana: 2
+orange: 1
+~~~
+
+案例2: 拼接选项
+
+~~~shell
+declare -A exclude_map=(
+    ["trap_alarm"]="tbl_trap_data_alarm tbl_alarm_historytable_map"
+    ["trap_history"]="'tbl_trap_data_history_*' 'tbl_trap_data_history_vb_*'"
+    ["trap_data"]="'tbl_trap_data_2*' '*_serial_no_seq'"
+)
+
+exclude_patterns=()
+# 这是一个 if 判断语句
+[[ "$trap_switch" != "true" ]] && exclude_patterns+=(${exclude_map[trap_data]})
+[[ "$alarm_switch" != "true" ]] && exclude_patterns+=(${exclude_map[trap_alarm]} ${exclude_map[trap_history]})
+
+
+table_exclude_options=()
+for pattern in "${exclude_patterns[@]}"; do
+  table_exclude_options+=(--exclude-table="$pattern")
+done
+echo ${table_exclude_options[@]} # 获取要拼接的结果
+~~~
+
+
 
 
 
