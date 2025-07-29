@@ -865,6 +865,14 @@ fi
 
 
 
+还有一种比较其他的判断方法
+
+~~~shell
+
+~~~
+
+
+
 
 
 ### 常用的条件判断
@@ -873,16 +881,8 @@ fi
 
 1. 变量是否存在
 
-   ~~~shell
-   var=100
-   # var是要判断的变量,  x可以是任意值,abc都可以
-   # 原理是var如果存在, 那么${var+x}会返回x, 那么[]就返回真, 
-   # 如果var不存在, 那么${var+x}就返回空字符串, 那么[]就返回假
-   if [ ${var+x} ]; then 
-     echo "变量非空"
-   fi
-   ~~~
-
+   **在shell中, 没必要判断一个变量是否存在, 大部分情况下, 未定义的变量和空的字符串都是等效的**
+   
 2. 数值的比较
 
    -eq 等于 -ne 不等于 -lt 小于 -gt 大于 -le 小于等于 -ge 大于等于
@@ -1675,10 +1675,10 @@ function xxx(){
 xxx param1 parma2 # 函数调用
 ~~~
 
-1. 必须先声明函数, 才可以调用, 因为shell是解释执行的
+1. **必须先声明函数, 才可以调用, 因为shell是解释执行的**
 2. 函数不需要声明参数, 直接通过 `$1, $2, $3`的形式来获取位置参数
 3. **return后面只能跟`0-255`的数值, 表示函数执行的状态码, 而不是函数的结果, 0表示正常**
-4. 如果省略return, 那么会将最后一条命令的状态码return回去
+4. **如果省略return, 那么会将最后一条命令的状态码return回去**
 5. 可以通过`$?`获取函数的return的状态码
 6. 如果你想要返回一个结果, 那么可以使用echo, 那么在外层使用命令替换
 
@@ -1693,6 +1693,61 @@ read -p "请输入第二个参数: " b
 sum=`add $a $b`
 echo 结果是$sum
 ~~~
+
+- 函数可以定义在任何地方, 比如下面这个函数, 定义在一个for循环中
+
+  ~~~shell
+  for (( i=0;i<3;i++ )); do
+    function say(){
+      echo $i
+    }
+    say
+  done
+  
+  # 0
+  # 1
+  # 2
+  ~~~
+
+- 同时函数可以直接使用/修改外部的变量, 因为shell中的变量是全局变量
+
+  ~~~shell
+  msg="hello world"
+  function say() {
+    echo $msg # 直接使用外部的变量
+    msg="hahah" # 直接修改外部的变量
+  }
+  say # hello world
+  echo $msg # hahah
+  ~~~
+
+- 你在函数中直接定义的变量, 也是全局的变量, 在函数结束后, 还是可以使用的
+
+  如果要定义局部的变量, 必须使用local
+
+  ~~~shell
+  j=1000
+  function say() {
+    a=10
+    echo $a # 10
+    
+    local j=20 # 这里会覆盖全局变量中的j
+    echo $j # 20
+  }
+  say
+  echo $a # 10
+  echo $j # 1000
+  ~~~
+
+- **虽然在函数中可以访问函数外的变量, 但是还是推荐通过函数来传参的方式, 并在在函数内部的变量都定义成local变量, 这样不会影响全局**
+
+
+
+
+
+
+
+
 
 
 
@@ -1870,6 +1925,118 @@ goland, 33, 2017
 
 awk -F "," 'print FILENAME NR NF' test.txt
 ~~~
+
+
+
+### 参数扩展
+
+参数扩展主要用于对变量进行修改, 支持删除, 替换, 提取
+
+1. 去掉前后缀
+
+   1. 去掉最短前缀, 格式: `${var#pattern}`
+
+      ~~~shell
+      filename="dir1/dir2/example.sql"
+      echo "${filename#*/}"  # 输出：dir2/example.sql
+      ~~~
+
+   2. 去掉最长前缀, 格式: `${var##pattern}`
+
+      ~~~shell
+      filename="dir1/dir2/example.sql"
+      echo "${filename##*/}"  # 输出：dir2/example.sql
+      ~~~
+
+   3. 去掉最短后缀, 格式: `${variable%pattern}`
+
+      ~~~shell
+      filename="example.sql.sql"
+      # 去掉 .sql 后缀
+      echo "${filename%.sql}"  # 输出：example.sql
+      ~~~
+
+   4. 去掉最长后缀, 格式: `${variable%%pattern}`
+
+      ~~~shell
+      filename="example.sql.sql"
+      echo "${filename%%.*}"  # 输出：example
+      ~~~
+
+2. 替换字符串
+
+   1. 替换第一个匹配的字符串, 格式: `${variable/pattern/replacement}`
+
+      ~~~shell
+      text="apple banana apple"
+      # 替换第一个 'apple' 为 'orange'
+      echo "${text/apple/orange}"  # 输出：orange banana apple
+      ~~~
+
+   2. 替换所有匹配的字符串, 格式: `${variable//pattern/replacement}`
+
+      ~~~shell
+      text="apple banana apple"
+      # 替换所有的 'apple' 为 'orange'
+      echo "${text//apple/orange}"  # 输出：orange banana orange
+      ~~~
+
+3. 替换默认值
+
+   1. 如果变量未定义或者为空, 那么使用默认值, 格式: `${variable:-default}`
+
+      ~~~shell
+      var=""
+      # 如果 var 为空，输出 'default'
+      echo "${var:-default}"  # 输出：default
+      ~~~
+
+   2. 如果变量不为空, 那么使用替换的值, 格式: `${variable:+replacement}`
+
+      ~~~shell
+      var="Hello"
+      # 如果 var 不为空，输出 var 的值
+      echo "${var:+Replacement}"  # 输出：Replacement
+      ~~~
+
+4. 获取字符串长度
+
+   ~~~shell
+   text="hello world"
+   # 获取字符串长度
+   echo "${#text}"  # 输出：11
+   ~~~
+
+5. 字符串截取
+
+   ~~~shell
+   text="Hello, World!"
+   # 提取从位置 7 开始，长度为 5 的子字符串
+   echo "${text:7:5}"  # 输出：World
+   
+   echo "${text:7}" # 从位置7开始截取后面所有的字符串
+   ~~~
+
+6. 大小写转换, 仅在bash4.0及其以上有效
+
+   - `${variable,,}` 将变量中的所有字母转换为小写。
+
+   - `${variable^^}` 将变量中的所有字母转换为大写。
+
+   ~~~shell
+   text="Hello World"
+   # 转换为小写
+   echo "${text,,}"  # 输出：hello world
+   
+   # 转换为大写
+   echo "${text^^}"  # 输出：HELLO WORLD
+   ~~~
+
+   
+
+
+
+
 
 
 
@@ -2285,6 +2452,78 @@ grep -v 'hello' file.txt # 反选, 即选择不匹配的行
 grep -w 'hello' file.txt # 匹配一行中完整的单词, 他不会匹配 hellooo
 grep -x 'hello' file.txt # 精确匹配一行, 常常用来判断其他命令的输出是否包含指定的内容, 比如输出的内容中是否包含特定的数据库
 ~~~
+
+
+
+### sort
+
+sort命令主要用于对文本进行排序用的, 并输出到控制台, 默认是按照每一行文本的字典序, 并且是升序的
+
+格式:
+
+~~~shell
+sort [options] filename
+~~~
+
+案例
+
+~~~shell
+sort filename
+
+echo "$msg" | sort  # 从别的命令中获取排序的内容
+
+sort -n numbers.txt # 按照数字排序, 比如5和10, 如果按照字母序, 因为10在上面, 如果按照数字, 应该5在上面
+
+sort -r filename # 逆序排序
+
+sort -f filename # 排序的时候忽略大小写
+
+sort -u filename # 输出的时候去重
+
+sort filename | nl # 输出的时候加上行号
+
+sort -b filename # 排序的时候, 忽略行首和行尾的空格
+
+# 如果一行中多个字段用/tab或者空格隔开, 那么可以通过-k来指定按照某个顺序排序
+# 如果分隔符是特定的字符, 也可以通过 -t来指定
+sort -k 2 filename # 按照第二个字段排序
+sort -t ',' -k 2 filename
+
+
+# 如果你只想排序前一百行, 或者后一百行, 那么可以结合head, tail来实现
+head -n 100 filename | sort # 排序前一百行
+sort filename | head -n 100 # 输出排序后的前100行
+
+
+# 输出结果到另外一个文件中
+sort file > sorted_filename
+~~~
+
+
+
+### tr
+
+tr(translate) 主要用于字符替换, 删除的命令, 格式如下:
+
+~~~shell
+tr [option] set1 [set2]
+~~~
+
+将set1中的字符集替换为set2中的字符集, 如果没有指定set2, 那么就会删除指定的set1中字符集
+
+案例:
+
+~~~shell
+echo "hello world" | tr 'a-z' 'A-Z' # 将小写转换为大写
+
+echo -e "hello\nworld" | tr '\n' ' ' # 将换行转换为空格, 用于将多行为本转换为一行
+
+echo -e "hwllo\nworld" | tr -d '\n' # -d表示删除匹配的字符, 这里表示删除换行
+
+
+~~~
+
+
 
 
 
