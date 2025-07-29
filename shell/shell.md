@@ -466,49 +466,168 @@ $@ 传递给脚本的所有参数，当被双引号`" "`包含时，$@ 与 $* �
 
 $? 上一个命令的退出状态(exit 0)，或者函数的返回值(return 0)
 
-$$ 当前脚本的PID、
+$$ 当前脚本的PID
 
-> $*和$#的区别
 
-当 $* 和 $@ 不被双引号`" "`包围时，它们之间没有任何区别，都是将接收到的**每个参数看做一份数据，彼此之间以空格来分隔。**
 
-但是当它们被双引号`" "`包含时，就会有区别了：
+### $*和$@
 
-- `"$*"`会将所有的参数从整体上看做一份数据，而不是把每个参数都看做一份数据。
+$*和$@都表示当前脚本接收到的参数, 如果你直接echo他们, 你会发现他们没有什么不同, 但是实际上他们是不同的
 
-- `"$@"`仍然将每个参数都看作一份数据，彼此之间是独立的。
+- $*你可以将他看做是所有参数拼接起来的一个字符串, 他们是不可分割的
+- $@你可以将他看做是所有参数组成的数组, 每个参数都是独立的
 
-比如传递了 5 个参数，那么对于`"$*"`来说，这 5 个参数会合并到一起形成一份数据，它们之间是无法分割的；而对于`"$@"`来说，这 5 个参数是相互独立的，它们是 5 份数据。
-
-编写下面的代码，并保存为 test.sh：
-
-```shell
-#!/bin/bash
-
-echo "print each param from \"\$*\""
-for var in "$*"
-do
-    echo "$var"
-done
-
-echo "print each param from \"\$@\""
-for var in "$@"
-do
-    echo "$var"
-done
-```
-
-运行 test.sh，并附带参数：
+单独的echo他们, 看不出什么区别
 
 ~~~shell
-[mozhiyan@localhost demo]$ . ./test.sh a b c
-print each param from "$*"
-a b c
-print each param from "$@"
+cat <<EOF > echo.sh
+#/bin/bash
+echo \$*
+echo \$@
+EOF
+
+./echo.sh a b c d
+a b c d
+a b c d
+~~~
+
+#### $*和$@在for循环中的区别
+
+$*和$@在for循环中需要特别的注意
+
+~~~shell
+#!/bin/bash
+
+echo "-----------------"
+# 这里$*保持一个整体, 但是for可以按照空格拆分并遍历字符串, 所以会一个一个参数进行遍历
+# 同时如果参数中有特殊的空格, 那么这个参数也会被拆分
+for word in $*; do 
+  echo $word
+done
+echo "---------------"
+# 这里类似for循环遍历数组, 每个元素都是独立的
+# 如果参数中有特殊的空格, 那么这个参数会被拆分
+for word in $@; do 
+  echo $word
+done
+echo "---------------"
+# 这里$*被当做一个整体, 因为加了"", 所以被当做一整个字符串, 循环只会执行一次
+for word in "$*"; do 
+  echo $word
+done
+echo "---------------"
+# 这里for循环遍历数组, 每个参数都是独立的
+# 同时加了"", 所以每个参数都是完整的, 不能被拆分
+for word in "$@"; do 
+  echo $word
+done
+~~~
+
+结果是
+
+~~~shell
+$ ./test.sh a b "c d"
+-----------------
 a
 b
 c
+d
+---------------
+a
+b
+c
+d
+---------------
+a b c d
+---------------
+a
+b
+c d
 ~~~
+
+在for循环中, 对于字符串的变量, 我们使用这种方式
+
+~~~shell
+msg="hello world"
+for word in $msg; do
+  echo $word
+done
+~~~
+
+而对于数组的遍历, 我们常常使用这种方式
+
+~~~shell
+msg=("hello", "zhangsan lisi")
+for word in "$@"; do
+  echo $word
+done
+~~~
+
+
+
+#### $*和$@在函数传参的区别
+
+~~~shell
+#/bin/bash
+
+function say() {
+  echo $1
+  echo $2
+  echo $3
+  echo $4
+  echo $5
+}
+
+echo "---------------------"
+say $* # 这里 $*没有双引号保护, 如果参数中有空格, 参数会被拆分
+echo "---------------------"
+say "$*" # 这里 $*被双引号保护, 又因为$*将所有的参数作为一个整体, 所以所有的参数被作为一整个整体
+echo "---------------------"
+say $@ # 这里每个参数都是一个个体, 同时没有""的保护, 如果单独的参数中有空格, 会被拆分为多个参数
+echo "---------------------"
+say "$@" # 这里每个参数都是一个个体, 同时有""的保护, 即使单独的参数中有空格, 也不能被拆分
+echo "---------------------"
+~~~
+
+结果如下:
+
+~~~shell
+$ ./test1.sh "a b" c "d e"
+---------------------
+a
+b
+c
+d
+e
+---------------------
+a b c d e
+
+
+
+
+---------------------
+a
+b
+c
+d
+e
+---------------------
+a b
+c
+d e
+
+
+---------------------
+
+~~~
+
+
+
+
+
+
+
+
 
 
 
@@ -818,7 +937,7 @@ echo "scale=2; 10/3" | bc # 3.33
 
 2. 通过`[ condition ]`来判断, 如果成功返回0, 否则返回1, 我们可以通过`$?`来获取命令的返回值
 
-   注意condition前后有空格
+   **注意condition前后有空格**
 
    ~~~shell
    a=hello
@@ -963,20 +1082,7 @@ fi
 
 shell的多条件判断有三种写法
 
-写法1 ( 常用 )
-
-~~~shell
-# 写法1
-if [[ "$a" -lt 10 && "$b" -gt 5 ]]; then
-    echo "条件都成立"
-fi
-
-if [[ "$a" -lt 3 || "$b" -lt 3 ]]; then
-    echo "至少一个条件成立"
-fi
-~~~
-
-写法2(了解)
+写法1: 使用 `|| && !`来表示与或非
 
 ~~~shell
 if [ "$a" -lt 3 ] || [ "$b" -lt 3 ]; then
@@ -988,7 +1094,7 @@ if [ "$a" -lt 10 ] && [ "$b" -gt 5 ]; then
 fi
 ~~~
 
-写法3(了解)
+写法2: 使用`-a -o !` 来表示与或非
 
 ~~~shell
 a=3
@@ -1001,11 +1107,33 @@ fi
 if [ "$a" -lt 5 -a "$b" -lt 10 ]; then # -a 表示 and
   echo "a 小于 5 且 b 小于 10"
 fi
+
+num1=5
+if [ ! $num1 -gt 10 ]; then
+    echo "num1 小于或等于 10"
+fi
 ~~~
 
+写法3: 使用
 
+~~~shell
+if [[ "$a" -lt 10 && "$b" -gt 5 ]]; then
+    echo "条件都成立"
+fi
 
+if [[ "$a" -lt 3 || "$b" -lt 3 ]]; then
+    echo "至少一个条件成立"
+fi
 
+if [[ ! $a -lt 5 ]]; then
+    echo "a 不小于 5，即 a 大于或等于 5"
+fi
+
+# 使用括号来合并两个关系
+if [[ ( $a -lt 5 || $b -gt 10 ) && ( $c -eq 100 || $d -ne 50 ) ]]; then
+    echo "条件成立"
+fi
+~~~
 
 
 
@@ -1030,6 +1158,27 @@ fi
 ~~~
 
 上面代码不会报错, 即使$a为空, 那么判断也是`[ -n "" ]`, 所以他会返回false, 而不是报错
+
+
+
+
+
+### 三目运算符
+
+在shell中, 并没有三目运算符, 但是你也可以使用与或非来实现三目运算符
+
+注意: 最好不要这样写, 容易出问题, 使用if else来写
+
+~~~shell
+a=5
+[ $a -gt 10 ] && result="大于 10" || result="小于等于 10"
+echo $result
+
+
+a=10
+[[ $a -gt 10 ]] && result="大于 10" || result="小于等于 10"
+echo $result
+~~~
 
 
 
@@ -2035,6 +2184,101 @@ awk -F "," 'print FILENAME NR NF' test.txt
    
 
 
+
+## 输入输出重定向
+
+在shell中, `>`和`>>`用于输出重定向到文件中
+
+- `>` 表示覆盖
+
+  ~~~shell
+  echo "Hello, World!" > output.txt
+  echo "11111" > output.txt
+  cat output.txt # 11111
+  ~~~
+
+- `>>`表示追加
+
+  ~~~shell
+  echo "Hello, World!" >> output.txt
+  echo "11111" >> output.txt
+  cat output.txt
+  
+  # Hello, World!
+  # 11111
+  ~~~
+
+在shell中, `<`, `<<`, `<<<`都用于输入重定向
+
+- `<`表示将一个文本中的内容重定向到命令的标准输入中
+
+  他只能重定向一个文本的内容, 不能重定向两个文本
+
+  ~~~shell
+  echo "hello world" > output.txt
+  cat < output.txt # hello world
+  # 这里不能使用echo < output.txt, 因为echo根本就不读取标准输入, 他只负责将他的参数打印到控制台
+  ~~~
+
+- `<<`这种语法被称为Here Document,  他用于将多行文本重定向到命令的标准输入中
+
+  **在多行文本中, 你可以使用变量插值**
+
+  格式如下:
+
+  ~~~shell
+  command << delimiter
+  multiline input
+  delimiter
+  ~~~
+
+  案例
+
+  ~~~shell
+  my_var="Hello, world!"
+  cat << EOF
+  This is a test.
+  $my_var
+  EOF
+  
+  # This is a test.
+  # Hello, world!
+  ~~~
+
+  如果在多行文本中, 你不想$a进行插值, 而是保持原样, 那么你可以使用`\$a`, 这样`\$`会转换为`$`, 而不是进行插值
+
+  ~~~shell
+  my_var="Hello, world!"
+  cat << EOF
+  This is a test.
+  \$my_var
+  EOF
+  
+  # This is a test.
+  # $my_var
+  ~~~
+
+  
+
+- `<<<`这种语法被称为Here String, 他用于将当行文本重定向到命令的标准输入中
+
+  **你也可以在Here String中使用变量插值**
+
+  格式如下:
+
+  ~~~shell
+  command <<< "string"
+  ~~~
+
+  案例:
+
+  ~~~shell
+  my_var="Hello world"
+  cat <<< "hahaha, "$my_var""
+  # hahaha, Hello world
+  ~~~
+
+  特别要主要, 如果你的变量中有特殊字符, 空格等, 记得使用双引号包裹变量
 
 
 
