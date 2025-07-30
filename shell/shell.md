@@ -478,7 +478,9 @@ drwxr-xr-x. 2 root     root      21 7月   1 2016 abc
 -rw-rw-r--. 1 mozhiyan mozhiyan  35 10月 31 10:20 demo.sh~
 ```
 
-所以，为了防止出现格式混乱的情况，我建议在输出变量时加上双引号。
+所以，**为了防止出现格式混乱的情况，我建议在输出变量时加上双引号。**
+
+注意: **通过命令替换获取到的结果是字符串, 而不是数组, 所以在遍历的时候, 使用字符串的变量方式**
 
 > 反引号和$()区别
 
@@ -795,6 +797,58 @@ echo "say:\"$msg\"" # say:"hello world"
 
 
 
+### 字符串遍历
+
+对于空格或者换行分割的字符串, 那么可以直接遍历
+
+~~~shell
+msg="hello world zhangsan lisi"
+for world in $msg; do
+  echo $world
+done
+#hello
+#world
+#zhangsan
+#lisi
+~~~
+
+如果你的字符串是通过命令替换来获得的, 那么也可以直接遍历结果
+
+~~~shell
+msg=$(ls)
+for line in $msg; do
+  echo $line
+done
+# 360SpeedTest.exe.lnk
+# 360安全卫士.lnk
+# 70+爬虫脚本项目源码/
+# Access.lnk
+# atguigu_data.lnk
+# awesomeProject/
+~~~
+
+**<font color=red>注意: $msg千万不要加双引号,  这样会导致msg变成一个完整的字符串, 导致只会遍历一次, 虽然在echo的时候你看不出</font>**
+
+~~~shell
+msg=$(ls)
+for line in $msg; do
+  ((i++))
+done
+echo $i # 112
+for line in "$msg"; do
+  ((j++))
+done
+echo $j # 1
+~~~
+
+
+
+
+
+
+
+
+
 ### 删除变量
 
 在 Bash 中，unset 是一个内置命令，用于 删除变量、数组元素或函数，释放它们占用的内存空间。它的主要作用是 清理不再需要的变量或数据，避免脚本中出现意外的值残留。
@@ -939,11 +993,12 @@ x=1
 a=
 ((a=x+2))
 echo $a # 3
+
+for i in 1 2 3 4; do
+ ((i++))
+done
+echo i # 4
 ~~~
-
-
-
-
 
 
 
@@ -1363,7 +1418,7 @@ done
 
 
 
-你可以直接对字符串进行for循环, 他会将字符串按照空格和换行进行拆分
+你可以直接对字符串进行for in循环, 他会将字符串按照空格和换行进行拆分
 
 ~~~shell
 msg="hello world"
@@ -1383,11 +1438,10 @@ $ ll
 total 1
 -rw-r--r-- 1 sys49482 1049089   0 七月 24 20:27 1.txt
 -rw-r--r-- 1 sys49482 1049089   0 七月 24 20:27 2.txt
--rw-r--r-- 1 sys49482 1049089   0 七月 24 20:28 3.txt
--rw-r--r-- 1 sys49482 1049089 504 六月 24 17:45 desktop.ini
 
 $ msg=`ll`
 
+# !!!! 这里的msg是变量替换获取到的值, 所以他是字符串而不是数组, 所以要使用字符串的遍历方式, 而且 $msg 千万不要加双引号, 这样会导致 msg变成一个完整的字符串, 只会遍历一次
 $ for word in $msg; do echo $word; done;
 total
 1
@@ -1409,24 +1463,6 @@ sys49482
 24
 20:27
 2.txt
--rw-r--r--
-1
-sys49482
-1049089
-0
-七月
-24
-20:28
-3.txt
--rw-r--r--
-1
-sys49482
-1049089
-504
-六月
-24
-17:45
-desktop.ini
 ~~~
 
 

@@ -34,10 +34,12 @@ kubectl cp <source> <destination> [options] -n <namespace>
 
 ~~~shell
 # 将本地的文件复制到pod中
-kubectl cp ./file.txt my-namespace/mypod:/tmp/file.txt
+kubectl cp ./file.txt my-namespace/mypod:/tmp/file.txt 
 
-# 将mydir下的所有文件, 复制到/tmp/mydir下面
-kubectl cp ./mydir my-namespace/mypod:/tmp/mydir
+# 将mydir目录, 复制到/tmp/mydir下面
+kubectl cp ./mydir my-namespace/mypod:/tmp/mydir 
+
+# 如果你想要让mydir目录下的所有文件复制到/tmp/mydir下面, 那你可能要对mydir下的每个文件或者目录都调用一次cp命令才能实现了
 ~~~
 
 如果一个pod下面有多个容器, 那么你还要通过`-c`来指定container的名字
