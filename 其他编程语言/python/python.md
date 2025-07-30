@@ -3131,6 +3131,8 @@ except MyError as e:
 
 # 模块和包
 
+## 导入的过程
+
 1. Python 源代码文件就是一个模块
 2. 当一个module被导入的时候, module文件会被执行, 不管多少次被导入, 都只会执行一次
 3. 如果一个目录下面有`__init__`文件, 那么这个目录会被python识别为包
@@ -3194,14 +3196,14 @@ def b():
 此时我们可以在main.py文件中导入模块
 
 ~~~python
-import d #直接导入d模块
+import d # 直接导入d模块
 d.d()
 # 输出
 # d模块被执行
 # d function
 ~~~
 
-如果一个模块是在包下面,  那我们也可以直接导入他,  python会执行包的`__init__`文件, 以及被导入的模块文件
+如果一个模块是在包下面,  那我们也可以直接导入他,  python会执行包的`__init__`文件, 以及被导入的模块文件中的`__init__`函数
 
 ~~~python
 import root.c # 从root包下导入c模块,
@@ -3305,6 +3307,123 @@ c() # 可以直接调用c函数, 而不再需要使用root.c.c()了
 
 
 
+
+
+## as 别名
+
+对于导入的模块和工具可以使用 as 关键字给其起别名
+
+~~~python
+import random as rd # 将导入的内容放在rd中
+rd.randint(10, 100)
+~~~
+
+~~~python
+import from random import randint as ri # 给导入的函数起别名
+print(ri(10, 100))
+~~~
+
+
+
+## 相对导入
+
+对于`from ... import ...`的语法, 你也可以使用相对导入
+
+相对导入一般用在同一个包中的模块导入其他模块, 他使用`.`来表示相对路径
+
+~~~shell
+from . import module    # 导入当前包中的其他模块或子包
+from .. import module   # 导入父目录下的模块或者子包
+from ... import module  # 祖父目录（以此类推）
+~~~
+
+
+
+假设我们有如下的目录结构
+
+~~~shell
+my_package/
+├── __init__.py         # 包标识文件
+├── utils.py            # 工具模块
+└── core/
+    ├── __init__.py
+    ├── calculator.py   # 需要引用上级的 utils.py
+    └── validator.py
+~~~
+
+案例1：同级模块引用
+
+~~~python
+# 在 validator.py 中引用同目录的 calculator.py
+from . import calculator       # 导入整个模块
+from .calculator import add    # 导入特定函数
+~~~
+
+案例2：向上级目录引用
+
+
+~~~python
+# 在 calculator.py 中引用上级的 utils.py
+from .. import utils
+~~~
+
+案例3：跨子包引用
+
+~~~python
+# 假设有 core/tools/helper.py 需要引用 utils.py
+from ... import utils  # 两个上级目录
+~~~
+
+
+
+
+
+
+
+## import的搜索路径
+
+我们在使用import导入包或者模块的时候, python如何查找包的位置呢
+
+如果你使用的是项目路径来导入, 那么就按照相对路径的方式来查找
+
+
+
+如果你使用的是绝对路径的方式
+
+1. 他会从当前项目的根目录开始查找
+
+   ~~~shell
+   # 比如你有如下的导入, 那么他会去root下的sub包下看看有没有a这个模块
+   # 或者看看root下有没有sub这个模块, 其中有没有a这个函数
+   from root.sub import a
+   ~~~
+
+2. 如果当前项目下没有找到, 那么就去系统目录下查找, 那么系统目录有哪些呢, 我们可以使用如下命令查看
+
+   ~~~python
+   C:\Users\Administrator>python -m site
+   sys.path = [
+       'C:\\Users\\Administrator',
+       'E:\\Python\\Python310\\python310.zip',
+       'E:\\Python\\Python310\\DLLs',
+       'E:\\Python\\Python310\\lib',
+       'E:\\Python\\Python310',
+       'E:\\Python\\Python310\\lib\\site-packages',
+       'E:\\Python\\Python310\\lib\\site-packages\\win32',
+       'E:\\Python\\Python310\\lib\\site-packages\\win32\\lib',
+       'E:\\Python\\Python310\\lib\\site-packages\\Pythonwin',
+   ]
+   USER_BASE: 'C:\\Users\\Administrator\\AppData\\Roaming\\Python' (doesn't exist)
+   USER_SITE: 'C:\\Users\\Administrator\\AppData\\Roaming\\Python\\Python310\\site-packages' (doesn't exist)
+   ENABLE_USER_SITE: True
+   ~~~
+
+   上面的sys.path就是系统目录了, python会从上往下开始查找, 如果找到了就使用, 没找到就报错
+
+
+
+
+
 ## 访问控制权限
 
 python对于什么是可以导出的控制的不严格,   默认情况下, 如果变量, 函数, 类是以`_`单个下划线开始的, 那么我们不能使用`from xxx import *` 来导出他,  但是可以使用`import xxx 和 from xxx import bbb`来导出他
@@ -3352,63 +3471,23 @@ print(public_variable, _protect_variable)
 
 
 
+## \_\__name\__\_的作用
 
+1. 每个代码文件都是一个模块
 
-## as 别名
+2. **在导入模块的时候, 会执行模块中的代码**
 
-对于导入的模块和工具可以使用 as 关键字给其起别名
+3. `__name__` 变量
+   `__name__` 变量 是 python 解释器自动维护的变量
+   如果代码是直接运行, 那么他的值是 `__main__`
 
-~~~python
-import random as rd # 将导入的内容放在rd中
-rd.randint(10, 100)
-~~~
+   如果代码是被导入执行, 值是 模块名(即代码文件名)
 
-~~~python
-import from random import randint as ri # 给导入的函数起别名
-print(ri(10, 100))
-~~~
-
+在代码文件中, 在被导入时不想被执行的代码,可以写在 `if __name__ == "__main__"`: 代码的缩进中
 
 
 
-
-## import的搜索路径
-
-我们在使用import导入包或者模块的时候, python如何查找包的位置呢
-
-1. 如果使用的是`import ...`, 那么使用绝对路径在当前项目下查找
-
-   如果使用的是`from ... import ...`, 那么使用相对路径在当前项目下查找
-
-2. 如果当前项目下没有找到, 那么就去系统目录下查找, 那么系统目录有哪些呢, 我们可以使用如下命令查看
-
-   ~~~python
-   C:\Users\Administrator>python -m site
-   sys.path = [
-       'C:\\Users\\Administrator',
-       'E:\\Python\\Python310\\python310.zip',
-       'E:\\Python\\Python310\\DLLs',
-       'E:\\Python\\Python310\\lib',
-       'E:\\Python\\Python310',
-       'E:\\Python\\Python310\\lib\\site-packages',
-       'E:\\Python\\Python310\\lib\\site-packages\\win32',
-       'E:\\Python\\Python310\\lib\\site-packages\\win32\\lib',
-       'E:\\Python\\Python310\\lib\\site-packages\\Pythonwin',
-   ]
-   USER_BASE: 'C:\\Users\\Administrator\\AppData\\Roaming\\Python' (doesn't exist)
-   USER_SITE: 'C:\\Users\\Administrator\\AppData\\Roaming\\Python\\Python310\\site-packages' (doesn't exist)
-   ENABLE_USER_SITE: True
-   ~~~
-
-   上面的sys.path就是系统目录了, python会从上往下开始查找, 如果找到了就使用, 没找到就报错
-
-
-
-
-
-
-
-## pip
+# pip
 
 在我们安装完python之后, 会给我自动安装上pip模块, 我们可以通过如下命令行来查看
 
@@ -3482,26 +3561,6 @@ pip config list
 pipy是一个网站, `https://pypi.org/`,  类似于java中的maven中央仓库网站, docker中的dockerhub完整
 
 你可以在其中查找所有的第三方模块, 然后使用pip安装他们
-
-
-
-## \_\__name\__\_的作用
-
-1. 每个代码文件都是一个模块
-
-2. **在导入模块的时候, 会执行模块中的代码**
-
-3. `__name__` 变量
-   `__name__` 变量 是 python 解释器自动维护的变量
-   如果代码是直接运行, 那么他的值是 `__main__`
-
-   如果代码是被导入执行, 值是 模块名(即代码文件名)
-
-在代码文件中, 在被导入时不想被执行的代码,可以写在 `if __name__ == "__main__"`: 代码的缩进中
-
-
-
-
 
 
 
