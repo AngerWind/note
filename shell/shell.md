@@ -344,6 +344,65 @@ unset不能删除只读变量
 
 
 
+### 多行字符串
+
+在shell中是支持多行字符串的, 你可以如下定义
+
+~~~shell
+multi_line_string="这是第一行
+这是第二行
+这是第三行"
+
+echo "$multi_line_string"
+这是第一行
+这是第二行
+这是第三行
+~~~
+
+如果你的字符串太长了,  你想要在下一行写他们, 但是又不想他们有换行符, 那么可以使用`\`来连接行
+
+**这个在将shell命令保持到字符串中的时候, 特别有用**
+
+**千万要记住, `\`后面不能有任何的字符了, 包括空格, 否则会有问题**
+
+~~~shell
+command="find /path/to/search -type f \
+-name \"*.txt\" \
+-mtime -7 \
+-exec grep -H \"pattern\" {} \; \
+-exec cp {} /path/to/destination/ \;"
+
+# 执行命令
+eval $command
+~~~
+
+
+
+使用`\`来连接行的时候, 还需要注意缩进的问题, 你的下一行到行首的所有空白, 都会原样保持到字符串中, 如果你不想有空白字符串的话, 那么需要顶格开始写
+
+~~~shell
+for i in $(seq 1 1); do
+    command="find /path/to/search -type f \
+    -name \"*.txt\" \
+-mtime -7 \
+    -exec grep -H \"pattern\" {} \; \
+-exec cp {} /path/to/destination/ \;"
+    echo "$command"
+done
+
+# find /path/to/search -type f     -name "*.txt" -mtime -7     -exec grep -H "pattern" {} \; -exec cp {} /path/to/destination/ \;
+~~~
+
+
+
+
+
+
+
+
+
+
+
 ### 变量作用域
 
 shell变量的作用域分为三种
@@ -1272,6 +1331,10 @@ for {1..100}; do
   sum=$[$sum+$i] # $[]用于计算$sum+$i
 done
 echo $sum
+
+for i in $(seq 1 3); do # 使用seq来生成一个数列
+  echo $i
+done
 ~~~
 
 ### for in语法
@@ -2245,6 +2308,21 @@ awk -F "," 'print FILENAME NR NF' test.txt
   # Hello, world!
   ~~~
 
+  ~~~shell
+  my_var="Hello, world!"
+  cat << "EOF"
+  This is a test.
+  $my_var
+  EOF
+  
+  # This is a test.
+  # Hello, world!
+  ~~~
+
+  EOF和"EOF"的作用是一样的, 都运行变量插值
+
+  
+
   如果在多行文本中, 你不想$a进行插值, 而是保持原样, 那么你可以使用`\$a`, 这样`\$`会转换为`$`, 而不是进行插值
 
   ~~~shell
@@ -2256,6 +2334,42 @@ awk -F "," 'print FILENAME NR NF' test.txt
   
   # This is a test.
   # $my_var
+  ~~~
+
+  如果你想让所有的变量都不插值, 而是按照原本的样子输出, 那么可以给eof添加上单引号
+
+  ~~~shell
+  my_var="Hello, world!"
+  cat << 'EOF'
+  This is a test.
+  $my_var
+  EOF
+  
+  # This is a test.
+  # $my_var
+  ~~~
+
+  特别要注意的是: 最后一个EOF不管是在什么地方, 他都必须顶格写, 并且后面不能有任何的其他的字符
+
+  ~~~shell
+  my_var="Hello, world!"
+  cat << 'EOF'
+  This is a test.
+  $my_var
+  # 这里的EOF必须顶格, 前后都不能有东西
+    EOF
+  ~~~
+
+  如果你想要在字符串中使用here document, 那么也是如此
+
+  ~~~shell
+  kubect exec -i -n my-namespace -pod \
+  -- bash -c "
+  cat << eof > hello.txt
+  hello world
+  eof"
+  
+  # 最后一个eof必须顶格, 不管你这个代码是不是在for循环还是函数中, 都不需要管缩进, 必须顶格, 并且后面不能有任何的东西
   ~~~
 
   
