@@ -1292,7 +1292,7 @@ class WidgetRestControllerTest {
 
 #### 优化测试的速度
 
-上面的测试代码, 因为启动的时候, 都涉及到IOC容器的启用, 所以在执行的时候会比较慢, 如果你的bean的依赖关闭比较简单, 那么可以使用原生的mockito来进行mock
+上面的测试代码, 因为启动的时候, 都涉及到IOC容器的启用, 所以在执行的时候会比较慢, 如果你的bean的依赖关系比较简单, 那么可以使用原生的mockito来进行mock
 
 ~~~java
 /**
@@ -2837,3 +2837,129 @@ public class LazyVerificationTest {
 但是开启了延迟验证的话, 所有的失败情况都会进行报告
 
 **通常来说还是挺有用的, 特别是对于大型项目, 不用一直改bug然后重复执行**
+
+
+
+
+
+# TestContainers
+
+
+
+### GenericContainer abstraction
+
+Testcontainers 提供了一个名为 GenericContainer 的编程抽象，用于表示 Docker 容器。您可以使用 GenericContainer 启动 Docker 容器，获取任何容器信息，例如主机名（映射端口可访问的主机）、映射端口，以及停止容器。
+
+For example, you can use **GenericContainer** from **Testcontainers for Java** as follows:
+例如，您可以按如下方式使用 **Testcontainers for Java** 中的 **GenericContainer** ：
+
+```java
+GenericContainer container = new GenericContainer("postgres:15")
+        .withExposedPorts(5432)
+        .waitingFor(new LogMessageWaitStrategy()
+            .withRegEx(".*database system is ready to accept connections.*\\s")
+            .withTimes(2)
+            .withStartupTimeout(Duration.of(60, ChronoUnit.SECONDS)));
+container.start();
+var username = "test";
+var password = "test";
+var jdbcUrl = "jdbc:postgresql://" + container.getHost() + ":" + container.getMappedPort(5432) + "/test";
+//perform db operations
+container.stop();
+```
+
+
+
+## Testcontainers modules 
+
+Testcontainers为各类的基础设施软件都提供了对应的模块, 这些模块都是在GenericContainer之上的封装, 使得你能够方便的使用这些基础设施, 比如对于pg数据库, 提供了如下的module
+
+~~~xml
+<dependency>
+    <groupId>org.testcontainers</groupId>
+    <artifactId>postgresql</artifactId>
+    <version>1.20.0</version>
+    <scope>test</scope>
+</dependency>
+~~~
+
+导入之后,  你就可以使用如下代码来创建对应的pg Container了
+
+~~~java
+PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:15");
+postgres.start();
+var username = postgres.getUsername();
+var password = postgres.getPassword();
+var jdbcUrl = postgres.getJdbcUrl();
+//perform db operations
+postgres.stop();
+~~~
+
+你可以在https://testcontainers.com/modules/ 中查看所有的Testcontainers模块
+
+
+
+
+
+## Testcontainers For Java
+
+https://java.testcontainers.org/
+
+Testcontainers for Java支持Junit4, Junit5, Spock框架, 常常用于在测试的时候, 通过数据库依赖, 或者Selenium Web浏览器以进行ui测试
+
+要想和java进行集成
+
+- gradle
+
+  ~~~groovy
+  testImplementation "org.testcontainers:testcontainers:1.21.3"
+  ~~~
+
+- maven
+
+  ~~~xml
+  <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <version>1.21.3</version>
+      <scope>test</scope>
+  </dependency>
+  ~~~
+
+当然你也可以在https://central.sonatype.com/search?q=testcontainers&smo=true查看testcontainrs的最新版本
+
+
+
+同时你也可通过testcontainers提供的bom来管理所有的testcontainers相关的依赖的版本
+
+- maven
+
+  ~~~xml
+  <dependencyManagement>
+      <dependencies>
+          <dependency>
+              <groupId>org.testcontainers</groupId>
+              <artifactId>testcontainers-bom</artifactId>
+              <version>1.21.3</version>
+              <type>pom</type>
+              <scope>import</scope>
+          </dependency>
+      </dependencies>
+  </dependencyManagement>
+  
+  <!-- 这里无需再指定版本了 -->
+  <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>mysql</artifactId>
+      <scope>test</scope>
+  </dependency>
+  ~~~
+
+- Gradle
+
+  ~~~groovy
+  implementation platform('org.testcontainers:testcontainers-bom:1.21.3') //import bom
+  testImplementation('org.testcontainers:mysql') // 相关依赖不需要指定
+  ~~~
+
+  
