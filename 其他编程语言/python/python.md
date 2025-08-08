@@ -2979,6 +2979,201 @@ file1.close()
 
 
 
+
+
+### with语法
+
+with实现了java中try with resource的功能, 用于关闭文件, 数据库链接, 网络连接, 线程锁
+
+他主要通过上下文管理器接口（实现 `__enter__` 和 `__exit__` 方法的对象）来控制资源的进入与退出。
+
+上下文管理器协议定义了两个关键方法：
+
+* **`__enter__()`**：进入 `with` 语句块时调用，通常用于资源的获取、初始化工作，并返回一个值（该值通常是资源对象本身）。
+* **`__exit__()`**：退出 `with` 语句块时调用，通常用于资源的释放和清理。它可以处理异常（如果 `with` 语句块内抛出了异常）。
+
+with语句的工作流程如下:
+
+1. 进入 `with` 语句块时：
+
+   * 执行 `with` 后面的对象的 `__enter__()` 方法。
+   * `__enter__()` 方法的返回值会被赋给 `with` 语句的变量（例如：`as f`）。
+2. 执行 `with` 语句块中的代码：
+
+   * 资源在 `with` 语句块内被使用，`with` 语句的作用域内执行用户的代码。
+3. 退出 `with` 语句块时：
+
+   * 无论是正常结束还是发生异常，都会执行 `__exit__()` 方法。
+   * `__exit__()` 方法负责清理资源，比如关闭文件、释放锁等。
+
+伪代码如下:
+
+~~~python
+with get_a_context() as f:
+    do something()
+~~~
+
+等效于
+
+~~~python
+context = get_a_context()
+f = context.__enter__()
+
+try:
+    # do something
+finally:
+    # 这里的三个参数是调用过程中产生的异常的类型, 实例, 调用栈
+    # 系统会自动传递到__exit__函数中, 告诉我们异常
+    context.__exit__(None, None, None)
+~~~
+
+
+
+
+
+常见的with语句的使用有如下:
+
+1. 文件操作
+
+   ~~~python
+   with open('file.txt', 'r') as file:
+       content = file.read()
+   # 这里不需要显式调用 file.close()，文件会自动关闭
+   ~~~
+
+   上面代码等效于
+
+   ~~~python
+   file = open('file.txt', 'r')
+   file = file.__enter__()
+   
+   try:
+     # do something
+   finally:
+     file.__exit__(None, None, None)
+   ~~~
+
+2. 数据库连接
+
+   ~~~python
+   import sqlite3
+   
+   with sqlite3.connect('mydatabase.db') as conn:
+       cursor = conn.cursor()
+       cursor.execute("SELECT * FROM users")
+       result = cursor.fetchall()
+   # conn 会自动关闭
+   ~~~
+
+3. 同步锁
+
+   ~~~python
+   import threading
+   
+   lock = threading.Lock()
+   
+   with lock:
+       # 执行线程安全的操作
+       print("Critical section")
+   # lock 会自动释放
+   ~~~
+
+   
+
+#### 自定义上下文管理器
+
+你可以自定义上下文管理器类，使得 `with` 语句适用于自己的资源管理场景。只需实现 `__enter__()` 和 `__exit__()` 方法。
+
+```python
+class MyContextManager:
+    def __enter__(self):
+        print("Entering the context")
+        return self  # 返回一个资源对象
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        print("Exiting the context")
+        if exc_type:
+            print(f"Exception: {exc_type}")
+        return True  # 可以选择不让异常继续传播
+
+# 使用自定义上下文管理器
+with MyContextManager():
+    print("Inside the context")
+    raise ValueError("An error occurred")
+```
+
+**输出**：
+
+```
+Entering the context
+Inside the context
+Exiting the context
+Exception: <class 'ValueError'>
+```
+
+####  `with` 语句的异常处理
+
+在 `with` 语句块内部，如果抛出异常，`__exit__()` 方法将被调用，且异常会作为参数传递给 `__exit__()` 方法。你可以在 `__exit__()` 方法中处理异常，或者将异常重新抛出。
+
+```python
+class MyContextManager:
+    def __enter__(self):
+        print("Entering the context")
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        print("Exiting the context")
+        if exc_type:
+            print(f"Exception type: {exc_type}")
+        return False  # 返回 False 让异常继续传播, 返回true表示吃掉这个异常
+
+with MyContextManager():
+    print("Inside the context")
+    raise ValueError("An error occurred")
+```
+
+输出：
+
+```
+Entering the context
+Inside the context
+Exiting the context
+Exception type: <class 'ValueError'>
+```
+
+
+
+如果在 `__exit__()` 中返回 `True`，则可以**抑制异常**，使其不再向上传播。
+
+```python
+class MyContextManager:
+    def __enter__(self):
+        print("Entering the context")
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        print("Exiting the context")
+        if exc_type:
+            print(f"Exception type: {exc_type}")
+        return True  # 返回 True 会抑制异常
+
+with MyContextManager():
+    print("Inside the context")
+    raise ValueError("An error occurred")
+# 异常不会被抛出
+```
+
+输出：
+
+```
+Entering the context
+Inside the context
+Exiting the context
+Exception type: <class 'ValueError'>
+```
+
+
+
 ### 使用 with 打开文件
 
 类似于java中的try with resource
@@ -2991,7 +3186,8 @@ with open('a.txt', 'a', encoding='utf-8') as f:
 上面代码等效于
 
 ~~~python
-context = open('a.txt', 'a', encoding='utf-8')
+# 这里的context就是file对象本身, 调用file的__enter__()返回的也是self
+context = open('a.txt', 'a', encoding='utf-8') 
 f = context.__enter__()
 
 try:
@@ -3384,41 +3580,91 @@ from ... import utils  # 两个上级目录
 
 我们在使用import导入包或者模块的时候, python如何查找包的位置呢
 
-如果你使用的是项目路径来导入, 那么就按照相对路径的方式来查找
+如果你使用的是相对路径来导入, 那么就按照相对路径的方式来查找
 
 
 
 如果你使用的是绝对路径的方式
 
-1. 他会从当前项目的根目录开始查找
+1. 首先python会在执行python命令的目录下查找, 比如我们有如下的代码
 
    ~~~shell
-   # 比如你有如下的导入, 那么他会去root下的sub包下看看有没有a这个模块
-   # 或者看看root下有没有sub这个模块, 其中有没有a这个函数
    from root.sub import a
    ~~~
+   那么他会去当前目录下的root下的sub包下看看有没有a这个模块
+   
+   或者看看当前目录下的root下有没有sub这个模块, 其中有没有a这个函数
+   
+   **一般来说, 我们都是在项目的根目录下执行python命令的, 所以就会开始从项目的根目录下查找**
+   
+2.  如果在`执行python命令的目录下`没有查找到对应的包, 那么他会去`PYTHONPATH`环境变量指定的目录中去查找
 
-2. 如果当前项目下没有找到, 那么就去系统目录下查找, 那么系统目录有哪些呢, 我们可以使用如下命令查看
+      ~~~shell
+   # 查看PYTHONPATH的值
+   echo %PYTHONPATH%
+   
+   # 在windows下设置永久设置PYTHONPATH环境变量, 追加两个目录, 并保留现有的PYTHONPATH路径
+   C:\Users\sys49482>setx PYTHONPATH "%PYTHONPATH%;C:\path\to\custom\folder1;D:\path\to\custom\folder2"
+   
+   # 把当前目录加入到PYTHONPATH中
+   C:\Users\sys49482>setx PYTHONPATH "%PYTHONPATH%;%CD%"
+      ~~~
+   
+3.  如果在`PYTHONPATH`环境变量下没有查找到的话, 那么他会去查找python的标准库中有没有这个包, python标准库的位置一般是`python安装目录/Lib`文件夹中, 你可以通过如下命令来查看
 
-   ~~~python
-   C:\Users\Administrator>python -m site
-   sys.path = [
-       'C:\\Users\\Administrator',
-       'E:\\Python\\Python310\\python310.zip',
-       'E:\\Python\\Python310\\DLLs',
-       'E:\\Python\\Python310\\lib',
-       'E:\\Python\\Python310',
-       'E:\\Python\\Python310\\lib\\site-packages',
-       'E:\\Python\\Python310\\lib\\site-packages\\win32',
-       'E:\\Python\\Python310\\lib\\site-packages\\win32\\lib',
-       'E:\\Python\\Python310\\lib\\site-packages\\Pythonwin',
-   ]
-   USER_BASE: 'C:\\Users\\Administrator\\AppData\\Roaming\\Python' (doesn't exist)
-   USER_SITE: 'C:\\Users\\Administrator\\AppData\\Roaming\\Python\\Python310\\site-packages' (doesn't exist)
-   ENABLE_USER_SITE: True
+   你可以通过如下命令来查看python的安装目录
+
+   ~~~shell
+   # windows
+   where python
+   # linux
+   which python
    ~~~
 
-   上面的sys.path就是系统目录了, python会从上往下开始查找, 如果找到了就使用, 没找到就报错
+4. 如果还是没有找到， 那么就去pip的安装目录下查找， 一般是在`python安装目录/lib/site-packages`文件夹中
+
+   你也可以通过通过`pip show pakcage`来查看安装包的路径
+
+   ~~~shell
+   C:\Users\sys49482>pip install numpy
+   C:\Users\sys49482>pip show numpy
+   Name: numpy
+   Version: 1.19.5
+   Summary: NumPy is the fundamental package for array computing with Python.
+   Home-page: https://www.numpy.org
+   Author: Travis E. Oliphant et al.
+   Author-email: None
+   License: BSD
+   Location: c:\users\sys49482\appdata\local\programs\python\python36\lib\site-packages
+   ~~~
+
+
+
+你可以通过如下命令来查看python所有的搜索路径
+
+
+~~~shell
+C:\Users\sys49482>python -m site
+sys.path = [
+    # 当前执行python命令的路径
+    'C:\\Users\\sys49482',
+    # PYTHONPATH环境变量指定的路径
+    'C:\\path\\to\\custom\\folder1',
+    'D:\\path\\to\\custom\\folder2',
+    # python的标准库的路径
+    'C:\\Users\\sys49482\\AppData\\Local\\Programs\\Python\\Python36\\python36.zip',
+    'C:\\Users\\sys49482\\AppData\\Local\\Programs\\Python\\Python36\\DLLs',
+    'C:\\Users\\sys49482\\AppData\\Local\\Programs\\Python\\Python36\\lib',
+    'C:\\Users\\sys49482\\AppData\\Local\\Programs\\Python\\Python36',
+    # pip安装的第三方包的路径
+    'C:\\Users\\sys49482\\AppData\\Local\\Programs\\Python\\Python36\\lib\\site-packages',
+]
+USER_BASE: 'C:\\Users\\sys49482\\AppData\\Roaming\\Python' (doesn't exist)
+USER_SITE: 'C:\\Users\\sys49482\\AppData\\Roaming\\Python\\Python36\\site-packages' (doesn't exist)
+ENABLE_USER_SITE: True
+~~~
+
+上面的sys.path就是所有的搜索路径了, python会从上往下开始查找, 如果找到了就使用, 没找到就报错
 
 
 
@@ -3507,12 +3753,17 @@ pip的一些命令如下
 
 ~~~python
 pip install package_name # 安装包
+
 pip install package_name==version_number # 安装指定版本的包
+# pip install pytest-metadata==1.11.0
+
 pip uninstall package_name # 卸载包
 pip install --upgrade package_name # 升级包
 pip show package_name # 查看包的安转位置
 
-pip list # 查看已安装的包
+pip list # 查看已安装的包和版本
+
+# 如果你要重新安装一个包的话, 那么需要先uninstall, 然后再install
 ~~~
 
 

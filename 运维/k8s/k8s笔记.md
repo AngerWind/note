@@ -4334,7 +4334,81 @@ ca.crt  namespace  token
 
    
 
-   
+#### 挂载的实现
+
+上面说到, 每个pod都关联了一个ServiceAccount, k8s在启动pod的时候, 会将ServiceAccount对应的service-account-token挂载到容器的`/run/secrets/kubernetes.io/serviceaccount/`目录下面, 实际上他的实现方式和数据卷是类似的
+
+- 首先k8s会为每一个pod分配一个uid, 你可以通过如下的命令来查看这个uid
+
+  ~~~shell
+  kubectl get pod -n <my-namespace> <pod_name> -o jsonpath='{.metadata.uid}'
+  ~~~
+
+- 之后k8s会为每个pod创建一个目录
+
+  ~~~shell
+  # 8a2121f1-6fe4-48fc-b78b-d63ff6481f3a是pod的uid
+  /var/lib/kubelet/pods/8a2121f1-6fe4-48fc-b78b-d63ff6481f3a
+  ~~~
+
+- 之后将service-account-token的三个文件, 写到`/var/lib/kubelet/pods/${uid}/volumes/kubernetes.io~secret/${sa-token-name}`的目录下
+
+  ~~~shell
+  [root@node-157 8a2121f1-6fe4-48fc-b78b-d63ff6481f3a]# pwd
+  /var/lib/kubelet/pods/8a2121f1-6fe4-48fc-b78b-d63ff6481f3a
+  
+  [root@node-157 8a2121f1-6fe4-48fc-b78b-d63ff6481f3a]# tree
+  .
+  ├── containers
+  │   └── openjdk-container
+  │       └── 62d8216d
+  ├── etc-hosts
+  ├── plugins
+  │   └── kubernetes.io~empty-dir
+  │       ├── temp-storage
+  │       │   └── ready
+  │       └── wrapped_default-token-r2x7t
+  │           └── ready
+  └── volumes
+      ├── kubernetes.io~empty-dir
+      │   └── temp-storage
+      │       └── hello
+      # 这个保存的是secret的目录
+      └── kubernetes.io~secret
+          # 这个是secret的名字
+          └── default-token-r2x7t
+              ├── ca.crt -> ..data/ca.crt
+              ├── namespace -> ..data/namespace
+              └── token -> ..data/token
+  ~~~
+
+- 之后将这个目录, 挂载到每一个container对应的目录下面, 这样每个container读取的都是一样的service-account-token了
+
+你可以通过如下的pod命令来创建一个pod, 然后看看对应的目录
+
+~~~yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: jdk-pod
+spec:
+  containers:
+  - name: jdk-container
+    image: openjdk:17-jdk-slim  # 选择合适的 JDK 镜像
+    command: ["tail", "-f", "/dev/null"]  # 保持进程运行，防止容器退出
+    volumeMounts:
+    - name: temp-storage
+      mountPath: /tmp/storage  # Mount emptyDir to this path
+  volumes:
+  - name: temp-storage
+    emptyDir: {}
+~~~
+
+
+
+
+
+
 
 
 
@@ -4491,6 +4565,10 @@ spec:
 
 ### emptyDir
 
+**emptyDir的功能主要是用在一个pod有多个container的情况下, 这多个container共享同一个目录的, 这样container可以感知文件的变化, 进行通讯等等**
+
+
+
 当 Pod 被分配给节点时，首先创建 emptyDir 卷
 
 只要该 Pod 在该节点上运行，该卷就会存在。
@@ -4519,6 +4597,82 @@ spec:
     - name: cache-volume # volumes的名字
       emptyDir: {} # 定义emptyDir
 ~~~
+
+
+
+
+
+#### emptyDir的实现方式
+
+k8s创建pod的大概步骤如下:
+
+- 首先k8s会为每一个pod分配一个uid, 你可以通过如下的命令来查看这个uid
+
+  ~~~shell
+  kubectl get pod -n <my-namespace> <pod_name> -o jsonpath='{.metadata.uid}'
+  ~~~
+
+- 之后k8s会为每个pod创建一个目录
+
+  ~~~shell
+  # 8a2121f1-6fe4-48fc-b78b-d63ff6481f3a是pod的uid
+  /var/lib/kubelet/pods/8a2121f1-6fe4-48fc-b78b-d63ff6481f3a
+  ~~~
+
+- 之后k8s会创建一个如下的目录`/var/lib/kubelet/pods/${uid}/volumes/kubernetes.io~empty-dir/${volume-name}`的目录下
+
+  ~~~shell
+  [root@node-157 8a2121f1-6fe4-48fc-b78b-d63ff6481f3a]# pwd
+  /var/lib/kubelet/pods/8a2121f1-6fe4-48fc-b78b-d63ff6481f3a
+  
+  [root@node-157 8a2121f1-6fe4-48fc-b78b-d63ff6481f3a]# tree
+  .
+  ├── containers
+  │   └── openjdk-container
+  │       └── 62d8216d
+  ├── etc-hosts
+  ├── plugins
+  │   └── kubernetes.io~empty-dir
+  │       ├── temp-storage
+  │       │   └── ready
+  │       └── wrapped_default-token-r2x7t
+  │           └── ready
+  └── volumes
+          # 这个目录专门保持创建的empty-dir的
+      ├── kubernetes.io~empty-dir
+              # 这个是empty-dir的名字
+      │   └── temp-storage
+      │       └── hello
+      └── kubernetes.io~secret
+          └── default-token-r2x7t
+              ├── ca.crt -> ..data/ca.crt
+              ├── namespace -> ..data/namespace
+              └── token -> ..data/token
+  ~~~
+
+- 之后将这个``/var/lib/kubelet/pods/${uid}/volumes/kubernetes.io~empty-dir/${volume-name}``目录, 挂载到每一个container对应的目录下面, 这样每个container读取的都是一样的宿主机目录了
+
+你可以通过如下的pod命令来创建一个pod, 然后看看对应的目录
+
+~~~yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: jdk-pod
+spec:
+  containers:
+  - name: jdk-container
+    image: openjdk:17-jdk-slim  # 选择合适的 JDK 镜像
+    command: ["tail", "-f", "/dev/null"]  # 保持进程运行，防止容器退出
+    volumeMounts:
+    - name: temp-storage
+      mountPath: /tmp/storage  # Mount emptyDir to this path
+  volumes:
+  - name: temp-storage
+    emptyDir: {}
+~~~
+
+
 
 
 
