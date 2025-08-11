@@ -2901,7 +2901,7 @@ postgres.stop();
 
 
 
-## Testcontainers For Java
+## Testcontainers的依赖
 
 https://java.testcontainers.org/
 
@@ -2959,7 +2959,953 @@ Testcontainers for Java支持Junit4, Junit5, Spock框架, 常常用于在测试�
 
   ~~~groovy
   implementation platform('org.testcontainers:testcontainers-bom:1.21.3') //import bom
-  testImplementation('org.testcontainers:mysql') // 相关依赖不需要指定
+  testImplementation('org.testcontainers:mysql') // 相关依赖不需要指定版本
   ~~~
 
   
+
+## 在Springboot项目中测试数据库
+
+这是一个web项目, 使用spring web作为web框架, spring data jpa作为作为orm框架, pg作为数据库, testcontainer作为容器启动器
+
+
+
+你可以从如下地址中获取到代码
+
+ https://github.com/testcontainers/tc-guide-testing-spring-boot-rest-api.git
+
+
+
+1. 添加maven依赖
+
+   ~~~xml
+   <properties>
+       <java.version>17</java.version>
+       <testcontainers.version>1.19.8</testcontainers.version>
+   </properties>
+   <dependencies>
+       <dependency>
+           <groupId>org.springframework.boot</groupId>
+           <artifactId>spring-boot-starter-data-jpa</artifactId>
+       </dependency>
+       <dependency>
+           <groupId>org.springframework.boot</groupId>
+           <artifactId>spring-boot-starter-web</artifactId>
+       </dependency>
+       <dependency>
+           <groupId>org.postgresql</groupId>
+           <artifactId>postgresql</artifactId>
+           <scope>runtime</scope>
+       </dependency>
+       <dependency>
+           <groupId>org.springframework.boot</groupId>
+           <artifactId>spring-boot-starter-test</artifactId>
+           <scope>test</scope>
+       </dependency>
+       <dependency>
+           <groupId>org.testcontainers</groupId>
+           <artifactId>junit-jupiter</artifactId>
+           <scope>test</scope>
+       </dependency>
+       <dependency>
+           <groupId>org.testcontainers</groupId>
+           <artifactId>postgresql</artifactId>
+           <scope>test</scope>
+       </dependency>
+   </dependencies>
+   ~~~
+
+2. 创建jpa相关的entity
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import jakarta.persistence.Column;
+   import jakarta.persistence.Entity;
+   import jakarta.persistence.GeneratedValue;
+   import jakarta.persistence.GenerationType;
+   import jakarta.persistence.Id;
+   import jakarta.persistence.Table;
+   
+   @Entity
+   @Table(name = "customers")
+   class Customer {
+   
+     @Id
+     @GeneratedValue(strategy = GenerationType.IDENTITY)
+     private Long id;
+   
+     @Column(nullable = false)
+     private String name;
+   
+     @Column(nullable = false, unique = true)
+     private String email;
+   
+     public Customer() {}
+   
+     public Customer(Long id, String name, String email) {
+       this.id = id;
+       this.name = name;
+       this.email = email;
+     }
+   
+     // getter, setter
+   }
+   ~~~
+
+3. 创建jpa相关的repository
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import org.springframework.data.jpa.repository.JpaRepository;
+   
+   interface CustomerRepository extends JpaRepository<Customer, Long> {}
+   ~~~
+
+4. 创建一个 `src/main/resources/schema.sql `文件
+
+   ~~~java
+   create table if not exists customers (
+       id bigserial not null,
+       name varchar not null,
+       email varchar not null,
+       primary key (id),
+       UNIQUE (email)
+   );
+   ~~~
+
+5. 在`src/main/resources/application.properties`中添加如下的属性, 这样springboot会在启动的时候去执行上面的schema.sql
+
+   ~~~properties
+   spring.sql.init.mode=always
+   ~~~
+
+6. 创建一个controller
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.util.List;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.RestController;
+   
+   @RestController
+   class CustomerController {
+   
+     private final CustomerRepository repo;
+   
+     CustomerController(CustomerRepository repo) {
+       this.repo = repo;
+     }
+   
+     @GetMapping("/api/customers")
+     List<Customer> getAll() {
+       return repo.findAll();
+     }
+   }
+   ~~~
+
+7. 为controller添加测试
+
+   首先我们需要导入rest-assured包, 他是一个用来调用controller接口的模块
+
+   ~~~xml
+   <dependency>
+       <groupId>io.rest-assured</groupId>
+       <artifactId>rest-assured</artifactId>
+       <scope>test</scope>
+   </dependency>
+   ~~~
+
+   如果你使用的是gradle, 那么添加如下的依赖
+
+   ~~~groovy
+   testImplementation 'io.rest-assured:rest-assured'
+   ~~~
+
+8. 接下来我们来编写测试类
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import static io.restassured.RestAssured.given;
+   import static org.hamcrest.Matchers.hasSize;
+   
+   import io.restassured.RestAssured;
+   import io.restassured.http.ContentType;
+   import java.util.List;
+   import org.junit.jupiter.api.AfterAll;
+   import org.junit.jupiter.api.BeforeAll;
+   import org.junit.jupiter.api.BeforeEach;
+   import org.junit.jupiter.api.Test;
+   import org.springframework.beans.factory.annotation.Autowired;
+   import org.springframework.boot.test.context.SpringBootTest;
+   import org.springframework.boot.test.web.server.LocalServerPort;
+   import org.springframework.test.context.DynamicPropertyRegistry;
+   import org.springframework.test.context.DynamicPropertySource;
+   import org.testcontainers.containers.PostgreSQLContainer;
+   
+   // 随机端口启动web
+   @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+   class CustomerControllerTest {
+   
+       // 注入当前的随机端口
+     @LocalServerPort
+     private Integer port;
+   
+     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+       "postgres:16-alpine"
+     );
+   
+     @BeforeAll
+     static void beforeAll() {
+         // 在所有的测试启动之前, 启动容器
+       postgres.start();
+     }
+   
+     @AfterAll
+     static void afterAll() {
+         // 在所有的测试执行之后, 销毁容器
+       postgres.stop();
+     }
+   
+     @DynamicPropertySource
+     static void configureProperties(DynamicPropertyRegistry registry) {
+         // 将容器的信息, 动态的注册到springboot的配置中, 这样数据源就可以使用这个配置来创建连接了
+         // 这和在application.yaml中添加配置是一样的作用的
+       registry.add("spring.datasource.url", postgres::getJdbcUrl);
+       registry.add("spring.datasource.username", postgres::getUsername);
+       registry.add("spring.datasource.password", postgres::getPassword);
+     }
+   
+     @Autowired
+     CustomerRepository customerRepository;
+   
+     @BeforeEach
+     void setUp() {
+         // 设置RestAssured调用路径的baseURI
+         // 在每个测试用例开始之前, 都删除掉数据
+       RestAssured.baseURI = "http://localhost:" + port;
+       customerRepository.deleteAll();
+     }
+   
+     @Test
+     void shouldGetAllCustomers() {
+       List<Customer> customers = List.of(
+         new Customer(null, "John", "john@mail.com"),
+         new Customer(null, "Dennis", "dennis@mail.com")
+       );
+       customerRepository.saveAll(customers);
+       
+         // 调用controller的接口, 测试接口是否正确
+       given()
+         .contentType(ContentType.JSON)
+         .when()
+         .get("/api/customers")
+         .then()
+         .statusCode(200)
+         .body(".", hasSize(2));
+     }
+   }
+   ~~~
+
+9. 执行测试
+
+   ~~~shell
+   # If you are using Maven
+   ./mvnw test
+   
+   # If you are using Gradle
+   ./gradlew test
+   ~~~
+
+   
+
+
+
+## 在springboot项目中测试kafka listener
+
+在这个项目中, 我们使用到了spring for kafka, spring data jpa, mysql, testcontainer, 并且使用awaitility作为断言库
+
+这个项目是用来测试kafka listener能否接受到kafka client发送的消息, 并将消息写入到数据库中
+
+
+
+1. 导入依赖
+
+   ~~~groovy
+   dependencies {
+       implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+       implementation 'org.springframework.kafka:spring-kafka'
+       runtimeOnly 'com.mysql:mysql-connector-j'
+   
+       testImplementation 'org.springframework.boot:spring-boot-starter-test'
+       testImplementation 'org.testcontainers:junit-jupiter'
+       testImplementation 'org.springframework.kafka:spring-kafka-test'
+       testImplementation 'org.testcontainers:junit-jupiter'
+       testImplementation 'org.testcontainers:kafka'
+       testImplementation 'org.testcontainers:mysql'
+       testImplementation 'org.awaitility:awaitility'
+   }
+   ~~~
+
+2. 创建jpa的entity
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import jakarta.persistence.Column;
+   import jakarta.persistence.Entity;
+   import jakarta.persistence.GeneratedValue;
+   import jakarta.persistence.GenerationType;
+   import jakarta.persistence.Id;
+   import jakarta.persistence.Table;
+   import java.math.BigDecimal;
+   
+   @Entity
+   @Table(name = "products")
+   class Product {
+   
+     @Id
+     @GeneratedValue(strategy = GenerationType.IDENTITY)
+     private Long id;
+   
+     @Column(nullable = false, unique = true)
+     private String code;
+   
+     @Column(nullable = false)
+     private String name;
+   
+     @Column(nullable = false)
+     private BigDecimal price;
+   
+     public Product() {}
+   
+     public Product(Long id, String code, String name, BigDecimal price) {
+       this.id = id;
+       this.code = code;
+       this.name = name;
+       this.price = price;
+     }
+   
+   	// getter, setter
+   }
+   ~~~
+
+3. 创建jpa的entity
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.math.BigDecimal;
+   import java.util.Optional;
+   import org.springframework.data.jpa.repository.JpaRepository;
+   import org.springframework.data.jpa.repository.Modifying;
+   import org.springframework.data.jpa.repository.Query;
+   import org.springframework.data.repository.query.Param;
+   
+   interface ProductRepository extends JpaRepository<Product, Long> {
+     Optional<Product> findByCode(String code);
+   
+     @Modifying
+     @Query("update Product p set p.price = :price where p.code = :productCode")
+     void updateProductPrice(
+       @Param("productCode") String productCode,
+       @Param("price") BigDecimal price
+     );
+   }
+   ~~~
+
+4. 在 **src/main/resources** 目录下创建一个包含以下内容的 **schema.sql** 文件
+
+   ~~~sql
+   create table products if not exists (
+         id int NOT NULL AUTO_INCREMENT,
+         code varchar(255) not null,
+         name varchar(255) not null,
+         price numeric(5,2) not null,
+         PRIMARY KEY (id),
+         UNIQUE (code)
+   );
+   ~~~
+
+5. 我们还需要通过在 **src/main/resources/application.properties** 文件中添加以下属性来启用schema初始化
+
+   ~~~properties
+   spring.sql.init.mode=always
+   ~~~
+
+6. 创建kafka的事件对象
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.math.BigDecimal;
+   
+   record ProductPriceChangedEvent(String productCode, BigDecimal price) {}
+   ~~~
+
+7. 创建一个kafka listener, 用来监听kafka的消息, 并将消息写入到数据库中
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import org.slf4j.Logger;
+   import org.slf4j.LoggerFactory;
+   import org.springframework.kafka.annotation.KafkaListener;
+   import org.springframework.stereotype.Component;
+   import org.springframework.transaction.annotation.Transactional;
+   
+   @Component
+   @Transactional
+   class ProductPriceChangedEventHandler {
+   
+     private static final Logger log = LoggerFactory.getLogger(
+       ProductPriceChangedEventHandler.class
+     );
+   
+     private final ProductRepository productRepository;
+   
+     ProductPriceChangedEventHandler(ProductRepository productRepository) {
+       this.productRepository = productRepository;
+     }
+   
+     @KafkaListener(topics = "product-price-changes", groupId = "demo")
+     public void handle(ProductPriceChangedEvent event) {
+       log.info(
+         "Received a ProductPriceChangedEvent with productCode:{}: ",
+         event.productCode()
+       );
+         // 根据数据库中指定商品的价格
+       productRepository.updateProductPrice(event.productCode(), event.price());
+     }
+   }
+   ~~~
+
+8. 我们还需要在`src/main/resources/application.properties`中添加如下的属性
+
+   ~~~properties
+   # 生产者的配置参数
+   spring.kafka.bootstrap-servers=localhost:9092
+   spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer
+   spring.kafka.producer.value-serializer=org.springframework.kafka.support.serializer.JsonSerializer
+   
+   # 消费者的参数
+   spring.kafka.consumer.group-id=demo
+   spring.kafka.consumer.auto-offset-reset=latest
+   spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.StringDeserializer
+   spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JsonDeserializer
+   spring.kafka.consumer.properties.spring.json.trusted.packages=com.testcontainers.demo
+   ~~~
+
+9. 为kafka listener编写测试
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import static java.util.concurrent.TimeUnit.SECONDS;
+   import static org.assertj.core.api.Assertions.assertThat;
+   import static org.awaitility.Awaitility.await;
+   
+   import java.math.BigDecimal;
+   import java.time.Duration;
+   import java.util.Optional;
+   import org.junit.jupiter.api.BeforeEach;
+   import org.junit.jupiter.api.Test;
+   import org.springframework.beans.factory.annotation.Autowired;
+   import org.springframework.boot.test.context.SpringBootTest;
+   import org.springframework.kafka.core.KafkaTemplate;
+   import org.springframework.test.context.DynamicPropertyRegistry;
+   import org.springframework.test.context.DynamicPropertySource;
+   import org.springframework.test.context.TestPropertySource;
+   import org.testcontainers.containers.KafkaContainer;
+   import org.testcontainers.junit.jupiter.Container;
+   import org.testcontainers.junit.jupiter.Testcontainers;
+   import org.testcontainers.utility.DockerImageName;
+   
+   @SpringBootTest
+   @TestPropertySource(
+     properties = {
+         // 将消费的offset指定为earlist, 这样即使先发送了消息, listener才启动, 也可以消费到这个消息
+       "spring.kafka.consumer.auto-offset-reset=earliest",
+         // 指定数据库的url, 让他使用testcontainer提供的容器的url
+       "spring.datasource.url=jdbc:tc:mysql:8.0.32:///db",
+     }
+   )
+   @Testcontainers
+   class ProductPriceChangedEventHandlerTest {
+   
+     @Container
+     static final KafkaContainer kafka = new KafkaContainer(
+       DockerImageName.parse("confluentinc/cp-kafka:7.6.1")
+     );
+   
+     @DynamicPropertySource
+     static void overrideProperties(DynamicPropertyRegistry registry) {
+         // 动态的注入kafka bootstrap-server的地址
+         // 这和在application.yaml中添加这个配置是一样的
+       registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
+     }
+   
+     @Autowired
+     private KafkaTemplate<String, Object> kafkaTemplate;
+   
+     @Autowired
+     private ProductRepository productRepository;
+   
+     @BeforeEach
+     void setUp() {
+         // 在每次启动测试之前, 都插入一个商品信息
+       Product product = new Product(null, "P100", "Product One", BigDecimal.TEN);
+       productRepository.save(product);
+     }
+   
+     @Test
+     void shouldHandleProductPriceChangedEvent() {
+         // 创建爱你一个kafka消息
+       ProductPriceChangedEvent event = new ProductPriceChangedEvent(
+         "P100",
+         new BigDecimal("14.50")
+       );
+   
+         // 发送kafka消息
+       kafkaTemplate.send("product-price-changes", event.productCode(), event);
+   
+         // 断言, 等待三秒, 最多等待10秒, 测试数据库中关于P100的商品的信息
+       await()
+         .pollInterval(Duration.ofSeconds(3))
+         .atMost(10, SECONDS)
+         .untilAsserted(() -> {
+           Optional<Product> optionalProduct = productRepository.findByCode(
+             "P100"
+           );
+           assertThat(optionalProduct).isPresent();
+           assertThat(optionalProduct.get().getCode()).isEqualTo("P100");
+           assertThat(optionalProduct.get().getPrice())
+             .isEqualTo(new BigDecimal("14.50"));
+         });
+     }
+   }
+   ~~~
+
+10. 执行测试
+
+    ~~~shell
+    # If you are using Maven
+    ./mvnw test
+    
+    # If you are using Gradle
+    ./gradlew test
+    ~~~
+
+    执行完毕之后, 容器会自动停止并删除
+
+
+
+
+
+## 在springboot项目中测试第三方http接口
+
+在本次项目中, 我们正在构建一个管理视频和相册的引用, 并将第三方的rest api的 https://jsonplaceholder.typicode.com/地址来保存照片
+
+我们将使用 [WireMock](https://wiremock.org/) （一个用于构建模拟 API 的工具）来模拟外部服务交互并测试我们的 API 端点。
+
+
+
+1. 首先创建一个相册,  和照片的pojo
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.util.List;
+   
+   public record Album(Long albumId, List<Photo> photos) {}
+   
+   record Photo(Long id, String title, String url, String thumbnailUrl) {}
+   ~~~
+
+2. 创建 PhotoServiceClient ，它在内部使用 RestTemplate ，来获取给定 albumId 的照片
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.util.List;
+   import org.springframework.beans.factory.annotation.Value;
+   import org.springframework.boot.web.client.RestTemplateBuilder;
+   import org.springframework.core.ParameterizedTypeReference;
+   import org.springframework.http.HttpMethod;
+   import org.springframework.http.ResponseEntity;
+   import org.springframework.stereotype.Service;
+   import org.springframework.web.client.RestTemplate;
+   
+   @Service
+   class PhotoServiceClient {
+   
+     private final String baseUrl;
+     private final RestTemplate restTemplate;
+   
+     PhotoServiceClient(
+       @Value("${photos.api.base-url}") String baseUrl,
+       RestTemplateBuilder builder
+     ) {
+       this.baseUrl = baseUrl;
+       this.restTemplate = builder.build();
+     }
+   
+     List<Photo> getPhotos(Long albumId) {
+         // 调用rest api来获取指定相册的所有图片
+       String url = baseUrl + "/albums/{albumId}/photos";
+       ResponseEntity<List<Photo>> response = restTemplate.exchange(
+         url,
+         HttpMethod.GET,
+         null,
+         new ParameterizedTypeReference<>() {},
+         albumId
+       );
+       return response.getBody();
+     }
+   }
+   ~~~
+
+3. 因为上面使用到了 `photos.api.base-url`这个属性作为http的base uri, 所以我们还需要在src/main/resources/application.properties 文件中添加以下属性
+
+   ~~~properties
+   photos.api.base-url=https://jsonplaceholder.typicode.com
+   ~~~
+
+4. 让我们实现一个controller, 他调用PhotoServiceClient来返回指定相册的所有图片
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.util.List;
+   import org.slf4j.Logger;
+   import org.slf4j.LoggerFactory;
+   import org.springframework.http.ResponseEntity;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.PathVariable;
+   import org.springframework.web.bind.annotation.RequestMapping;
+   import org.springframework.web.bind.annotation.RestController;
+   import org.springframework.web.client.RestClientResponseException;
+   
+   @RestController
+   @RequestMapping("/api")
+   class AlbumController {
+   
+     private static final Logger logger = LoggerFactory.getLogger(
+       AlbumController.class
+     );
+   
+     private final PhotoServiceClient photoServiceClient;
+   
+     AlbumController(PhotoServiceClient photoServiceClient) {
+       this.photoServiceClient = photoServiceClient;
+     }
+   
+     @GetMapping("/albums/{albumId}")
+     public ResponseEntity<Album> getAlbumById(@PathVariable Long albumId) {
+       try {
+           // 通过photoServiceClient调用第三方的接口, 获取指定相册的所有图片
+         List<Photo> photos = photoServiceClient.getPhotos(albumId);
+         return ResponseEntity.ok(new Album(albumId, photos));
+       } catch (RestClientResponseException e) {
+         logger.error("Failed to get photos", e);
+         return new ResponseEntity<>(e.getStatusCode());
+       }
+     }
+   }
+   ~~~
+
+5. 此时我们要实现这个第三方的http接口, 并让他暴露出`/albums/{albumId}/photos`这个接口, 并且返回类似如下内容的响应
+
+   ~~~json
+   {
+      "albumId": 1,
+      "photos": [
+          {
+              "id": 51,
+              "title": "non sunt voluptatem placeat consequuntur rem incidunt",
+              "url": "https://via.placeholder.com/600/8e973b",
+              "thumbnailUrl": "https://via.placeholder.com/150/8e973b"
+          },
+          {
+              "id": 52,
+              "title": "eveniet pariatur quia nobis reiciendis laboriosam ea",
+              "url": "https://via.placeholder.com/600/121fa4",
+              "thumbnailUrl": "https://via.placeholder.com/150/121fa4"
+          },
+          ...
+          ...
+      ]
+   }
+   ~~~
+
+6. 我们可以直接通过mockito来模拟`photoServiceClient.getPhotos(albumId);`这个方法, 但是这样的话, 就没有办法来测试序列化, 反序列化的问题了, 也没有办法来测试网络延迟的问题了, 所以我们可以通过WireMock中的WireMockExtension类来启动一个服务器, 并让他在接受到特定的url的时候, 返回特定的json内容, 这样我们就快速的实现了一个第三方的http服务器
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+   import static com.github.tomakehurst.wiremock.client.WireMock.urlMatching;
+   import static com.github.tomakehurst.wiremock.core.WireMockConfiguration.wireMockConfig;
+   import static io.restassured.RestAssured.given;
+   import static org.hamcrest.CoreMatchers.is;
+   import static org.hamcrest.Matchers.hasSize;
+   import static org.springframework.boot.test.context.SpringBootTest.WebEnvironment.RANDOM_PORT;
+   
+   import com.github.tomakehurst.wiremock.client.WireMock;
+   import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
+   import io.restassured.RestAssured;
+   import io.restassured.http.ContentType;
+   import org.junit.jupiter.api.BeforeEach;
+   import org.junit.jupiter.api.Test;
+   import org.junit.jupiter.api.extension.RegisterExtension;
+   import org.springframework.boot.test.context.SpringBootTest;
+   import org.springframework.boot.test.web.server.LocalServerPort;
+   import org.springframework.http.MediaType;
+   import org.springframework.test.context.DynamicPropertyRegistry;
+   import org.springframework.test.context.DynamicPropertySource;
+   
+   // 随机的web端口
+   @SpringBootTest(webEnvironment = RANDOM_PORT)
+   class AlbumControllerTest {
+   
+       // 获取这个随机的端口
+     @LocalServerPort
+     private Integer port;
+   
+       // 创建一个WireMockExtension来启动一个WireMockExtension服务器
+     @RegisterExtension
+     static WireMockExtension wireMock = WireMockExtension
+       .newInstance()
+       .options(wireMockConfig().dynamicPort()) // 启动在随机的端口
+       .build();
+   
+     @DynamicPropertySource
+     static void configureProperties(DynamicPropertyRegistry registry) {
+       // 将wireMock的地址, 设置到属性中
+       // 这和在application.yaml中添加photos.api.base-url是一样的
+       registry.add("photos.api.base-url", wireMock::baseUrl);
+     }
+   
+     @BeforeEach
+     void setUp() {
+         // 指定RestAssured调用的端口为web端口
+       RestAssured.port = port;
+     }
+   
+     @Test
+     void shouldGetAlbumById() {
+       Long albumId = 1L;
+      // 指定wireMock在接受到特定的请求之后, 返回特定的json
+       wireMock.stubFor(
+         WireMock
+           .get(urlMatching("/albums/" + albumId + "/photos"))
+           .willReturn(
+             aResponse()
+               .withHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+               .withBody(
+                 """
+                 [
+                      {
+                          "id": 1,
+                          "title": "accusamus beatae ad facilis cum similique qui sunt",
+                          "url": "https://via.placeholder.com/600/92c952",
+                          "thumbnailUrl": "https://via.placeholder.com/150/92c952"
+                      },
+                      {
+                          "id": 2,
+                          "title": "reprehenderit est deserunt velit ipsam",
+                          "url": "https://via.placeholder.com/600/771796",
+                          "thumbnailUrl": "https://via.placeholder.com/150/771796"
+                      }
+                  ]
+                 """
+               )
+           )
+       );
+   
+         // 通过RestAssured来调用controller的接口, 进行测试
+       given()
+         .contentType(ContentType.JSON)
+         .when()
+         .get("/api/albums/{albumId}", albumId)
+         .then()
+         .statusCode(200)
+         .body("albumId", is(albumId.intValue()))
+         .body("photos", hasSize(2));
+     }
+   
+     @Test
+     void shouldReturnServerErrorWhenPhotoServiceCallFailed() {
+       Long albumId = 2L;
+         // 指定wireMock在接受到特定的url的时候, 报错
+       wireMock.stubFor(
+         WireMock
+           .get(urlMatching("/albums/" + albumId + "/photos"))
+           .willReturn(aResponse().withStatus(500))
+       );
+   
+         // 测试
+       given()
+         .contentType(ContentType.JSON)
+         .when()
+         .get("/api/albums/{albumId}", albumId)
+         .then()
+         .statusCode(500);
+     }
+   }
+   ~~~
+
+7. 在上面的代码中, 我们是通过java代码, 来指定WireMock在接受到指定的url访问的时候返回特定的json文件, 当然我们也可以将这些url和返回的json放在一个json文件中来指定
+
+   首选我们要创建一个`src/test/resources/wiremock/mappings/get-album-photos.json`文件
+
+   ~~~json
+   {
+     "mappings": [
+       {
+         "request": {
+           "method": "GET",
+           "urlPattern": "/albums/([0-9]+)/photos"
+         },
+         "response": {
+           "status": 200,
+           "headers": {
+             "Content-Type": "application/json"
+           },
+           "jsonBody": [
+             {
+               "id": 1,
+               "title": "accusamus beatae ad facilis cum similique qui sunt",
+               "url": "https://via.placeholder.com/600/92c952",
+               "thumbnailUrl": "https://via.placeholder.com/150/92c952"
+             },
+             {
+               ...
+             }
+           ]
+         }
+       }
+     ]
+   }
+   ~~~
+
+   然后通过如下代码, 让wiremock读取指定目录下的文件, 来匹配url和要返回的json
+
+   ~~~java
+   @RegisterExtension
+   static WireMockExtension wireMock = WireMockExtension.newInstance()
+        .options(
+            wireMockConfig()
+               .dynamicPort()
+       // 读取src/test/resources/wiremock下的json文件
+               .usingFilesUnderClasspath("wiremock")
+       )
+       .build();
+   ~~~
+
+   然后就可以这样编写测试用例了
+
+   ~~~java
+     @Test
+     void shouldGetAlbumById() {
+       Long albumId = 1L;
+   
+       given()
+         .contentType(ContentType.JSON)
+         .when()
+         .get("/api/albums/{albumId}", albumId)
+         .then()
+         .statusCode(200)
+         .body("albumId", is(albumId.intValue()))
+         .body("photos", hasSize(2));
+     }
+   ~~~
+
+8. 在上面的代码中, 我们实际上是通过WireMockExtension启动了一个服务器, 来模拟第三方接口, 我们也可以通过Testcontainer来将WireMockExtension跑在docker容器中
+
+   ~~~java
+   @SpringBootTest(webEnvironment = RANDOM_PORT) // web启动在随机的端口
+   @Testcontainers
+   class AlbumControllerTestcontainersTests {
+   
+       @LocalServerPort
+       private Integer port;
+   
+       // 通过WireMockContainer, 会启动一个docker容器, 内置了一个WireMockExtension启动的服务器
+       @Container
+       static WireMockContainer wiremockServer = new WireMockContainer("wiremock/wiremock:3.6.0")
+               .withMapping("photos-by-album",
+                           // 读取src/test/resources/com/testcontainrs/demoAlbumControllerTestcontainersTests下的mocks-config.json作为配置文件
+                           AlbumControllerTestcontainersTests.class,
+                           "mocks-config.json");
+   
+       @DynamicPropertySource
+       static void configureProperties(DynamicPropertyRegistry registry) {
+           // 获取wiremock的baseurl, 注册到属性中
+           registry.add("photos.api.base-url", wiremockServer::getBaseUrl);
+       }
+   
+       @BeforeEach
+       void setUp() {
+           // 设置web端口的port, RestAssured是用于调用controller接口的
+           RestAssured.port = port;
+       }
+   
+       @Test
+       void shouldGetAlbumById() {
+           Long albumId = 1L;
+   
+           given().contentType(ContentType.JSON)
+                   .when()
+                   .get("/api/albums/{albumId}", albumId)
+                   .then()
+                   .statusCode(200)
+                   .body("albumId", is(albumId.intValue()))
+                   .body("photos", hasSize(1));
+       }
+   }
+   ~~~
+
+   我们创建需要读取的wiremock
+
+   ~~~json
+   {
+     "mappings": [
+       {
+         "request": {
+           "method": "GET",
+           "urlPattern": "/albums/([0-9]+)/photos"
+         },
+         "response": {
+           "status": 200,
+           "headers": {
+             "Content-Type": "application/json"
+           },
+           "jsonBody": [
+             {
+               "id": 1,
+               "title": "accusamus beatae ad facilis cum similique qui sunt",
+               "url": "https://via.placeholder.com/600/92c952",
+               "thumbnailUrl": "https://via.placeholder.com/150/92c952"
+             }
+           ]
+         }
+       }
+     ]
+   }
+   ~~~
+
+9. 之后我们可以通过如下的命令, 来执行测试
+
+   ~~~shell
+   # If you are using Maven
+   ./mvnw test
+   
+   # If you are using Gradle
+   ./gradlew test
+   ~~~
+
+   
