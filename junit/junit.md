@@ -2899,6 +2899,23 @@ postgres.stop();
 
 
 
+## Testcontainers的运行要求
+
+首先要使用Testcontainrs的话, 那么需要使用的jdk为jdk17+
+
+同时你还需要项目运行的环境有docker环境, 比如
+
+- windows上安装docker desktop
+- linux上安装了docker
+
+
+
+如果你的机器上使用了其他的容器运行时, 比如podman, rancher desktop, colima, 那么你还要进行一些额外的配置, 才能够让testcontaienrs能够使用这些容器运行时, 详细的内容查看
+
+https://java.testcontainers.org/supported_docker_environment/
+
+
+
 
 
 ## Testcontainers的依赖
@@ -2964,8 +2981,9 @@ Testcontainers for Java支持Junit4, Junit5, Spock框架, 常常用于在测试�
 
 
 
-
 ## 在Java项目中测试数据库
+
+https://testcontainers.com/guides/getting-started-with-testcontainers-for-java/
 
 1. 首先我们添加如下的依赖
 
@@ -3189,6 +3207,8 @@ Testcontainers for Java支持Junit4, Junit5, Spock框架, 常常用于在测试�
 
 
 ## 在Springboot项目中测试数据库
+
+https://testcontainers.com/guides/testing-spring-boot-rest-api-using-testcontainers/
 
 这是一个web项目, 使用spring web作为web框架, spring data jpa作为作为orm框架, pg作为数据库, testcontainer作为容器启动器
 
@@ -3449,6 +3469,8 @@ Testcontainers for Java支持Junit4, Junit5, Spock框架, 常常用于在测试�
 
 
 ## 在springboot项目中测试kafka listener
+
+https://testcontainers.com/guides/testing-spring-boot-kafka-listener-using-testcontainers/
 
 在这个项目中, 我们使用到了spring for kafka, spring data jpa, mysql, testcontainer, 并且使用awaitility作为断言库
 
@@ -3729,7 +3751,9 @@ Testcontainers for Java支持Junit4, Junit5, Spock框架, 常常用于在测试�
 
 
 
-## 在springboot项目中测试第三方http接口
+## 在springboot项目中使用WireMock测试第三方http接口
+
+https://testcontainers.com/guides/testing-rest-api-integrations-using-wiremock/
 
 在本次项目中, 我们正在构建一个管理视频和相册的引用, 并将第三方的rest api的 https://jsonplaceholder.typicode.com/地址来保存照片
 
@@ -4133,3 +4157,488 @@ Testcontainers for Java支持Junit4, Junit5, Spock框架, 常常用于在测试�
    ~~~
 
    
+
+## 在springboot项目中使用MockServer测试第三方http接口
+
+https://testcontainers.com/guides/testing-rest-api-integrations-using-mockserver/
+
+在这个项目中, 假设我们正在构建一个相册管理系统, 同时使用第三方rest api `https://jsonplaceholder.typicode.com/ `来管理图片和视频资源
+
+我们使用Spring Web, Spring Reactive Web作为web框架
+
+
+
+1. 首先创建相册和照片的pojo
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.util.List;
+   
+   public record Album(Long albumId, List<Photo> photos) {}
+   
+   record Photo(Long id, String title, String url, String thumbnailUrl) {}
+   ~~~
+
+2. 在 Spring Framework 6 之前，通常使用 RestTemplate 、 WebClient 或 FeignClient 进行 HTTP API 调用。Spring 6 引入了对创建声明式 HTTP 客户端的原生支持。
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.util.List;
+   import org.springframework.web.bind.annotation.PathVariable;
+   import org.springframework.web.service.annotation.GetExchange;
+   
+   interface PhotoServiceClient {
+       // 调用远程的第三方api, 获取指定相册下的所有的照片
+     @GetExchange("/albums/{albumId}/photos")
+     List<Photo> getPhotos(@PathVariable Long albumId);
+   }
+   ~~~
+
+3. 为了实现PhotoServiceClient的动态代理, 我们需要使用`HttpServiceProxyFactory`来将`PhotoServiceClient`注册为spring中的bean, 而HttpServiceProxyFactory 需要一个HttpClientAdapter
+
+   Spring Boot 提供了 **WebClientAdapter** ，它是 **HttpClientAdapter** 的一个实现，并且是 **spring-webflux** 库的一部分。由于我们已经添加了 **spring-boot-starter-webflux** 依赖项，因此我们可以按如下方式注册 **PhotoServiceClient** bean：
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import org.springframework.beans.factory.annotation.Value;
+   import org.springframework.context.annotation.Bean;
+   import org.springframework.context.annotation.Configuration;
+   import org.springframework.web.reactive.function.client.WebClient;
+   import org.springframework.web.reactive.function.client.support.WebClientAdapter;
+   import org.springframework.web.service.invoker.HttpServiceProxyFactory;
+   
+   @Configuration
+   public class AppConfig {
+   
+     @Bean
+     public PhotoServiceClient photoServiceClient(
+       @Value("${photos.api.base-url}") String photosApiBaseUrl
+     ) {
+       WebClient client = WebClient.builder().baseUrl(photosApiBaseUrl).build();
+       HttpServiceProxyFactory factory = HttpServiceProxyFactory
+         .builder(WebClientAdapter.forClient(client))
+         .build();
+       return factory.createClient(PhotoServiceClient.class);
+     }
+   }
+   ~~~
+
+4. 我们还需要添加如下的配置文件, 来指定PhotoServiceClient调用的baseUrl
+
+   ~~~properties
+   photos.api.base-url=https://jsonplaceholder.typicode.com
+   ~~~
+
+5. 现在我们可以创建一个controller, 他会通过**PhotoServiceClient** 去调用第三方的api, 获取指定相册下的所有照片, 并返回给调用者
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.util.List;
+   import org.slf4j.Logger;
+   import org.slf4j.LoggerFactory;
+   import org.springframework.http.ResponseEntity;
+   import org.springframework.web.bind.annotation.GetMapping;
+   import org.springframework.web.bind.annotation.PathVariable;
+   import org.springframework.web.bind.annotation.RequestMapping;
+   import org.springframework.web.bind.annotation.RestController;
+   import org.springframework.web.reactive.function.client.WebClientResponseException;
+   
+   @RestController
+   @RequestMapping("/api")
+   class AlbumController {
+   
+     private static final Logger logger = LoggerFactory.getLogger(
+       AlbumController.class
+     );
+   
+     private final PhotoServiceClient photoServiceClient;
+   
+     AlbumController(PhotoServiceClient photoServiceClient) {
+       this.photoServiceClient = photoServiceClient;
+     }
+   
+     @GetMapping("/albums/{albumId}")
+     public ResponseEntity<Album> getAlbumById(@PathVariable Long albumId) {
+       try {
+         List<Photo> photos = photoServiceClient.getPhotos(albumId);
+         return ResponseEntity.ok(new Album(albumId, photos));
+       } catch (WebClientResponseException e) {
+         logger.error("Failed to get photos", e);
+         return new ResponseEntity<>(e.getStatusCode());
+       }
+     }
+   }
+   ~~~
+
+6. 现在我们已经实现了我们的业务逻辑, 要进行编写测试代码, 为此我们需要创建一个测试用的服务器, 用来模拟第三方rest api
+
+   我们可以通过MockServer来实现这个功能, MockServer会启动一个服务器, 你可以指定在调用指定url的时候, 返回指定的内容
+
+   同时Testcontainer也通过了MockServer的实现, 首先我们需要导入依赖
+
+   ~~~groovy
+   // 这是一个用来调用controller的库
+   testImplementation 'io.rest-assured:rest-assured'
+   testImplementation 'org.testcontainers:mockserver'
+   testImplementation 'org.mock-server:mockserver-netty:5.15.0'
+   ~~~
+
+7. 编写测试代码
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import static io.restassured.RestAssured.given;
+   import static org.hamcrest.CoreMatchers.is;
+   import static org.hamcrest.Matchers.hasSize;
+   import static org.mockserver.model.HttpRequest.request;
+   import static org.mockserver.model.HttpResponse.response;
+   import static org.mockserver.model.JsonBody.json;
+   
+   import io.restassured.RestAssured;
+   import io.restassured.http.ContentType;
+   import org.junit.jupiter.api.BeforeEach;
+   import org.junit.jupiter.api.Test;
+   import org.mockserver.client.MockServerClient;
+   import org.mockserver.model.Header;
+   import org.mockserver.verify.VerificationTimes;
+   import org.springframework.boot.test.context.SpringBootTest;
+   import org.springframework.boot.test.web.server.LocalServerPort;
+   import org.springframework.test.context.DynamicPropertyRegistry;
+   import org.springframework.test.context.DynamicPropertySource;
+   import org.testcontainers.containers.MockServerContainer;
+   import org.testcontainers.junit.jupiter.Container;
+   import org.testcontainers.junit.jupiter.Testcontainers;
+   import org.testcontainers.utility.DockerImageName;
+   
+   
+   // controller启动在随机的端口
+   @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+   @Testcontainers
+   class AlbumControllerTest {
+   
+       // 将controller启动的端口注入到这里
+     @LocalServerPort
+     private Integer port;
+   
+       // 通过Testcontainer来启动一个MockServer的端口
+     @Container
+     static MockServerContainer mockServerContainer = new MockServerContainer(
+       DockerImageName.parse("mockserver/mockserver:5.15.0")
+     );
+   
+     static MockServerClient mockServerClient;
+   
+     @DynamicPropertySource
+     static void overrideProperties(DynamicPropertyRegistry registry) {
+       mockServerClient =
+       new MockServerClient(
+         mockServerContainer.getHost(),
+         mockServerContainer.getServerPort()
+       );
+         // 将mockServer所在的baseUrl注入到属性中, 这样就可以注入到PhotoServiceClient中
+       registry.add("photos.api.base-url", mockServerContainer::getEndpoint);
+     }
+   
+     @BeforeEach
+     void setUp() {
+         // 将controller启动的端口, 设置到RestAssured中
+       RestAssured.port = port;
+       mockServerClient.reset();
+     }
+   
+     @Test
+     void shouldGetAlbumById() {
+       Long albumId = 1L;
+   
+         // 指定mockServer在接受到指定的url之后, 返回特定的json
+       mockServerClient
+         .when(
+           request().withMethod("GET").withPath("/albums/" + albumId + "/photos")
+         )
+         .respond(
+           response()
+             .withStatusCode(200)
+             .withHeaders(
+               new Header("Content-Type", "application/json; charset=utf-8")
+             )
+             .withBody(
+               json(
+                 """
+                 [
+                      {
+                          "id": 1,
+                          "title": "accusamus beatae ad facilis cum similique qui sunt",
+                          "url": "https://via.placeholder.com/600/92c952",
+                          "thumbnailUrl": "https://via.placeholder.com/150/92c952"
+                      },
+                      {
+                          "id": 2,
+                          "title": "reprehenderit est deserunt velit ipsam",
+                          "url": "https://via.placeholder.com/600/771796",
+                          "thumbnailUrl": "https://via.placeholder.com/150/771796"
+                      }
+                  ]
+                 """
+               )
+             )
+         );
+   
+         // 通过RestAssured来调用controller, 看看业务逻辑是否有问题
+       given()
+         .contentType(ContentType.JSON)
+         .when()
+         .get("/api/albums/{albumId}", albumId)
+         .then()
+         .statusCode(200)
+         .body("albumId", is(albumId.intValue()))
+         .body("photos", hasSize(2));
+   
+         // 验证mokeServer的指定路径, 被调用的次数
+       verifyMockServerRequest("GET", "/albums/" + albumId + "/photos", 1);
+     }
+     private void verifyMockServerRequest(String method, String path, int times) {
+       mockServerClient.verify(
+         request().withMethod(method).withPath(path),
+         VerificationTimes.exactly(times)
+       );
+     }
+   }
+   ~~~
+
+   
+
+
+
+## 使用Testcontainer测试Quarkus应用
+
+https://testcontainers.com/guides/development-and-testing-quarkus-application-using-testcontainers/
+
+
+
+## 使用Testcontainer测试JOOQ和Flyway
+
+https://testcontainers.com/guides/working-with-jooq-flyway-using-testcontainers/
+
+
+
+
+
+## 配置容器中的初始化
+
+https://testcontainers.com/guides/configuration-of-services-running-in-container/
+
+有时候, Testcontainer启动了一个容器, 但是我们希望能够将一些文件, 从项目中拷贝到容器中
+
+比如我们通过Testcontainer启动了一个PG容器, 但是我们希望能够将项目中的sql脚本拷贝到容器中的`/docker-entrypoint-initdb.d`目录下, 这样在容器启动的时候, 就会自动的执行我们的脚本, 创建数据库相关的表
+
+1. 假设我们有一个`src/test/resources/init-db.sql`
+
+   ~~~SQL
+   create table customers (
+        id bigint not null,
+        name varchar not null,
+        primary key (id)
+   );
+   ~~~
+
+2. 我们编写一个测试, 并通过Testcontainer来启动了一个pg容器, 那么我们可以使用如下的代码, 将`src/test/resources/init-db.sql`拷贝到容器中
+
+   ~~~java
+   import org.testcontainers.containers.PostgreSQLContainer;
+   import org.testcontainers.junit.jupiter.Container;
+   import org.testcontainers.junit.jupiter.Testcontainers;
+   import org.testcontainers.utility.MountableFile;
+   
+   @Testcontainers
+   class CustomerServiceTest {
+   
+      @Container
+      static PostgreSQLContainer<?> postgres =
+              new PostgreSQLContainer<>("postgres:16-alpine")
+                   .withCopyFileToContainer(
+                       //读取classpath下的init-db.sql, 拷贝到容器中的/docker-entrypoint-initdb.d/目录下
+                       MountableFile.forClasspathResource(
+                           "init-db.sql"), "/docker-entrypoint-initdb.d/"
+                   );
+   
+      @Test
+      void shouldGetCustomers() {
+         ...
+      }
+   }
+   ~~~
+
+   或者通过如下的代码, 将宿主机上的任意路径的文件, 拷贝到容器中
+
+   ```java
+   static PostgreSQLContainer<?> postgres =
+          new PostgreSQLContainer<>("postgres:16-alpine")
+           .withCopyFileToContainer(
+                   MountableFile.forHostPath("/host/path/to/init-db.sql"),
+                   "/docker-entrypoint-initdb.d/"
+           );
+   ```
+
+   
+
+一些 Docker 容器提供 CLI 工具，通过在容器内运行命令来执行各种操作。在使用 Testcontainers 时，我们可能希望在运行测试之前执行一些初始化任务。
+
+您可以使用 **container.execInContainer(String… command)** API 在正在运行的容器内运行任何可用的命令。
+
+假设我们正在测试将文件上传到 S3 存储桶的场景。这时，我们可能需要在运行测试之前创建 S3 存储桶。那么你可以这么办
+
+~~~java
+@Testcontainers
+class LocalStackTest {
+
+  static final String bucketName = "mybucket";
+
+  static URI s3Endpoint;
+  static String accessKey;
+  static String secretKey;
+  static String region;
+
+  @Container
+  static LocalStackContainer localStack = new LocalStackContainer(
+    DockerImageName.parse("localstack/localstack:3.4.0")
+  );
+
+  @BeforeAll
+  static void beforeAll() throws IOException, InterruptedException {
+    s3Endpoint = localStack.getEndpointOverride(S3);
+    accessKey = localStack.getAccessKey();
+    secretKey = localStack.getSecretKey();
+    region = localStack.getRegion();
+
+      // 执行命令, 创建bucket
+    localStack.execInContainer("awslocal", "s3", "mb", "s3://" + bucketName);
+
+  @Test
+  void shouldListBuckets() {
+    StaticCredentialsProvider credentialsProvider =
+      StaticCredentialsProvider.create(
+        AwsBasicCredentials.create(accessKey, secretKey)
+      );
+    S3Client s3 = S3Client
+      .builder()
+      .endpointOverride(s3Endpoint)
+      .credentialsProvider(credentialsProvider)
+      .region(Region.of(region))
+      .build();
+
+    List<String> s3Buckets = s3
+      .listBuckets()
+      .buckets()
+      .stream()
+      .map(Bucket::name)
+      .toList();
+
+    assertTrue(s3Buckets.contains(bucketName));
+  }
+}
+~~~
+
+
+
+
+
+## @Testcontainers和@Container注解
+
+https://testcontainers.com/guides/testcontainers-container-lifecycle/#_using_junit_5_extension_annotations
+
+在Java项目中测试数据库的部分中, 我们使用如下代码来创建了一个pg数据库
+
+~~~java
+package com.testcontainers.demo;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.util.List;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.PostgreSQLContainer;
+
+class CustomerServiceTest {
+
+    // 通过如下代码, 会通过docker创建一个pg的容器
+  static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+    "postgres:16-alpine"
+  );
+    
+  @BeforeAll
+  static void beforeAll() {
+      // 在所有测试用例执行之前启动pg容器
+    postgres.start();
+  }
+
+  @AfterAll
+  static void afterAll() {
+      // 在所有测试用例执行之后, 停止并删除pg容器
+    postgres.stop();
+  }
+}
+~~~
+
+但是如果我们使用的是junit5, 那么Testcontainers提供了两个注解, 可以让我们更方便的编写测试用例
+
+上面的代码可以修改为
+
+~~~java
+package com.testcontainers.demo;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+@Testcontainers
+class CustomerServiceWithJUnit5ExtensionTest {
+
+  @Container
+  static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+    "postgres:16-alpine"
+  );
+}
+~~~
+
+我们没有使用 @BeforeAll 和 @AfterAll 回调方法启动和停止 Postgres 容器，而是在类中添加了 @Testcontainers注释，并在静态 PostgreSQLContainer 字段上添加了 @Container 注释
+
+@Testcontainers 是junit5的一个extends, 他会扫描当前的测试类, 并查找所有带@Container注解的容器类型的字段。
+
+- 如果该字段是静态字段 ，则该容器将在运行当前测试类的所有测试之前启动一次，并在执行完所有测试后停止。
+- 如果该字段是实例字段，则在每个测试方法之前启动一个新容器，并在执行完测试后停止。(每个测试用例都会启动和停止删除容器, 不推荐这种方式, 消耗巨大)
+
+
+
+
+
+## Testcontainers Desktop
+
+https://testcontainers.com/guides/simple-local-development-with-testcontainers-desktop/#_switching_container_runtimes
+
+tetcontainers desktop是一款testcontainer的管理工具, 他有如下的几个功能
+
+1. 如果你的机器上安装了多个容器运行时, 比如docker, podman, 那么你可以使用testcontainer desktop来轻松的指定你要使用的容器运行时
+
+2. 在运行基于 Testcontainers 的测试时，默认情况下，容器的端口会映射到主机上的随机可用端口，这样就不会发生任何端口冲突。
+
+   然而，在开发过程中，你可能需要连接到这些容器来检查数据或排除异常行为。总是检查主机上为容器分配的随机端口并连接到该端口会很麻烦。
+
+   Testcontainers Desktop 应用程序可以轻松地将固定端口用于容器服务，以便您始终可以使用相同配置的固定端口连接到这些服务。
+
+3. 在运行测试时，您可能希望在容器移除之前检查数据以调试某些问题。现在，您可以使用**冻结容器关闭**功能，该功能可以阻止容器关闭，从而让您能够调试问题。
+
+详细情况看上面的连接, **如果真的要基于Testcontainer来进行测试的话, 那么这个软件还是很有必要安装一下的**
