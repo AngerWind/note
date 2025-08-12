@@ -2962,7 +2962,231 @@ Testcontainers for Java支持Junit4, Junit5, Spock框架, 常常用于在测试�
   testImplementation('org.testcontainers:mysql') // 相关依赖不需要指定版本
   ~~~
 
-  
+
+
+
+## 在Java项目中测试数据库
+
+1. 首先我们添加如下的依赖
+
+   ~~~xml
+   <dependencies>
+       <dependency>
+           <groupId>org.postgresql</groupId>
+           <artifactId>postgresql</artifactId>
+           <version>42.7.3</version>
+       </dependency>
+       <dependency>
+           <groupId>ch.qos.logback</groupId>
+           <artifactId>logback-classic</artifactId>
+           <version>1.5.6</version>
+       </dependency>
+       <dependency>
+           <groupId>org.junit.jupiter</groupId>
+           <artifactId>junit-jupiter</artifactId>
+           <version>5.10.2</version>
+           <scope>test</scope>
+       </dependency>
+   </dependencies>
+   
+   <build>
+       <plugins>
+           <plugin>
+               <!-- 启动测试的插件 -->
+               <groupId>org.apache.maven.plugins</groupId>
+               <artifactId>maven-surefire-plugin</artifactId>
+               <version>3.2.5</version>
+           </plugin>
+       </plugins>
+   </build>
+   ~~~
+
+2. 定义一个Customer作为实体类
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   public record Customer(Long id, String name) {}
+   ~~~
+
+3. 创建 **DBConnectionProvider.java** 类来保存 JDBC 连接参数，并创建一个获取数据库 **Connection** 的方法
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.sql.Connection;
+   import java.sql.DriverManager;
+   
+   class DBConnectionProvider {
+   
+     private final String url;
+     private final String username;
+     private final String password;
+   
+     public DBConnectionProvider(String url, String username, String password) {
+       this.url = url;
+       this.username = username;
+       this.password = password;
+     }
+   
+     // 通过数据库的参数, 返回一个Connection
+     Connection getConnection() {
+       try {
+         return DriverManager.getConnection(url, username, password);
+       } catch (Exception e) {
+         throw new RuntimeException(e);
+       }
+     }
+   }
+   ~~~
+
+4. 创建 **CustomerService.java** 
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import java.sql.Connection;
+   import java.sql.PreparedStatement;
+   import java.sql.ResultSet;
+   import java.sql.SQLException;
+   import java.util.ArrayList;
+   import java.util.List;
+   
+   public class CustomerService {
+   
+     private final DBConnectionProvider connectionProvider;
+   
+     public CustomerService(DBConnectionProvider connectionProvider) {
+       this.connectionProvider = connectionProvider;
+       createCustomersTableIfNotExists();
+     }
+   
+       // 插入一个Customer
+     public void createCustomer(Customer customer) {
+       try (Connection conn = this.connectionProvider.getConnection()) {
+         PreparedStatement pstmt = conn.prepareStatement(
+           "insert into customers(id,name) values(?,?)"
+         );
+         pstmt.setLong(1, customer.id());
+         pstmt.setString(2, customer.name());
+         pstmt.execute();
+       } catch (SQLException e) {
+         throw new RuntimeException(e);
+       }
+     }
+   
+       // 查询所有的Customer
+     public List<Customer> getAllCustomers() {
+       List<Customer> customers = new ArrayList<>();
+   
+       try (Connection conn = this.connectionProvider.getConnection()) {
+         PreparedStatement pstmt = conn.prepareStatement(
+           "select id,name from customers"
+         );
+         ResultSet rs = pstmt.executeQuery();
+         while (rs.next()) {
+           long id = rs.getLong("id");
+           String name = rs.getString("name");
+           customers.add(new Customer(id, name));
+         }
+       } catch (SQLException e) {
+         throw new RuntimeException(e);
+       }
+       return customers;
+     }
+   
+       // 如果customers表不存在, 那么就创建这个表
+     private void createCustomersTableIfNotExists() {
+       try (Connection conn = this.connectionProvider.getConnection()) {
+         PreparedStatement pstmt = conn.prepareStatement(
+           """
+           create table if not exists customers (
+               id bigint not null,
+               name varchar not null,
+               primary key (id)
+           )
+           """
+         );
+         pstmt.execute();
+       } catch (SQLException e) {
+         throw new RuntimeException(e);
+       }
+     }
+   }
+   ~~~
+
+5. 我们添加Testcontainers依赖
+
+   ~~~xml
+   <dependency>
+       <groupId>org.testcontainers</groupId>
+       <artifactId>postgresql</artifactId>
+       <version>1.19.8</version>
+       <scope>test</scope>
+   </dependency>
+   ~~~
+
+6. 在 **src/test/java** 下创建 **CustomerServiceTest.java**, 并编写测试代码
+
+   ~~~java
+   package com.testcontainers.demo;
+   
+   import static org.junit.jupiter.api.Assertions.assertEquals;
+   
+   import java.util.List;
+   import org.junit.jupiter.api.AfterAll;
+   import org.junit.jupiter.api.BeforeAll;
+   import org.junit.jupiter.api.BeforeEach;
+   import org.junit.jupiter.api.Test;
+   import org.testcontainers.containers.PostgreSQLContainer;
+   
+   class CustomerServiceTest {
+   
+       // 通过如下代码, 会通过docker创建一个pg的容器
+     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(
+       "postgres:16-alpine"
+     );
+   
+     CustomerService customerService;
+   
+     @BeforeAll
+     static void beforeAll() {
+         // 在所有测试用例执行之前启动pg容器
+       postgres.start();
+     }
+   
+     @AfterAll
+     static void afterAll() {
+         // 在所有测试用例执行之后, 停止并删除pg容器
+       postgres.stop();
+     }
+   
+     @BeforeEach
+     void setUp() {
+       DBConnectionProvider connectionProvider = new DBConnectionProvider(
+         postgres.getJdbcUrl(),
+         postgres.getUsername(),
+         postgres.getPassword()
+       );
+       customerService = new CustomerService(connectionProvider);
+     }
+   
+     @Test
+     void shouldGetCustomers() {
+         // 插入两个customer到数据库中
+       customerService.createCustomer(new Customer(1L, "George"));
+       customerService.createCustomer(new Customer(2L, "John"));
+   
+         // 断言是否正确的插入了数据
+       List<Customer> customers = customerService.getAllCustomers();
+       assertEquals(2, customers.size());
+     }
+   }
+   ~~~
+
+   
+
+
 
 ## 在Springboot项目中测试数据库
 
