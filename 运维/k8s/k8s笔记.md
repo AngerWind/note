@@ -2939,6 +2939,10 @@ Service 在 K8s 中有以下四种类型: ClusterIp,  NodePort, LoadBalancer, Ex
 
 同时还会在集群内部的dns上创建一个A记录, 格式为`${service-name}.${namespace}.svc.cluster.local`, 当访问这个域名的时候, 访问到的就是service的ip
 
+
+
+如果你的pod和clusterIp是在同一个namespace中, 那么你可以在pod中直接将clusterIp的名字作为域名来调用他, 而不必使用长域名
+
 <img src="img/k8s笔记/image-20231013172054050.png" alt="image-20231013172054050" style="zoom:25%;" />
 
 ~~~yaml
@@ -3150,6 +3154,132 @@ Events:                   <none>
 从上面的`Endpoints`中可以看出来, 这个NodePort会将请求转发到ip地址为`177.177.111.188:5555,177.177.140.18:5555,177.177.59.128:5555`这三个ip地址的容器中, 并且请求转发到5555端口
 
 然后你就可以去看哪个容器占用了这三个端口
+
+
+
+当然, 你也可以直接通过下面的命令来查看来查看一个svc的endpoints
+
+~~~shell
+[admin@node1 ~]$ kubectl get endpoints -n service-software   seasqlcache-cluster
+NAME                  ENDPOINTS                                                                 AGE
+seasqlcache-cluster   177.177.104.17:6379,177.177.104.61:6379,177.177.135.19:6379 + 3 more...   53d
+~~~
+
+
+
+如果你的svc的endpoints太多了, 超过三个的话, 那么**上面两个命令**都不会打印全部的endpoints, 只会打印三个, 比如`177.177.104.17:6379,177.177.104.61:6379,177.177.135.19:6379 + 3 more...   53d`
+
+ 如果你想要查看全部的endpoints的话, 可以通过如下的命令, 他会显示具体转发到哪个pod, namespace, pod的uid等等信息
+
+~~~shell
+[admin@node1 ~]$ kubectl get endpoints -n service-software   seasqlcache-cluster -o json
+{
+    "apiVersion": "v1",
+    "kind": "Endpoints",
+    "metadata": {
+        "annotations": {
+            "endpoints.kubernetes.io/last-change-trigger-time": "2025-08-04T11:42:09+08:00"
+        },
+        "creationTimestamp": "2025-06-21T05:54:38Z",
+        "labels": {
+            "app.kubernetes.io/instance": "seasqlcache-cluster",
+            "app.kubernetes.io/managed-by": "Helm",
+            "app.kubernetes.io/name": "seasqlcache-cluster",
+            "app.kubernetes.io/version": "7.2.3",
+            "helm.sh/chart": "seasqlcache-cluster-9.1.4"
+        },
+        "name": "seasqlcache-cluster",
+        "namespace": "service-software",
+        "resourceVersion": "13142278",
+        "uid": "46806804-dd39-49bd-a9be-ee72cac102d6"
+    },
+    "subsets": [
+        {
+            "addresses": [
+                {
+                    "ip": "177.177.104.17",
+                    "nodeName": "node2",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "seasqlcache-cluster-0",
+                        "namespace": "service-software",
+                        "resourceVersion": "13142277",
+                        "uid": "cd4e0115-6ef0-4e23-b9c0-a8243a3114f5"
+                    }
+                },
+                {
+                    "ip": "177.177.104.61",
+                    "nodeName": "node2",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "seasqlcache-slave-2-0",
+                        "namespace": "service-software",
+                        "resourceVersion": "13141680",
+                        "uid": "b5b1f424-f3f0-486a-8d5a-084b0c095840"
+                    }
+                },
+                {
+                    "ip": "177.177.135.19",
+                    "nodeName": "node3",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "seasqlcache-slave-1-0",
+                        "namespace": "service-software",
+                        "resourceVersion": "13141685",
+                        "uid": "4d0354e0-8e48-4b2a-9b92-5b5775f0359e"
+                    }
+                },
+                {
+                    "ip": "177.177.135.62",
+                    "nodeName": "node3",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "seasqlcache-cluster-2",
+                        "namespace": "service-software",
+                        "resourceVersion": "13141727",
+                        "uid": "59d06bb7-12cc-4a85-aba9-461c455987fa"
+                    }
+                },
+                {
+                    "ip": "177.177.166.175",
+                    "nodeName": "node1",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "seasqlcache-slave-0-0",
+                        "namespace": "service-software",
+                        "resourceVersion": "13141676",
+                        "uid": "3d0bf1d2-ae4c-437f-b96b-c26343e5a868"
+                    }
+                },
+                {
+                    "ip": "177.177.166.185",
+                    "nodeName": "node1",
+                    "targetRef": {
+                        "kind": "Pod",
+                        "name": "seasqlcache-cluster-1",
+                        "namespace": "service-software",
+                        "resourceVersion": "13141811",
+                        "uid": "108b23e6-3dac-4c98-8613-9f4e019f0d28"
+                    }
+                }
+            ],
+            "ports": [
+                {
+                    "name": "tcp-seasqlcache",
+                    "port": 6379,
+                    "protocol": "TCP"
+                }
+            ]
+        }
+    ]
+}
+~~~
+
+
+
+
+
+
 
 # Ingress
 

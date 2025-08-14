@@ -305,9 +305,14 @@ public class NestUnitTest {
 
 运行所有测试用例后，在控制台能看到如下结果：
 
+~~~shell
+测试方法执行前准备
+第一个内嵌测试类执行测试
+测试方法执行前准备
+第二个内嵌测试类执行测试
+~~~
 
-
-### Junit5与hamcrest断言库结合使用
+# hamcrest断言库
 
 上面我们讲了, 在Junit5中自带一个Assertions类用来对我们的代码进行断言, 但是我们会发现这个自带的Assertions类的功能过于简单, 只能对是否相等, 是否抛出异常, 是否执行超时进行断言
 
@@ -4642,3 +4647,216 @@ tetcontainers desktop是一款testcontainer的管理工具, 他有如下的几�
 3. 在运行测试时，您可能希望在容器移除之前检查数据以调试某些问题。现在，您可以使用**冻结容器关闭**功能，该功能可以阻止容器关闭，从而让您能够调试问题。
 
 详细情况看上面的连接, **如果真的要基于Testcontainer来进行测试的话, 那么这个软件还是很有必要安装一下的**
+
+
+
+
+
+## Awaitility
+
+
+
+
+
+### Awaiility的依赖
+
+- maven
+
+  ~~~xml
+  <dependency>
+        <groupId>org.awaitility</groupId>
+        <artifactId>awaitility</artifactId>
+        <version>4.3.0</version>
+        <scope>test</scope>
+  </dependency>
+  ~~~
+
+- gradle
+
+  ~~~groovy
+  testImplementation 'org.awaitility:awaitility:4.3.0'
+  ~~~
+
+awaitility另外还支持sacla, groovy, kotlin, 如果需要的话, 可以查看https://github.com/awaitility/awaitility/wiki/Getting_started
+
+
+
+### 等待特定条件的变化
+
+假设你要发送一个消息到消息队列中, 使用如下的代码
+
+~~~java
+publish(new AddUserMessage("Awaitility Rocks"), () -> {
+    // 在回调函数中, 将消息保持到数据库
+});
+~~~
+
+此时在测试中, 我们就要对数据库中的消息数量进行判断, 看看消息是否成功入库
+
+那么我们可以使用awaitility来判断数据库中的消息是否在规定的时间内变为了1
+
+~~~java
+// until默认等待10s, 如果数据库中消息数量还是没有变为1, 就报错ConditionTimeoutException
+// 这个lambda返回true/false, 如果返回true, 那么until结束
+await().until(() -> userRepository.size() == 1);
+~~~
+
+
+
+你还可以将条件和判断进行拆分
+
+~~~java
+publish(new AddUserMessage("Awaitility Rocks"), () -> {
+    // 在回调函数中, 将消息保持到数据库
+});
+
+// equalTo 是一个标准的 Hamcrest 匹配器，用于指定 Awaitility 条件的匹配部分
+await().until(() -> userRepository.size(), equalTo(1) );
+~~~
+
+
+
+### 等待对象的属性变化
+
+如果你执行了一个异步任务, 他会改变某个对象的属性, 你想要判断这个异步任务是否真正的改变了这个属性, 那么可以使用如下的代码
+
+~~~java
+// 通过属性的类型来指定属性
+await().until( fieldIn(object).ofType(int.class), equalTo(2) );
+
+// 通过属性的名字来指定属性
+await().until( fieldIn(object).ofType(int.class).andWithName("fieldName"), equalTo(2) );
+
+// 通过属性的注解来指定属性
+await().until( fieldIn(object).ofType(int.class).andAnnotatedWith(MyAnnotation.class), equalTo(2) );
+~~~
+
+
+
+### 等待原子类的变化
+
+如果你有一个异步任务, 他会在一定的时间之后, 修改原子类的值
+
+你想要判断这个原子类的值是否在规定的时间内变为正确的值, 那么可以如下判断
+
+~~~java
+AtomicInteger atomic = new AtomicInteger(0);
+
+// 执行异步任务, 并更新atomic的值
+
+// 判断atomic的值是否在10s内变为1
+// 使用Hamcrest断言
+await().untilAtomic(atomic, equalTo(1));
+
+// 使用AssertJ断言
+await().untilAtomic(atomic, value -> assertThat(value).isEqualTo(1));
+~~~
+
+
+
+如果你想要等待AtomicBoolean, 可以使用如下的代码
+
+~~~java
+AtomicBoolean atomic = new AtomicBoolean(false);
+// 执行异步任务, 并更新atomic的值
+// 判断atomic的值是否在10s内变为true
+await().untilTrue(atomic);
+~~~
+
+
+
+如果你想要判断LongAdder等Adder类, 那么可以使用如下代码
+
+~~~java
+// 使用Hamcrest断言
+await().untilAdder(myLongAdder, equalTo(5L))
+
+// 使用AssertJ断言
+await().untilAdder(myLongAdder, value -> assertThat(value).isEqualTo(5L));
+~~~
+
+
+
+等待LongAccmulator
+
+~~~java
+// 使用Hamcrest断言
+await().untilAccumulator(myLongAccumulator, equalTo(5L))
+
+// 使用AssertJ断言
+await().untilAccumulator(myLongAccumulator, value -> assertThat(value).isEqualTo(5L));
+~~~
+
+
+
+
+
+### 指定awaitility的轮训时间和等待时间
+
+~~~java
+with()
+    .pollInterval(ONE_HUNDERED_MILLISECONDS) // 默认100ms
+    .and().
+    with().pollDelay(20, MILLISECONDS) // 默认100s
+    .await("customer registration")
+    .until(customerStatus(), equalTo(REGISTERED));
+
+// 最长等待2s, 最少等待1s, 默认是10s
+await().atLeast(1, SECONDS).and().atMost(2, SECONDS).until(value(), equalTo(1));
+~~~
+
+如果你不想在每个await中设置, 那么可以通过全局来设置
+
+~~~java
+  Awaitility.setDefaultTimeout(..)
+  Awaitility.setDefaultPollInterval(..)
+  Awaitility.setDefaultPollDelay(..)
+      
+      Awaitility.reset（）// 重置为默认值
+~~~
+
+
+
+
+
+
+
+### 使用AssertJ, Fest Assert作为断言库
+
+在上面的代码中, 我们都是使用Hamcrest来作为断言库的, 如果你想要使用AssertJ, 或者Fest Assert作为你的断言库, 那么你可以使用如下的代码
+
+~~~java
+await().atMost(5, SECONDS).untilAsserted(() -> assertThat(fakeRepository.getValue()).isEqualTo(1));
+
+// 4.3.0支持如下写法
+await().atMost(5, SECONDS).untilAsserted(fakeRepository::getValue, value -> assertThat(value).isEqualTo(1));
+~~~
+
+
+
+### 忽略异常
+
+有时，在await期间忽略某些类型的异常很有用。例如，如果您正在等待在达到最终状态之前将异常作为中间状态抛出的内容。
+
+以 Spring 的 [SocketUtils](http://docs.spring.io/spring/docs/current/javadoc-api/org/springframework/util/SocketUtils.html) 类为例，该类允许您在给定范围内查找 TCP 端口。如果给定范围内没有可用的端口，它将抛出异常。因此如果我们希望在特定的时间端内只要有一次发现了可用的端口, 那么测试就正常通过, 那么你可以忽略掉中间的异常
+
+~~~java
+// 定时调用SocketUtils.findAvailableTcpPort(x,y), 如果抛出异常就忽略
+// 只要有一次返回了可用端口, 那么测试通过
+// 如果超过10s都没有返回可用端口, 那么报错
+given().ignoreExceptions().await().until(() -> SocketUtils.findAvailableTcpPort(x,y));
+~~~
+
+忽略特定的异常
+
+~~~java
+given().ignoreException(IllegalStateException.class).await().until(() -> SocketUtils.findAvailableTcpPort(x,y));
+
+given().ignoreExceptionsMatching(instanceOf(RuntimeException.class)).await().until(() -> SocketUtils.findAvailableTcpPort(x,y));
+
+// 忽略特定信息的异常
+given().ignoreExceptionsMatching(e -> e.getMessage().startsWith("Could not find an available")).await().until(something());
+~~~
+
+
+

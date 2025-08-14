@@ -777,6 +777,29 @@ done
 #banana cherry
 ~~~
 
+案例3
+
+~~~shell
+a='-server'
+
+set -x # 开启debug, 输出执行的命令
+
+# 下面的两个案例, 如果a中没有特殊字符, 那么命令是一样的
+java $a -version # java -server -version
+java "$a" -version # java -server -version
+
+
+a="-Xmx200m -Xms100m"
+
+# 下面这两个案例, 因为a中有空格, "$a"为了保证所有字符串是一个整体, 所以会自动加上单引号, 导致命令报错
+java $a -version # java -Xmx200m -Xms100m -version # 命令可以执行
+java "$a" -version # java '-Xmx200m -Xms100m' -version # 命令报错, 无法执行
+~~~
+
+
+
+
+
 
 
 注意: 在双引号中, 单引号只是作为普通的纯文本, 既没有不允许变量插值, 也没有让变量作为一个整体的作用, 单引号只有在最外层的时候, 才有不允许变量插值的作用
