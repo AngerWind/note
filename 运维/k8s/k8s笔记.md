@@ -3101,6 +3101,8 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
 
 ## Headless Service
 
+### 概述
+
 对于ClusterIp和NodePort的方式
 
 - 会在集群内部有一个确切的虚拟ip
@@ -3110,6 +3112,10 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
   ![image-20231106182304861](img/k8s笔记/image-20231106182304861.png)
 
 - 访问service的ip和域名, 就是访问到service, 然后service通过轮询的方式发送请求到pod中
+
+- 如果svc和pod在同一个namespace中, 那么pod还可以直接使用短域名来访问svc, 短域名就是svc的name
+
+
 
 而对于headless service, 
 
@@ -3122,6 +3128,159 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
   ![image-20231106191532663](img/k8s笔记/image-20231106191532663.png)
 
 - 会为每一个pod都添加一个A记录, 格式为`pod-name.service-name.namespace.svc.cluster.local`, 解析出来就直接是pod的ip, 直接访问该域名就可以访问到对应的pod
+
+- 如果svc和pod在同一个namespace中, 那么pod还可以直接使用短域名来访问svc, 短域名就是svc的name
+
+
+
+### 创建headless service
+
+headless并不是一个单独类型的Service, 他只是一个特殊的ClusterIp类型的svc, 所以他的本质还是ClusterIp
+
+想要创建一个headless类型的svc, 你可以使用如下的yaml
+
+~~~yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-headless-svc
+spec:
+  # type: ClusterIp    # 一般不指定type, 让他是默认是ClusterIp就好了
+  clusterIP: None      # 关键：设置为 None, 这样就是一个headless类似的svc
+  selector:
+    app: my-app
+  ports:
+    - port: 80
+      targetPort: 8080
+~~~
+
+
+
+### headless service的使用场景
+
+我们现在有一个redis集群, 三个节点一主一从
+
+三个主节点分别是: `seasqlcache-cluster-0, seasqlcache-cluster-1, seasqlcache-cluster-2`
+
+他们的ip分别是: `177.177.104.17,  177.177.166.185,177.177.135.62 `
+
+三个从节点分别是: `seasqlcache-slave-0-0, seasqlcache-slave-1-0, seasqlcache-slave-2-0`
+
+他们的ip分别是`177.177.166.175 177.177.135.19 177.177.104.61` 
+
+~~~shell
+[admin@node2 ~]$ kubectl get pod -A -o wide | grep seasqlcache
+service-software   seasqlcache-cluster-0                              1/1     Running                 0          10d     177.177.104.17    node2   <none>           <none>
+service-software   seasqlcache-cluster-1                              1/1     Running                 0          10d     177.177.166.185   node1   <none>           <none>
+service-software   seasqlcache-cluster-2                              1/1     Running                 0          10d     177.177.135.62    node3   <none>           <none>
+service-software   seasqlcache-slave-0-0                              1/1     Running                 0          10d     177.177.166.175   node1   <none>           <none>
+service-software   seasqlcache-slave-1-0                              1/1     Running                 0          10d     177.177.135.19    node3   <none>           <none>
+service-software   seasqlcache-slave-2-0                              1/1     Running                 0          10d     177.177.104.61    node2   <none>           <none>
+~~~
+
+现在我们有两个svc
+
+~~~shell
+[admin@node2 ~]$ kubectl get svc -A | grep seasqlcache
+service-software   seasqlcache-cluster                   ClusterIP   10.96.227.109   <none>        6379/TCP                                                         54d
+service-software   seasqlcache-cluster-headless          ClusterIP   None            <none>        6379/TCP,16379/TCP                                               54d
+~~~
+
+其中`seasqlcache-cluster ` 是 ClusterIp类型的svc, 他会将请求转发给所有的redis节点
+
+~~~shell
+[admin@node2 ~]$ kubectl describe endpoints  -n service-software   seasqlcache-cluster
+Name:         seasqlcache-cluster
+Namespace:    service-software
+Labels:       app.kubernetes.io/instance=seasqlcache-cluster
+              app.kubernetes.io/managed-by=Helm
+              app.kubernetes.io/name=seasqlcache-cluster
+              app.kubernetes.io/version=7.2.3
+              helm.sh/chart=seasqlcache-cluster-9.1.4
+Annotations:  endpoints.kubernetes.io/last-change-trigger-time: 2025-08-04T11:42:09+08:00
+Subsets:
+  Addresses:          177.177.104.17,177.177.104.61,177.177.135.19,177.177.135.62,177.177.166.175,177.177.166.185
+  NotReadyAddresses:  <none>
+  Ports:
+    Name             Port  Protocol
+    ----             ----  --------
+    tcp-seasqlcache  6379  TCP
+
+Events:  <none>
+~~~
+
+其中`seasqlcache-cluster-headless`是headless类型的ClusterIp类型的svc, 他会将所有的请求, 转发给redis的三个主节点
+
+~~~shell
+[admin@node2 ~]$ kubectl describe endpoints  -n service-software   seasqlcache-cluster-headless
+Name:         seasqlcache-cluster-headless
+Namespace:    service-software
+Labels:       app.kubernetes.io/instance=seasqlcache-cluster
+              app.kubernetes.io/managed-by=Helm
+              app.kubernetes.io/name=seasqlcache-cluster
+              app.kubernetes.io/version=7.2.3
+              helm.sh/chart=seasqlcache-cluster-9.1.4
+              service.kubernetes.io/headless=
+Annotations:  endpoints.kubernetes.io/last-change-trigger-time: 2025-08-04T11:42:09+08:00
+Subsets:
+  Addresses:          177.177.104.17,177.177.135.62,177.177.166.185
+  NotReadyAddresses:  <none>
+  Ports:
+    Name             Port   Protocol
+    ----             ----   --------
+    tcp-seasqlcache  6379   TCP
+    tcp-cache-bus    16379  TCP
+
+Events:  <none>
+~~~
+
+现在我们要在springboot程序中连接redis, 但是我们不能直接指定所有redis的ip地址, 因为pod一旦重启, 地址就会变, 所以我们应该指定svc的地址
+
+~~~yaml
+spring:
+  redis:
+    port: 6379
+    host: seasqlcache-cluster
+    password: y=twSG2+5vG=Te4_2o
+    jedis:
+      pool:
+        # 连接池最大连接数（使用负值表示没有限制）
+        max-active: 50
+        # 连接池最大阻塞等待时间（使用负值表示没有限制）
+        max-wait: 8000
+        # 连接池中的最大空闲连接
+        max-idle: 50
+        # 连接池中的最小空闲连接
+        min-idle: 0
+    # 连接超时时间（毫秒）
+    timeout: 20000
+~~~
+
+如果我们按照上面的代码, 通过`host`来指定redis的地址是`seasqlcache-cluster`, 那么我们实际上是将请求发送给了`seasqlcache-cluster`这个svc, 然后这个svc将我们的请求转发轮询转发给6个redis集群, 这样我们的redis客户端实际上是运行在单机模式下的, 因为他只知道将请求发送给了一个svc的ip地址, 他并不知道这个ip地址后面有6个redis节点, 这样我们在使用redis的时候就会出问题
+
+
+
+我们应该使用如下的代码来配置我们的springboot项目
+
+~~~yaml
+spring:
+  redis:
+    password: y=twSG2+5vG=Te4_2o
+    cluster:
+      nodes: seasqlcache-cluster-headless:6379  # 如果 Service 支持集群发现
+      max-redirects: 3  # 最大重定向次数
+    jedis:
+      pool:
+        max-active: 50
+        max-wait: 8000
+        max-idle: 50
+        min-idle: 0
+    timeout: 20000
+~~~
+
+这样redis在解析这个seasqlcache-cluster-headless域名的时候,  因为这是一个headless service, 他不会转发请求, 而是直接返回对应pod的id地址, 这样redis client就会直接去连接这6个redis节点, 然后直接给这些节点发送消息, 这样redis client实际上是运行在集群模式下的
+
+
 
 
 
@@ -3169,7 +3328,32 @@ seasqlcache-cluster   177.177.104.17:6379,177.177.104.61:6379,177.177.135.19:637
 
 如果你的svc的endpoints太多了, 超过三个的话, 那么**上面两个命令**都不会打印全部的endpoints, 只会打印三个, 比如`177.177.104.17:6379,177.177.104.61:6379,177.177.135.19:6379 + 3 more...   53d`
 
- 如果你想要查看全部的endpoints的话, 可以通过如下的命令, 他会显示具体转发到哪个pod, namespace, pod的uid等等信息
+ 如果你想要查看全部的endpoints的话, 可以通过如下的命令, 他会打印所有转发的地址
+
+~~~shell
+[admin@node2 ~]$ kubectl describe endpoints  -n service-software   seasqlcache-cluster
+Name:         seasqlcache-cluster
+Namespace:    service-software
+Labels:       app.kubernetes.io/instance=seasqlcache-cluster
+              app.kubernetes.io/managed-by=Helm
+              app.kubernetes.io/name=seasqlcache-cluster
+              app.kubernetes.io/version=7.2.3
+              helm.sh/chart=seasqlcache-cluster-9.1.4
+Annotations:  endpoints.kubernetes.io/last-change-trigger-time: 2025-08-04T11:42:09+08:00
+Subsets:
+  Addresses:          177.177.104.17,177.177.104.61,177.177.135.19,177.177.135.62,177.177.166.175,177.177.166.185
+  NotReadyAddresses:  <none>
+  Ports:
+    Name             Port  Protocol
+    ----             ----  --------
+    tcp-seasqlcache  6379  TCP
+
+Events:  <none>
+~~~
+
+
+
+如果你还想查看更详细的地址, 可以使用如下的命令, 他会显示具体转发到哪个pod, namespace, pod的uid等等信息
 
 ~~~shell
 [admin@node1 ~]$ kubectl get endpoints -n service-software   seasqlcache-cluster -o json
