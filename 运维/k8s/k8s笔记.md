@@ -3117,19 +3117,35 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
 
 
 
-而对于headless service, 
+而对于headless service
 
-- 不会分配一个确切的虚拟ip
+1. 如果他转发请求的pod是普通的请求的话
 
-- 会在集群内部的dns上添加一条A记录, 格式为`service-name.namespace.svc.cluster.local`, 但是解析出来的ip并不是service的ip, 而直接是pod的ip, 如果有需要可以自己在客户端做些负载均衡策略
+   - 不会分配一个确切的虚拟ip
 
-  ![image-20231106191538447](img/k8s笔记/image-20231106191538447.png)
+   - 会在集群内部的dns上添加一条A记录, 格式为`service-name.namespace.svc.cluster.local`, 但是解析出来的ip并不是service的ip, 而直接是pod的ip, 如果有需要可以自己在客户端做些负载均衡策略
 
-  ![image-20231106191532663](img/k8s笔记/image-20231106191532663.png)
+     ![image-20231106191538447](img/k8s笔记/image-20231106191538447.png)
 
-- 会为每一个pod都添加一个A记录, 格式为`pod-name.service-name.namespace.svc.cluster.local`, 解析出来就直接是pod的ip, 直接访问该域名就可以访问到对应的pod
+     ![image-20231106191532663](img/k8s笔记/image-20231106191532663.png)
 
-- 如果svc和pod在同一个namespace中, 那么pod还可以直接使用短域名来访问svc, 短域名就是svc的name
+   - 会为每一个pod都添加一个A记录, 格式为`pod-name.service-name.namespace.svc.cluster.local`, 解析出来就直接是pod的ip, 直接访问该域名就可以访问到对应的pod
+
+   - 如果svc和pod在同一个namespace中, 那么pod还可以直接使用短域名来访问svc, 短域名就是svc的name
+
+2. 如果他转发的pod是stateful set类型的pod的话, 那么他会为每一个他关联的pod创建一个域名`<pod-name>.<headless-service-name>.<namespace>.svc.cluster.local`,  你可以直接调用这个域名, 就可以将请求转发给这个statefulset类型的pod了
+
+   如果你调用请求pod, 和statefulset类型的pod在同一个namespace的话, 那么你还可以使用短域名``<pod-name>.<headless-service-name>`来访问这个pod
+
+   **这常常用在有状态的集群上面, 比如我们的java代码, 需要配置zk的时候, 就可以直接写zk的域名了**
+
+
+
+
+
+
+
+
 
 
 
