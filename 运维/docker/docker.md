@@ -1534,3 +1534,213 @@ https://docs.docker.com/reference/api/engine/docker
 
 https://docs.docker.com/reference/api/hub/latest/
 
+
+
+
+
+
+
+## Windows 连接远程的docker
+
+https://www.cnblogs.com/lvbok/p/18546439
+
+https://blog.csdn.net/weixin_51623642/article/details/143742092
+
+https://blog.csdn.net/2301_76154806/article/details/141404952
+
+### docker client连接远程的docker
+
+如果你在windows上,  没有安装docker-desktop, 但是又想要在windows上来访问linux上的集群, 那么你可以借助docker client的功能来连接远程的docker服务器, 从而在windows上执行docker命令, 就能够控制远程的docker服务器
+
+1. 查看Docker服务端版本
+
+   ~~~shell
+   docker version
+   ~~~
+
+   [![img](D:\my_code\note\运维\docker\img\1575518-20241114172035306-987859966.png)
+
+   获取到Docker服务端版本为24.0.7。
+
+2. Docker服务端允许远程访问
+
+   有两种办法:
+
+   1. 修改docker的配置文件
+
+      首先，新建或修改 `/etc/systemd/system/docker.service.d/override.conf` 文件，确保其内容如下：
+
+      ~~~ini
+      ## Add this to the file for the docker daemon to use different ExecStart parameters (more things can be added here)
+      
+      [Service]
+      ExecStart=
+      ExecStart=/usr/bin/dockerd
+      ~~~
+
+      接着，在` /etc/docker/daemon.json` 文件中（如果没有则新建），添加以下内容。请使用您自己的镜像地址，不必强制使用示例中的地址：
+
+      ~~~json
+      {
+        "registry-mirrors": ["https://2v6jvius.mirror.aliyuncs.com"],
+        "hosts": [
+          "unix:///var/run/docker.sock",
+          "tcp://0.0.0.0:2375"
+        ]
+      }
+      ~~~
+
+   2. 修改docker.service的启动命令, 以开放远程访问
+      ~~~shell
+      # 编辑
+      vim /lib/systemd/system/docker.service
+      ~~~
+
+      找到该文件中的
+      ```ini
+      ExecStart=/usr/bin/dockerd -H fd:// --     containerd=/run/containerd/containerd.sock
+      ```
+      注释或删除改行，替换为如下命令
+      
+      ~~~ini
+      ExecStart=/usr/bin/dockerd -H tcp://0.0.0.0:2375 -H unix:///var/run/docker.sock
+      ~~~
+      
+      替换保持后退出
+
+   之后就是重启docker服务了
+
+   ~~~shell
+   systemctl daemon-reload && systemctl restart docker
+   ~~~
+
+   通过以下命令检查端口是否成功开放, 如果看到类似以下的输出，说明端口开放成功
+
+   ```shell
+   ss -tuln | grep 2375
+   tcp6       0      0 :::2375                 :::*                    LISTEN      8511/dockerd
+   ```
+
+
+   在你本地通过浏览器访问`http://{服务器IP}:2375/version`，当看到页面显示一串JSON时表示已开放远程访问。
+
+3. 下载对应版本客户端
+
+   在Windows访问https://download.docker.com/win/static/stable/x86_64/下载跟服务端版本一致的客户端压缩包。
+
+   ![img](D:\my_code\note\运维\docker\img\1575518-20241114172051197-1215757657.png)
+
+   下载之后解压到指定文件夹，比如我放在`D:\\tools`下。在`D:\\tools`下会多出来一个名字为`docker`的文件夹，里面有如下图**docker.exe、dockerd.exe、docker-proxy.exe**三个文件（docker-compose.exe不用管，后面会讲）。
+
+      ![img](D:\my_code\note\运维\docker\img\1575518-20241114172106666-725117089.png)
+
+4. 配置环境变量
+
+   在Windows的系统环境变量中添加一个环境变量`DOCKER_HOST`，值配置为`tcp://{IP}:2375`，这个`IP`替换为Docker所在服务器的IP(例如我的`tcp://192.168.169.180:2375`)
+
+   然后再添加一个环境变量`DockerClient`，值配置为`D:\\tools\\docker`，也就是刚刚解压的目录，并且在Path中添加该变量(`%DockerClient%`)，配置该环境变量后可以在任何位置访问`docker.exe`可执行文件。
+
+   [![img](https://img2024.cnblogs.com/blog/1575518/202411/1575518-20241114172119570-196497538.png)](https://img2024.cnblogs.com/blog/1575518/202411/1575518-20241114172119570-196497538.png)
+
+5. 验证
+
+   打开CMD,在任意文件夹下执行`docker ps`查看是否显示服务器上的容器。
+
+
+
+### Docker-Compose连接远程的docker
+
+现在我们来让docker compose命令也连接到远程的docker集群
+
+1. 查看服务端docker-compose版本
+
+   ~~~shell
+   docker-compose version
+   
+   # Docker Compose version v2.29.2
+   ~~~
+
+2. 下载相同版本的docker-compose
+
+   访问https://github.com/docker/compose/releases下载对应版本的docker-compose。
+   [![img](D:\my_code\note\运维\docker\img\1575518-20241114172131237-1957205935.png)](https://img2024.cnblogs.com/blog/1575518/202411/1575518-20241114172131237-1957205935.png)
+
+   下载后存放到docker客户端所在的目录`D:\\tools\\docker`下，就是在上面看到的`docker-compose.exe`(文件名称是自己改的，下载下来就是上图的名称)。
+
+3. 验证
+
+   运行命令查看是否生效。
+
+   ~~~shell
+   docker-compose ps
+   ~~~
+
+   > 注意：运行docker-compose命令所在的文件夹的名称需要注意，不能随便乱取名。我的情况是需要跟服务器上的当前文件夹名称保持一致。我的服务器上docker-compose.yml放在/usr/looveh/tw-feedback下，所以在Windows下执行docker-compose命令时当前目录的名称需要为tw-feedback，否则查询不到容器。
+
+
+
+### 配置IDEA连接远程的docker
+
+使用idea连接远程的docker, 首先需要配置好上面的步骤, 让本地有docker client, 并且能够访问远程的docker服务器才可以
+
+1. 在IDEA中安装docker插件, 并重启idea
+
+   ![安装 Docker 插件](https://i-blog.csdnimg.cn/direct/28812146e4a44b3fac512a99afe29af4.png)
+
+2. 配置连接远程的docker
+
+   ![连接远程 Docker](https://i-blog.csdnimg.cn/direct/0829d2f394da4befb79b91c66f113561.png)
+
+3. 连接成功后, 就可以在IDEA的左下角的Service一栏中, 看到远程的docker镜像和容器了
+
+   ![配置 Docker 连接](https://i-blog.csdnimg.cn/direct/d71f1a10514e4138a2c5898edca377b6.png)
+
+   ![远程 Docker 容器和镜像](https://i-blog.csdnimg.cn/direct/21dde07a146b4b7eb4ea81b9217528f3.png)
+
+4. 当然你还可以使用这个插件, 通过界面的方式来操作docker
+
+   1. 启动容器
+
+      ![容器操作](https://i-blog.csdnimg.cn/direct/81253ff9d62d471591273ad55c27aebd.png)
+
+   2. 拉取镜像
+
+      ![拉取镜像](https://i-blog.csdnimg.cn/direct/69b0f17cc7ae467090c63d5fbf3317f0.png)
+
+   3. 对已有的镜像进行操作
+
+      ![已有镜像操作](https://i-blog.csdnimg.cn/direct/57749e48b88a4f3db93521da52168385.png)
+
+   4. 拉取镜像
+
+      注意，写 Docker 镜像地址时，需要在镜像名称后面指定版本号。如果不指定，IDEA 会默认使用 `latest`：
+
+      ![镜像地址](https://i-blog.csdnimg.cn/direct/96df5acbe50d433eb17ee7b134f1e0b9.png)
+
+      ![指定版本号](https://i-blog.csdnimg.cn/direct/a19c96083e0f443c96a4fa8328291134.png)
+
+      ![镜像配置](https://i-blog.csdnimg.cn/direct/4716db6b3353473291117b2c14f5b6fa.png) ![镜像配置](https://i-blog.csdnimg.cn/direct/3605aff2c08c40fa9413743635cb1bcc.png)
+
+      如遇到拉取超时的情况，可以配置国内镜像源，如阿里云的加速器：
+
+      ![配置镜像加速器](https://i-blog.csdnimg.cn/direct/5562cf9805924df7bcc5dc36689dc143.png)
+
+5. 根据镜像创建容器并运行
+
+   创建并运行 Docker 容器：
+
+   ![创建并运行容器](https://i-blog.csdnimg.cn/direct/503c4db2622347969a6b19c468193853.png)
+
+   ![运行容器](https://i-blog.csdnimg.cn/direct/ada302284a2e4eefab36935257417972.png)
+
+   新的 IDEA 版本可能需要额外的参数配置：
+
+   ![配置参数](https://i-blog.csdnimg.cn/direct/bfb000a4dce742818f3c342e1a6082fc.png)
+
+   创建成功后，可以在服务器上查看新创建的容器：
+
+   ![查看新容器](https://i-blog.csdnimg.cn/direct/74ef8b462c884887b6278bf30d738b98.png)
+
+6. 容器的停止和删除
+
+   ![容器操作](https://i-blog.csdnimg.cn/direct/968c4e94d11b4b16bf7fe895f24c0ab4.png)
