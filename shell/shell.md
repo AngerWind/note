@@ -2342,6 +2342,15 @@ awk -F "," 'print FILENAME NR NF' test.txt
   # 这里不能使用echo < output.txt, 因为echo根本就不读取标准输入, 他只负责将他的参数打印到控制台
   ~~~
 
+  你也可以使用这种方式来读取一个文件中的内容, 赋值给一个变量
+
+  ~~~shell
+  a=$(< output.txt) 
+  b=$(cat output.txt) # 两者是等效的
+  ~~~
+
+  
+
 - `<<`这种语法被称为Here Document,  他用于将多行文本重定向到命令的标准输入中
 
   **在多行文本中, 你可以使用变量插值**
