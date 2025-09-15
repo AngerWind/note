@@ -7552,15 +7552,17 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
    
    - 我们直接修改chart中的文件,  比如这里我们将`values.yaml`中的`image.tag`修改为`1.25`, 然后调用如下命令
    
-  ~~~shell
+     ~~~shell
      # 根据hello-world中的chart文件, 来更新web2这个release
      # 不真正的更新, 而是查看即将用于执行的配置文件
      helm upgrade web2 hello-world/ --dry-run
-     
+          
      # 根据hello-world中的chart文件, 来更新web2这个release
      helm upgrade web2 hello-world/
-  ~~~
-
+     ~~~
+   
+      
+   
    - 我们也可以直接在命令行中指定属性, 来覆盖`values.yaml`中的`image.tag`属性
    
      ~~~shell
@@ -7599,7 +7601,7 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
    helm del web2 # 删除名为web2的release
    
    # 查看所有已经逻辑删除的release
-   helm ls --deleted
+   helm list --deleted
    
    # 对于已经删除的release, 你可以对他进行还原
    helm rollback web2 5 # 5表示版本号, 可以通过helm status web2查看版本信息

@@ -1,3 +1,9 @@
+官方社区版文档
+
+https://docs.min.io/community/minio-object-store/operations/deployments/baremetal-deploy-minio-on-ubuntu-linux.html
+
+
+
 ## 测试网站
 
 MinIO官网提供了一个搭建好的MinIO Server, 账号和密码为minioadmin, 可以直接开玩
@@ -133,37 +139,257 @@ kubectl run my-mc -i --tty --image minio/mc:latest --command -- bash
 
 
 
-## MinIO 单机单磁盘安装
+## MinIO Server安装
 
-https://min.io/docs/minio/linux/operations/install-deploy-manage/deploy-minio-single-node-single-drive.html
+> 查看文档的时候, 一定要注意, 查看的是社区版的文档, 不要使用企业版的文档, 否则要license才能启动
 
-与直接启动相比
+https://docs.min.io/community/minio-object-store/operations/deployments/baremetal-deploy-minio-on-ubuntu-linux.html
 
-1. 可以使用rpm, deb, binary安装
-2. 设置了systemd服务文件
-3. 将需要的环境变量设置到了/etc/default/minio文件中
+1. 访问`https://dl.min.io/server/minio/release`, 选择合适的版本进行下载
 
-## MinIO 单机多磁盘安装
+   首选选择合适的cpu架构, 因为我们linux是amd64架构的, 所以选择linux-amd64
 
-https://min.io/docs/minio/linux/operations/install-deploy-manage/deploy-minio-single-node-multi-drive.html
+   访问`https://dl.min.io/server/minio/release/linux-amd64/`, 有如下的文件
 
-与单机单磁盘安转类似, 只是在`/etc/default/minio`中通过环境变量`MINIO_VOLUMES="/data-{1...4}"`指定了多个目录
+   ~~~shell
+   File Name	File Size	Date
+   Parent directory/	-	-
+   archive/	-	2025-09-07 18:02
+   minio	106 MiB	2025-09-07 17:54
+   minio-20250907161309.0.0-1.x86_64.rpm	39 MiB	2025-09-07 17:59
+   minio-20250907161309.0.0-1.x86_64.rpm.sha256sum	103 B	2025-09-07 17:59
+   minio.RELEASE.2025-09-07T16-13-09Z	106 MiB	2025-09-07 17:54
+   minio.RELEASE.2025-09-07T16-13-09Z.asc	833 B	2025-09-07 17:54
+   minio.RELEASE.2025-09-07T16-13-09Z.minisig	326 B	2025-09-07 17:54
+   minio.RELEASE.2025-09-07T16-13-09Z.sha256sum	100 B	2025-09-07 17:54
+   minio.RELEASE.2025-09-07T16-13-09Z.shasum	76 B	2025-09-07 17:54
+   minio.apk	35 B	2025-09-07 17:59
+   minio.asc	833 B	2025-09-07 17:54
+   minio.deb	34 B	2025-09-07 17:59
+   minio.minisig	326 B	2025-09-07 17:54
+   minio.rpm	37 B	2025-09-07 17:59
+   minio.sha256sum	100 B	2025-09-07 17:54
+   minio_20250907161309.0.0_amd64.deb	38 MiB	2025-09-07 17:59
+   minio_20250907161309.0.0_amd64.deb.sha256sum	100 B	2025-09-07 17:59
+   minio_20250907161309.0.0_x86_64.apk	39 MiB	2025-09-07 17:59
+   minio_20250907161309.0.0_x86_64.apk.sha256sum	101 B	2025-09-07 17:59
+   ~~~
 
-> 这种模式安装, MINIO_VOLUMES指定的每个目录必须挂载的是新磁盘, 而不能和主系统一个磁盘, 否则无法启动
+2. 因为我们是Ubuntu, 所以下载`minio_20250907161309.0.0_amd64.deb`, 如果是centos, 可以下载`minio-20250907161309.0.0-1.x86_64.rpm`
 
-## MinIO 多机多磁盘安装
+   千万不要下载`minio.deb`和`minio.rmp`, 他们只是一个重定向包, 实际上还是要下载上面两个文件的
 
-https://min.io/docs/minio/linux/operations/install-deploy-manage/deploy-minio-multi-node-multi-drive.html
+3. 下载上面的文件, 保存到`/opt/module/software`目录下, 并重命名为`minio.deb`
 
-https://www.bilibili.com/video/BV1Gx4y1Y7Rg/?spm_id_from=333.337.search-card.all.click&vd_source=f79519d2285c777c4e2b2513f5ef101a
+4. 安装上面的deb包
 
-需要时再看
+   ~~~shell
+   sudo dpkg -i minio.deb
+   
+   Selecting previously unselected package minio.
+   (Reading database ... 185440 files and directories currently installed.)
+   Preparing to unpack minio.deb ...
+   Unpacking minio (20250907161309.0.0) ...
+   Setting up minio (20250907161309.0.0) ...
+   ~~~
 
+5. 安装完毕后, 可以通过如下命令来查看minio的版本
 
+   ~~~shell
+   minio --version
+   
+   minio version RELEASE.2025-09-07T16-13-09Z (commit-id=07c3a429bfed433e49018cb0f78a52145d4bedeb)
+   Runtime: go1.24.6 linux/amd64
+   License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
+   Copyright: 2015-2025 MinIO, Inc.
+   ~~~
+
+   > 注意一定不要安装企业版本的
+
+6. 安装的过程中, minio会自动创建systemd的连接文件, `/lib/systemd/system/minio.service`, 内容如下
+
+   ~~~ini
+   [Unit]
+   Description=MinIO
+   Documentation=https://docs.min.io
+   Wants=network-online.target
+   After=network-online.target
+   AssertFileIsExecutable=/usr/local/bin/minio
+   
+   [Service]
+   Type=notify
+   
+   WorkingDirectory=/usr/local
+   
+   User=minio-user
+   Group=minio-user
+   ProtectProc=invisible
+   
+   EnvironmentFile=-/etc/default/minio
+   ExecStart=/usr/local/bin/minio server $MINIO_OPTS $MINIO_VOLUMES
+   
+   # Let systemd restart this service always
+   Restart=always
+   
+   # Specifies the maximum file descriptor number that can be opened by this process
+   LimitNOFILE=1048576
+   
+   # Turn-off memory accounting by systemd, which is buggy.
+   MemoryAccounting=no
+   
+   # Specifies the maximum number of threads this process can create
+   TasksMax=infinity
+   
+   # Disable timeout logic and wait until process is stopped
+   TimeoutSec=infinity
+   
+   # Disable killing of MinIO by the kernel's OOM killer
+   OOMScoreAdjust=-1000
+   
+   SendSIGKILL=no
+   
+   [Install]
+   WantedBy=multi-user.target
+   
+   # Built for ${project.name}-${project.version} (${project.name})
+   ~~~
+
+7. 安装完成后, 我们还需要为minio创建对应的用户和组
+
+   ~~~shell
+   # 新建一个group, -r表示系统组
+   sudo groupadd -r minio-user 
+   
+   # 新建一个minio-user的用户, -M表示不需要家目录, -r表示系统用户, -g指定初始的group
+   sudo useradd -M -r -g minio-user minio-user 
+   ~~~
+
+8. 接下来, 我们可以将单独的磁盘, 挂载到特定的路径下,  比如我们将两个磁盘分别挂载到`/data/minio1`和`/data/minio2`下
+
+   > 两个路径一定要是不同的磁盘, 因为minio会将这些磁盘作为备份, 如果两个路径是同一个磁盘, 那么完全没有备份容灾的作用, 反而因为备份导致磁盘占用增加 
+
+   > 如果没有两个不同的备份, 你也可以直接mkdir两个目录, 来模拟测试一下
+
+9. 挂载磁盘之后, 我们需要将这些磁盘路径的所有者和所属组分别修改为`minio-user`用户和`minio-user`组
+
+   ~~~shell
+   # {}是bash中的花括号展开语法, 表示1和2
+   chown -R minio-user:minio-user /data/minio{1...2}
+   ~~~
+
+10. 根据上面的`minio.service`文件中的`EnvironmentFile=-/etc/default/minio`配置, minio在启动的时候, 会自动的读取`/etc/default/minio`, 所以我们还需要创建这个环境变量文件
+
+    ~~~shell
+    # MINIO_VOLUMES指定minio存储的文件保存的目录
+    # MINIO_ROOT_PASSWORD指定超级管理员密码, 一定要超过8位长度, 否则无法启动
+    # MINIO_OPTS用于指定其他的启动参数
+    sudo tee /etc/default/minio <<'EOF'
+    MINIO_VOLUMES="/data/minio{1...2}"
+    MINIO_ROOT_USER="minioadmin"
+    MINIO_ROOT_PASSWORD="00000000"
+    MINIO_OPTS="--console-address :9001"
+    EOF
+    ~~~
+
+    在minio中, 分别有三种不同的磁盘挂载方式
+
+    1. 单节点单磁盘:
+
+       这种方式集群只有一个节点, 这个节点中只有一个磁盘用于保存minio的数据
+
+       **这种模式主要用在测试环境下**
+
+       你需要在`/etc/default/minio`中指定这一个磁盘的挂载目录, 比如
+
+       ~~~shell
+       MINIO_VOLUMES="/mnt/drive1/minio"
+       ~~~
+
+    2. 单节点多磁盘
+
+       https://min.io/docs/minio/linux/operations/install-deploy-manage/deploy-minio-single-node-multi-drive.html
+
+       这种方式集群只有一个节点, 但是有多个磁盘挂载到系统中, 用于保存minio的数据
+
+       **这种模式主要用在可以容忍minio停机和数据丢失的场景**
+
+       你需要在`/etc/default/minio`中指定这些磁盘的挂载目录, 比如
+
+       ```shell
+       MINIO_VOLUMES="https://minio1.example.net:9000/mnt/drive{1...4}/minio"
+       ```
+
+       > 这种模式安装, MINIO_VOLUMES指定的每个目录必须挂载的是新磁盘, 而不能和主系统一个磁盘, 否则无法启动
+
+    3. 多节点多磁盘
+
+       https://min.io/docs/minio/linux/operations/install-deploy-manage/deploy-minio-multi-node-multi-drive.html
+
+       https://www.bilibili.com/video/BV1Gx4y1Y7Rg/?spm_id_from=333.337.search-card.all.click&vd_source=f79519d2285c777c4e2b2513f5ef101a
+
+       这种方式集群有多个minio节点, 每个节点都有至少一个磁盘用于保存minio的数据
+
+       这种模式用于生产模式下, 需要分布式高可靠性
+
+       你需要在`/etc/default/minio`中指定这些磁盘的挂载目录, 比如
+
+       ```shell
+       MINIO_VOLUMES="http://minio{1...4}.example.net:9000/mnt/disk{1...4}/minio"
+       ```
+
+       
+
+11. 之后我们就可以通过如下的命令来启动minio
+
+    ~~~shell
+    systemctl start minio
+    systemctl status minio
+    systemctl stop minio
+    systemctl restart minio
+    systemctl enable minio
+    systemctl disable minio
+    ~~~
+
+12. 启动之后, 可以通过如下的命令, 来查看他的启动日志
+
+    ~~~shell
+    journalctl -u minio
+    ~~~
+
+13. 启动之后, 你可以通过浏览器范围`http://localhost:9001`来访问minio的界面
+
+    ![image-20250916005533470](img/minio/image-20250916005533470.png)
+
+    > 如果访问失败, 记得F5刷新一下, 有可能是缓存的问题
+
+    当然你也可以使用命令行来操作minio, 详情请查看MinIO Client的使用
+
+    
+
+14. 如果要卸载minio, 可以使用如下的命令
+
+    ~~~shell
+    # 卸载minio
+    sudo dpkg -P minio
+    # 移除systemd文件
+    sudo rm /lib/systemd/system/minio.service
+    # 重新加载
+    sudo systemctl daemon-reload
+    
+    # 卸载不会删除掉/data/minio1, /data/minio2中的数据
+    ~~~
+
+    
 
 ## MinIO Client的使用
 
 https://min.io/docs/minio/linux/reference/minio-mc/mc-alias.html
+
+
+
+
+
+
 
 
 
