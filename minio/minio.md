@@ -393,6 +393,21 @@ https://min.io/docs/minio/linux/reference/minio-mc/mc-alias.html
 
 
 
+### mc alias
+
+mc alias这个命令可以用来给一个minio集群起一个别名, 用于保持这个集群的url, 秘钥等等
+
+~~~shell
+# 将
+mc alias set myminio http://minio.example.com accessKey secretKey
+~~~
+
+
+
+
+
+
+
 ## 对象管理
 
 MinIO使用Bucket来存储Object, Bucket类似文件系统的顶级目录
@@ -416,7 +431,7 @@ MinIO中没有二级目录的概念, 所有的Object都是直接放在Bucket中�
       2020-01-04-MinIO-Interview.md
 ~~~
 
-管理员需要创建articles存储桶. 然后客户端使用**对象的完整路径**(`jane.doe/2020-01-04-MinIO-Interview.md`)来讲对象写入这些存储桶
+管理员需要创建articles存储桶. 然后客户端使用**对象的完整路径**(`jane.doe/2020-01-04-MinIO-Interview.md`)来将对象写入这些存储桶
 
 
 
