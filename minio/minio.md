@@ -389,6 +389,333 @@ https://min.io/docs/minio/linux/reference/minio-mc/mc-alias.html
 
 
 
+#### mc alias
+
+mc alias的主要作用是给一个minio节点起一个别名,  保存他的地址, 账户名, 密码等等信息, 方便后续操作
+
+- `mc alias set`: 给一个minio节点起别名
+
+  ~~~shell
+  D:\minio>mc alias  set  local http://127.0.0.1:9000 admin 00000000
+  Added `local` successfully.
+  ~~~
+
+- `mc alias list`: 查看当前保存的所有的minio节点的别名
+
+  默认情况下, mc命令会自带几个可用的alias, 这些alias可以用于测试
+
+  ~~~shell
+  # 查看指定alias的minio的节点的信息
+  D:\minio>mc alias list local
+  local
+    URL       : http://127.0.0.1:9000
+    AccessKey : admin
+    SecretKey : 00000000
+    API       : s3v4
+    Path      : auto
+    Src       : C:\Users\sys49482\mc\config.json
+  
+  # 查看所有的minio节点的信息
+  D:\minio>mc alias list
+  gcs
+    URL       : https://storage.googleapis.com
+    AccessKey : YOUR-ACCESS-KEY-HERE
+    SecretKey : YOUR-SECRET-KEY-HERE
+    API       : S3v2
+    Path      : dns
+    Src       : C:\Users\sys49482\mc\config.json
+  
+  local
+    URL       : http://127.0.0.1:9000
+    AccessKey : admin
+    SecretKey : 00000000
+    API       : s3v4
+    Path      : auto
+    Src       : C:\Users\sys49482\mc\config.json
+  
+  play
+    URL       : https://play.min.io
+    AccessKey : Q3AM3UQ867SPQQA43P2F
+    SecretKey : zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG
+    API       : S3v4
+    Path      : auto
+    Src       : C:\Users\sys49482\mc\config.json
+  
+  s3
+    URL       : https://s3.amazonaws.com
+    AccessKey : YOUR-ACCESS-KEY-HERE
+    SecretKey : YOUR-SECRET-KEY-HERE
+    API       : S3v4
+    Path      : dns
+    Src       : C:\Users\sys49482\mc\config.json
+  ~~~
+
+- `mc alias export`: 将指定的minio的节点的信息, 生成为json格式
+
+  ~~~shell
+  # 直接执行会导出到控制台
+  D:\minio>mc alias export local
+  {"url":"http://127.0.0.1:9000","accessKey":"admin","secretKey":"00000000","api":"s3v4","path":"auto"}
+  
+  # 导出到文件
+  D:\minio>mc alias export local > local.json
+  ~~~
+
+- `mc alias remove`: 移除指定的minio的节点的信息
+
+  ~~~shell
+  D:\minio>mc alias remove local
+  Removed `local` successfully.
+  ~~~
+
+- `mc alias import`: 从文件中读取json格式的minio的节点的信息, 然后保存为alias, 对应export命令
+
+  ~~~shell
+  # 导入minio节点的信息, 保存alias为local
+  D:\minio>mc alias import local ./local.json
+  Imported `local` successfully.
+  ~~~
+
+  
+
+#### mc anonymous
+
+
+
+#### mc batch
+
+
+
+#### mc cat
+
+mc cat的作用主要用于查看文件的内容, 并打印到终端
+
+如果对象非常大，`mc cat` 会把它完整输出到终端，可能刷屏，所以建议配合 `head`、`less`、`grep` 等命令使用。
+
+~~~shell
+mc cat myminio/my_bucket/readme.txt # 查看文件内容
+
+mc cat myminio/my_bucket/readme.txt > ./local-readme.txt # 下载文件
+
+mc cat myminio/logs/app.log | head -n 20 # 只看前 20 行日志
+~~~
+
+
+
+#### mc cp
+
+mc cp的作用主要用于
+
+- 本地到minio之间的文件复制
+- 两个minio节点之间的文件复制
+- 同一个节点不同路径, 不同bucket之间的文件复制
+
+~~~shell
+mc cp ./photo.jpg myminio/my_bucket/ # 上传文件到myminio/my_bucket目录下
+mc cp myminio/my_bucket/photo.jpg ./photo-downloaded.jpg # 下载文件
+
+mc cp myminio/my_bucket/photo.jpg myminio/my_bucket1/ # 同一个节点, 不同bucket之间的复制
+
+mc cp myminio/my_bucket/photo.jpg anotherminio/my_bucket1/ # 两个minio节点之间的文件复制
+~~~
+
+
+
+#### mc diff
+
+
+
+#### mc du
+
+
+
+#### mc encrypt
+
+
+
+#### mc event
+
+
+
+#### mc find
+
+
+
+#### mc get
+
+
+
+#### mc head
+
+
+
+#### mc idp ldap
+
+
+
+
+
+#### mc idp ldap accesskey
+
+
+
+#### mc idp ldap policy
+
+
+
+#### mc idp openid
+
+
+
+#### mc idp openid
+
+
+
+#### mc idp openid accesskey
+
+
+
+#### mc ilm rule
+
+
+
+#### mc ilm tier
+
+
+
+#### mc legalhold
+
+
+
+#### mc license
+
+
+
+#### mc ls
+
+mc ls的作用是查看文件目录, minio会将object name解析为类似hdfs的目录树结构
+
+~~~shell
+# 查看myminio下的所有bucket
+mc ls myminio
+[2025-09-16 01:23:00 CST]     0B photos/
+[2025-09-16 01:24:10 CST]     0B backups/
+
+# 查看myminio/mybucket下的文件
+mc ls myminio/mybucket
+[2025-09-16 01:25:00 CST]   2.0MiB  img1.jpg
+[2025-09-16 01:26:30 CST]   1.2MiB  img2.jpg
+
+# 查看myminio/mybucket/myobject_prefix下的文件
+mc ls myminio/mybucket/myobject_prefix
+
+mc ls --recursive myminio/photos # 递归列出所有文件（包含子目录）
+mc ls --long myminio/photos # 显示更多信息（大小、时间、权限）
+mc ls --json myminio/photos # 以json的格式数组, 主要方便脚本处理
+~~~
+
+
+
+#### mc mb
+
+mb的全写就是make bucket, 也就是创建bucket桶
+
+~~~shell
+# 在alias为myminio的节点上, 创建mybucket的桶
+# --ignore-existing的作用是已经存在了就不创建
+mc mb --ignore-existing myminio/mybucket
+~~~
+
+#### mc mirror
+
+
+
+#### mc mv
+
+
+
+
+
+#### mc od
+
+
+
+#### mc ping
+
+
+
+#### mc pipe
+
+
+
+#### mc put
+
+
+
+#### mc rb
+
+
+
+#### mc ready
+
+
+
+#### mc replicate
+
+
+
+#### mc retention
+
+
+
+#### mc rm
+
+
+
+#### mc share
+
+
+
+#### mc sql
+
+
+
+#### mc stat
+
+
+
+#### mc support
+
+
+
+#### mc support top
+
+
+
+#### mc tag
+
+
+
+#### mc tree
+
+
+
+#### mc undo 
+
+
+
+#### mc update
+
+
+
+#### mc version
+
+
+
+#### ma watch
+
+
+
 
 
 
