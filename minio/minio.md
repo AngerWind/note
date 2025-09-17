@@ -383,23 +383,63 @@ https://docs.min.io/community/minio-object-store/operations/deployments/baremeta
 
 ## MinIO Client的使用
 
-https://min.io/docs/minio/linux/reference/minio-mc/mc-alias.html
+### 安装mc命令
+
+https://docs.min.io/community/minio-object-store/reference/minio-mc.html#mc-install
+
+要使用MinIO Client, 首先需要再系统中安装`mc`命令
+
+1. windows下的安装过程如下
+
+   - 下载windows版本的mc命令, 地址https://dl.min.io/client/mc/release/windows-amd64/mc.exe
+
+   - 然后通过cmd来使用mc命令
+
+     ~~~shell
+     \path\to\mc.exe --help
+     ~~~
+
+2. linux下的安装过程
+
+   - amd64架构(一般都是amd64架构的)
+
+     ~~~shell
+     curl https://dl.min.io/client/mc/release/linux-amd64/mc \
+       --create-dirs \
+       -o $HOME/minio-binaries/mc
+     
+     chmod +x $HOME/minio-binaries/mc
+     export PATH=$PATH:$HOME/minio-binaries/
+     
+     mc --help
+     ~~~
+
+   - arm架构
+
+     ~~~shell
+     curl https://dl.min.io/client/mc/release/linux-arm64/mc \
+       --create-dirs \
+       -o ~/minio-binaries/mc
+     
+     chmod +x $HOME/minio-binaries/mc
+     export PATH=$PATH:$HOME/minio-binaries/
+     
+     mc --help
+     ~~~
 
 
 
+### mc命令的使用
 
+https://docs.min.io/community/minio-object-store/reference/minio-mc/mc-alias.html
 
+#### mc alias
 
-
-
-
-### mc alias
-
-mc alias这个命令可以用来给一个minio集群起一个别名, 用于保持这个集群的url, 秘钥等等
+mc alias这个命令可以用来给一个minio集群起一个别名, 用于保持这个集群的url, 秘钥等等, 方便后续对这个集群进行操作
 
 ~~~shell
-# 将
-mc alias set myminio http://minio.example.com accessKey secretKey
+# 将127.0.0.1:9000地址的minio节点, 起别名为local
+mc alias set local http://127.0.0.1:9000 admin admin_password
 ~~~
 
 
