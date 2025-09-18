@@ -433,14 +433,517 @@ https://docs.min.io/community/minio-object-store/reference/minio-mc.html#mc-inst
 
 https://docs.min.io/community/minio-object-store/reference/minio-mc/mc-alias.html
 
+
 #### mc alias
 
-mc alias这个命令可以用来给一个minio集群起一个别名, 用于保持这个集群的url, 秘钥等等, 方便后续对这个集群进行操作
+mc alias的主要作用是给一个minio节点起一个别名,  保存他的地址, 账户名, 密码等等信息, 方便后续操作
+
+- `mc alias set`: 给一个minio节点起别名
+
+  ~~~shell
+  D:\minio>mc alias  set  local http://127.0.0.1:9000 admin 00000000
+  Added `local` successfully.
+  ~~~
+
+- `mc alias list`: 查看当前保存的所有的minio节点的别名
+
+  默认情况下, mc命令会自带几个可用的alias, 这些alias可以用于测试
+
+  ~~~shell
+  # 查看指定alias的minio的节点的信息
+  D:\minio>mc alias list local
+  local
+    URL       : http://127.0.0.1:9000
+    AccessKey : admin
+    SecretKey : 00000000
+    API       : s3v4
+    Path      : auto
+    Src       : C:\Users\sys49482\mc\config.json
+  
+  # 查看所有的minio节点的信息
+  D:\minio>mc alias list
+  gcs
+    URL       : https://storage.googleapis.com
+    AccessKey : YOUR-ACCESS-KEY-HERE
+    SecretKey : YOUR-SECRET-KEY-HERE
+    API       : S3v2
+    Path      : dns
+    Src       : C:\Users\sys49482\mc\config.json
+  
+  local
+    URL       : http://127.0.0.1:9000
+    AccessKey : admin
+    SecretKey : 00000000
+    API       : s3v4
+    Path      : auto
+    Src       : C:\Users\sys49482\mc\config.json
+  
+  play
+    URL       : https://play.min.io
+    AccessKey : Q3AM3UQ867SPQQA43P2F
+    SecretKey : zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG
+    API       : S3v4
+    Path      : auto
+    Src       : C:\Users\sys49482\mc\config.json
+  
+  s3
+    URL       : https://s3.amazonaws.com
+    AccessKey : YOUR-ACCESS-KEY-HERE
+    SecretKey : YOUR-SECRET-KEY-HERE
+    API       : S3v4
+    Path      : dns
+    Src       : C:\Users\sys49482\mc\config.json
+  ~~~
+
+- `mc alias export`: 将指定的minio的节点的信息, 生成为json格式
+
+  ~~~shell
+  # 直接执行会导出到控制台
+  D:\minio>mc alias export local
+  {"url":"http://127.0.0.1:9000","accessKey":"admin","secretKey":"00000000","api":"s3v4","path":"auto"}
+  
+  # 导出到文件
+  D:\minio>mc alias export local > local.json
+  ~~~
+
+- `mc alias remove`: 移除指定的minio的节点的信息
+
+  ~~~shell
+  D:\minio>mc alias remove local
+  Removed `local` successfully.
+  ~~~
+
+- `mc alias import`: 从文件中读取json格式的minio的节点的信息, 然后保存为alias, 对应export命令
+
+  ~~~shell
+  # 导入minio节点的信息, 保存alias为local
+  D:\minio>mc alias import local ./local.json
+  Imported `local` successfully.
+  ~~~
+
+  
+
+#### mc anonymous
+
+
+
+#### mc batch
+
+
+
+#### mc cat
+
+mc cat的作用主要用于查看文件的内容, 并打印到终端
+
+如果对象非常大，`mc cat` 会把它完整输出到终端，可能刷屏，所以建议配合 `head`、`less`、`grep` 等命令使用。
 
 ~~~shell
-# 将127.0.0.1:9000地址的minio节点, 起别名为local
-mc alias set local http://127.0.0.1:9000 admin admin_password
+mc cat myminio/my_bucket/readme.txt # 查看文件内容
+
+mc cat myminio/my_bucket/readme.txt > ./local-readme.txt # 下载文件
+
+mc cat myminio/logs/app.log | head -n 20 # 只看前 20 行日志
 ~~~
+
+
+
+#### mc cp
+
+mc cp的作用主要用于
+
+- 本地到minio之间的文件复制
+- 两个minio节点之间的文件复制
+- 同一个节点不同路径, 不同bucket之间的文件复制
+
+~~~shell
+mc cp ./photo.jpg myminio/my_bucket/ # 上传文件到myminio/my_bucket目录下
+mc cp myminio/my_bucket/photo.jpg ./photo-downloaded.jpg # 下载文件
+
+mc cp myminio/my_bucket/photo.jpg myminio/my_bucket1/ # 同一个节点, 不同bucket之间的复制
+
+mc cp myminio/my_bucket/photo.jpg anotherminio/my_bucket1/ # 两个minio节点之间的文件复制
+~~~
+
+
+
+#### mc diff
+
+
+
+#### mc du
+
+
+
+#### mc encrypt
+
+
+
+#### mc event
+
+
+
+#### mc find
+
+
+
+#### mc get
+
+
+
+#### mc head
+
+
+
+#### mc idp ldap
+
+
+
+
+
+#### mc idp ldap accesskey
+
+
+
+#### mc idp ldap policy
+
+
+
+#### mc idp openid
+
+
+
+#### mc idp openid
+
+
+
+#### mc idp openid accesskey
+
+
+
+#### mc ilm rule
+
+
+
+#### mc ilm tier
+
+
+
+#### mc legalhold
+
+
+
+#### mc license
+
+
+
+#### mc ls
+
+mc ls的作用是查看文件目录, minio会将object name解析为类似hdfs的目录树结构
+
+~~~shell
+# 查看myminio下的所有bucket
+mc ls myminio
+[2025-09-16 01:23:00 CST]     0B photos/
+[2025-09-16 01:24:10 CST]     0B backups/
+
+# 查看myminio/mybucket下的文件
+mc ls myminio/mybucket
+[2025-09-16 01:25:00 CST]   2.0MiB  img1.jpg
+[2025-09-16 01:26:30 CST]   1.2MiB  img2.jpg
+
+# 查看myminio/mybucket/myobject_prefix下的文件
+mc ls myminio/mybucket/myobject_prefix
+
+mc ls --recursive myminio/photos # 递归列出所有文件（包含子目录）
+mc ls --long myminio/photos # 显示更多信息（大小、时间、权限）
+mc ls --json myminio/photos # 以json的格式数组, 主要方便脚本处理
+~~~
+
+
+
+#### mc mb
+
+mb的全写就是make bucket, 也就是创建bucket桶
+
+~~~shell
+# 在alias为myminio的节点上, 创建mybucket的桶
+# --ignore-existing的作用是已经存在了就不创建
+mc mb --ignore-existing myminio/mybucket
+~~~
+
+#### mc mirror
+
+mc mirror主要用于同步本地和minio之间, minio和minio之间的文件结构
+
+~~~shell
+mc mirror ./data myminio/mybucket # 把./data里的所有文件递归上传到mybucket下, 保留目录结构
+
+mc mirror myminio/mybucket ./backup # 把远程mybucket里的所有对象, 下载到./backup中
+
+mc mirror --overwrite ./data myminio/mybucket # 只同步有变更的文件, 并覆盖已有的文件
+
+mc mirror --remove ./data myminio/mybucket # 完全同步文件, 目标端如果有多出来的文件, 会被删除掉
+
+mc mirror --watch ./data myminio/mybucket # 当./data有新增,修改,删除文件的时候, 自动同步到minio中, 适合做实时备份
+~~~
+
+常用参数
+
+| 参数              | 作用                                 |
+| ----------------- | ------------------------------------ |
+| `--overwrite`     | 覆盖目标端已有文件                   |
+| `--remove`        | 删除目标端多余文件，保持和源完全一致 |
+| `--watch`         | 实时监听源目录变化，自动同步         |
+| `--dry-run`       | 只显示将会执行的操作，不实际同步     |
+| `--preserve`      | 保留文件的时间戳、权限信息           |
+| `--storage-class` | 设置上传对象的存储类型               |
+
+
+
+#### mc mv
+
+mc mv 的作用类似linux上的mv, 用来移动对象
+
+- 可以在minio的bucket之间移动文件
+- 也可以将本地文件移动到minio中
+
+~~~shell
+mc mv myminio/mybucket/file.txt myminio/mybucket/archive/ # 把file.txt移动到同一个bucket中的archive/目录中
+
+mc mv myminio/mybucket1/file.txt myminio/mybucket2/ # 跨bucket移动文件
+
+mc mv myminio/mybucket/logs/*.log myminio/mybucket/archive/ # 批量移动文件
+
+mc mv ./test.txt myminio/mybucket/ # 把本地的文件移动到minio中, 然后删除本地的文件
+~~~
+
+常用参数
+
+| 参数              | 作用                         |
+| ----------------- | ---------------------------- |
+| `--recursive`     | 递归移动整个目录（非常常用） |
+| `--force`         | 覆盖目标端已有文件           |
+| `--older-than`    | 只移动早于指定时间的文件     |
+| `--newer-than`    | 只移动晚于指定时间的文件     |
+| `--storage-class` | 设置上传对象的存储类型       |
+
+#### mc od
+
+od的全称是 object distribution,  主要用于查看指定路径下的对象, 在各个磁盘上的分布情况
+
+常常用于观测minio集群的负载均衡情况, 特别是当你使用多节点minio时, 能看到对象如何分局到不同的节点/磁盘上的
+
+~~~shell
+mc od myminio/mybucket # 查看整个mybucket中的对象, 在各个磁盘上的分布情况
+
+Drive 1: 250 objects
+Drive 2: 245 objects
+Drive 3: 260 objects
+Drive 4: 255 objects
+
+mc od myminio/mybucket/logs/ # 只查看logs/目录下对象的分布情况
+
+mc od myminio # 查看整个节点所有对象的分布情况
+~~~
+
+常用参数
+
+| 参数          | 说明                            |
+| ------------- | ------------------------------- |
+| `--json`      | 以 JSON 格式输出，便于脚本处理  |
+| `--insecure`  | 允许访问自签名证书的 MinIO 服务 |
+| `--with-data` | 显示更多详细信息（如对象大小）  |
+
+
+
+#### mc ping
+
+mc ping的作用是判断mc命令是否正常连接到minio节点
+
+~~~shell
+mc ping myminio
+
+Endpoint:  http://192.168.1.130:9000  [online]
+Uptime:    4 hours
+Version:   2025-09-07T16:13:09Z
+Network:   1/1 OK
+Drive:     2/2 OK
+
+mc ping --count 10 myminio # ping 10次之后退出
+mc ping --interval 2s myminio # 每2s间隔ping一次
+mc ping --json myminio # 输出json格式的数据, 方便脚本处理和集成到监控系统
+~~~
+
+
+
+#### mc pipe
+
+mc pipe的作用是把当前终端的标准输入数据写入到minio的对象中, 不需要生成临时文件, 然后再通过mc put上传
+
+可以理解为**流式上传**, 特别适合脚本和自动化的场景
+
+~~~shell
+date | mc pipe myminio/mybucket/current-time.txt # 把当前时间写入到minio的对象中
+
+tail -f /var/log/syslog | mc pipe myminio/mybucket/syslog.log # 流式上传日志
+
+tar cz /data | mc pipe myminio/mybucket/data-backup.tar.gz # 把/data目录压缩, 然后上传到minio中, 省掉中间落盘的过程
+
+curl -sL https://example.com/file.txt | mc pipe myminio/mybucket/file.txt # 上传网络下载的文件
+~~~
+
+常用参数:
+
+| 参数                 | 说明                 |
+| -------------------- | -------------------- |
+| `--attr "key=value"` | 添加对象自定义元数据 |
+| `--encrypt-key`      | 上传时加密对象       |
+| `--tags`             | 添加对象标签         |
+| `--storage-class`    | 指定对象存储类型     |
+
+
+
+#### mc put
+
+mc put主要用于将本地文件上传到minio的bucket中
+
+~~~shell
+mc put ./file.txt myminio/mybucket # 把本地的file.txt上传到mybucket根目录
+mc put ./file.txt myminio/mybucket/docs/ # 把文件上传到mybucket/docs/目录下
+
+mc put ./file1.txt ./file2.txt myminio/mybucket # 一次性上传多个文件
+
+mc put --recursive ./data myminio/mybucket/ # 上传./data整个目录
+
+mc put --overwrite ./file.txt myminio/mybucket # 上传文件, 如果有同名文件就覆盖
+~~~
+
+参数:
+
+| 参数              | 作用                                                         |
+| ----------------- | ------------------------------------------------------------ |
+| `--recursive`     | 递归上传目录及其子目录                                       |
+| `--overwrite`     | 覆盖已存在的对象                                             |
+| `--attr`          | 设置对象的自定义元数据，例如：`--attr "content-type=text/plain"` |
+| `--encrypt-key`   | 使用客户提供的密钥对上传对象进行加密                         |
+| `--storage-class` | 设置对象的存储类型（STANDARD、REDUCED\_REDUNDANCY）          |
+
+
+
+#### mc rb
+
+mc rb的作用是删除整个bucket, 类似linux中的rmdir
+
+~~~shell
+mc rb myminio/mybucket # 删除一个bucket, 如果bucket中没有任何对象, 那么删除成功, 否则报错
+
+mc rb --force myminio/mybucket # 强制删除一个bueket, 不管里面有没有对象
+# 等效于
+mc rm --recursive --force myminio/mybucket
+mc rb myminio/mybucket
+
+
+mc rb --force myminio/mybucket myminio/backup-bucket # 一次性删除多个bucket
+~~~
+
+参数:
+
+- --force: 即使bucket不为空, 也强制删除
+- --dangerous: 跳过确认提示, 常用在脚本中
+
+
+
+#### mc ready
+
+
+
+#### mc replicate
+
+
+
+#### mc retention
+
+
+
+#### mc rm
+
+mc rm用于删除对象, 目录
+
+~~~shell
+mc rm myminio/mybucket/img1.png # 删除img1.png对象
+mc rm myminio/mybucket/img1.jpg myminio/mybucket/img2.jpg # 删除多个对象
+mc rm --recursive myminio/mybucket/albums/ # 递归删除整个目录
+mc rm --recursive --force myminio/mybucket # 清空bucket
+~~~
+
+常用参数:
+
+- --recursive: 递归删除
+- --force: 跳过确认提示
+- --versions: 删除所有的版本的对象, 如果开启了版本控制的话
+- --fake: 只显示删除哪些文件, 不执行真正的删除
+
+
+
+#### mc share
+
+
+
+#### mc sql
+
+
+
+#### mc stat
+
+
+
+#### mc support
+
+
+
+#### mc support top
+
+
+
+#### mc tag
+
+
+
+#### mc tree
+
+mc tree的作用和linux上tree的作用类似, 以树结构显示当前bucket或者目录下的对象
+
+~~~shell
+mc tree myminio/mybucket
+
+mybucket
+├─ img1.jpg
+├─ img2.jpg
+└─ albums
+   ├─ 2024
+   │  └─ summer.png
+   └─ 2025
+      ├─ spring.png
+      └─ winter.png
+~~~
+
+
+
+#### mc undo 
+
+
+
+#### mc update
+
+
+
+#### mc version
+
+
+
+#### ma watch
+
+
 
 
 
