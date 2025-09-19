@@ -525,9 +525,67 @@ mc alias的主要作用是给一个minio节点起一个别名,  保存他的地�
 
 #### mc anonymous
 
+mc anonymous用来控制bucket的匿名访问策略
+
+匿名访问策略就是控制某个bucket是否允许未认证的用户访问, 或访问的权限(r, w, rw)
+
+~~~shell
+mc anonymous get myminio/mybucket # 查看当前bucket的策略
+
+
+# 可选的策略有:
+# none: 不允许匿名访问, 默认
+# download: 允许匿名用户下载对象 (只读)
+# upload: 允许匿名用户上传对象 (只读)
+# public: 允许匿名用户上传和下载对象 (读写)
+mc anonymous set download myminio/mybucket # 设置任何人对mybucket都可以下载
+mc anonymous set none myminio/mybucket # 设置匿名用户不能访问这个bucket
+~~~
+
+
+
 
 
 #### mc batch
+
+mc batch主要的作用是可以根据一个json文件, 去执行大量的命令, 而不需要手动一个一个命令去执行
+
+他的主要使用场景是:
+
+- 一次性删除/移动几万个对象
+- 批量迁移bucket中的文件到另外一个minio集群
+- 配合cron定时执行批量清理任务
+
+~~~shell
+# 创建一个批量任务模板
+mc batch generate --type delete > delete-job.json
+
+# 在delete-job.json中指定要删除的对象
+{
+  "version": "1.0",
+  "type": "delete",
+  "source": {
+    "bucket": "mybucket",
+    "objects": ["obj1.txt", "obj2.txt", "folder/obj3.txt"]
+  }
+}
+
+
+# 根据json执行任务
+mc batch start delete-job.json
+
+# 查看任务状态
+mc batch list
+
+# 查看指定任务的id
+mc batch status <JOB-ID>
+~~~
+
+--type参数执行如下的任务类型:
+
+- copy: 批量复制对象
+- delete: 批量移动对象
+- move: 批量移动对象
 
 
 
@@ -565,32 +623,206 @@ mc cp myminio/my_bucket/photo.jpg anotherminio/my_bucket1/ # 两个minio节点�
 ~~~
 
 
-
 #### mc diff
 
+mc diff用于检查本地和minio, minio之间的目录中的文件的差异
 
+~~~shell
+# 比较本地目录和 MinIO bucket
+mc diff ./mydata myminio/mybucket
+
+# 比较两个 MinIO bucket
+mc diff myminio/mybucket1 myminio/mybucket2
+~~~
+
+输出如下
+
+~~~shell
+> file1.txt # 目标缺少这个文件, 源里有
+< file2.txt # 源缺少这个文件，目标里有
+! file3.txt # 源和目标都有，但内容不同（大小或时间戳不一致）
+~~~
 
 #### mc du
+
+mc du的全称是disk usage, 主要用于统计某个目录下的object占用的大小, 和linux下的du的效果是一样的
+
+~~~shell
+# 查看整个 bucket 的占用情况
+mc du myminio/mybucket
+
+# 查看 bucket 下某个前缀的占用情况
+mc du myminio/mybucket/path/
+
+# 查看本地目录占用情况
+mc du ./data
+~~~
+
+输出类似
+
+~~~shell
+34 MiB  50 objects # 该 bucket（或目录）占用了 34 MiB 空间, 里面有 50 个对象
+~~~
+
+常用参数:
+
+- `--versions`
+   统计时包含对象的所有版本（如果开启了版本控制）。
+
+- `--recursive`
+   递归统计子目录/前缀（默认就会递归）。
 
 
 
 #### mc encrypt
 
+mc encrypt的作用是管理bucket的加密配置, 可以启用, 禁用, 查看bucket的加密策略
+
+注意: 它不是直接去加密文件，而是配置 **Bucket 的默认加密策略**，让上传到这个 Bucket 的对象自动加密（使用 SSE-S3 或 SSE-KMS）。
+
+~~~shell
+# 查看 bucket 的加密状态
+mc encrypt info myminio/mybucket
+
+# 开启加密（SSE-S3）
+mc encrypt set sse-s3 myminio/mybucket
+
+# 使用 KMS key 开启加密（SSE-KMS）
+mc encrypt set sse-kms minio-key-name myminio/mybucket
+
+# 关闭加密
+mc encrypt clear myminio/mybucket
+~~~
+
+执行的加密模式有:
+
+- **SSE-S3**：MinIO 使用其内置的 KMS 自动生成并管理密钥，用户无需提供密钥。
+
+- **SSE-KMS**：MinIO 使用外部 KMS（Key Management System），你需要指定一个密钥别名或 ARN。
+
+- **SSE-C**：客户端提供密钥（不是用 `mc encrypt` 设置，而是每次上传时指定）。
+
 
 
 #### mc event
+
+mc event主要用于管理bucket的事件通知, 当你在minio中执行操作的时候, 就会触发对应的事件, 然后可以将这些事件发送到对应的NATS、Kafka、Webhook、AMQP、Redis、MQTT 等消息系统
+
+~~~shell
+# 查看 bucket 的事件配置
+mc event list myminio/mybucket
+
+# 创建一个notify_webhook类型的配置, 名字为1, 端点为http://my-webhook-service:8080/
+mc admin config set myminio notify_webhook:1 endpoint="http://my-webhook-service:8080/"
+# mc admin修改的是minio服务端的配置, 所以需要重启生效
+mc admin service restart myminio
+
+
+# 为 bucket 添加一个事件通知
+# arn:minio是固定的, sqs是minio兼容s3的通知机制, 1表示刚刚添加的config的名字, webhook表示通知类型
+# --event表示监听的类型
+# --prefix表示要监听的对象的前缀, 比如只想监听mybucket下的images中的对象的消息
+# --suffix表示要监听的对象的后缀, 比如只想监听.jpg文件
+mc event add myminio/mybucket \
+arn:minio:sqs::1:webhook \
+--event put,delete \
+--prefix images/
+--suffix .jpg
+
+# 删除事件配置
+mc event remove myminio/mybucket arn:minio:sqs::1:webhook
+~~~
 
 
 
 #### mc find
 
+mc find 用于在minio中查找符合条件的对象, 类似linux下的find命令
+
+他可以根据名字, 前缀, 后缀, 大小, 修改时间等条件搜索对象, 还可以对查询出来的对象进行操作
+
+~~~shell
+# 查找 bucket 下所有对象
+mc find myminio/mybucket
+
+# 查找 bucket 下指定前缀的对象
+mc find myminio/mybucket --prefix photos/
+
+# 查找 bucket 下所有 .jpg 文件
+mc find myminio/mybucket --name "*.jpg"
+
+# 查找大于 10MB 的对象
+mc find myminio/mybucket --min-size 10MB
+
+# 删除 bucket 下所有 .tmp 文件
+mc find myminio/mybucket --name "*.tmp" --exec "mc rm {}"
+~~~
+
+常用选项
+
+| 选项                        | 作用                               |
+| --------------------------- | ---------------------------------- |
+| `--name`                    | 按文件名匹配（支持通配符）         |
+| `--prefix`                  | 只搜索指定前缀（路径）下的对象     |
+| `--suffix`                  | 按后缀匹配                         |
+| `--min-size` / `--max-size` | 按对象大小过滤                     |
+| `--older` / `--newer`       | 按修改时间过滤                     |
+| `--exec`                    | 对搜索结果执行命令，例如删除或复制 |
+
 
 
 #### mc get
 
+mc get主要用于从minio中下载对象
+
+~~~shell
+# 下载 bucket 中的单个对象到当前目录
+mc get myminio/mybucket/myfile.txt
+Downloading myminio/mybucket/myfile.txt
+myfile.txt: 5 KiB / 5 KiB ┃█████████████████┃ 100% 0s
+
+
+# 下载对象到指定本地文件名
+mc get myminio/mybucket/myfile.txt ./localfile.txt
+
+# 下载整个前缀（类似目录）
+mc get --recursive myminio/mybucket/photos/ ./localphotos/
+~~~
+
+常用选项
+
+| 选项          | 作用                                    |
+| ------------- | --------------------------------------- |
+| `--recursive` | 递归下载指定前缀下的所有对象            |
+| `--attr`      | 显示对象的属性（大小、时间戳、etag 等） |
+| `--quiet`     | 不显示进度信息                          |
+| `--insecure`  | 在非安全连接下允许下载                  |
+
 
 
 #### mc head
+
+mc head命令用于查看object的元数据, 类似于linux中的head命令
+
+~~~shell
+# 查看对象的元数据
+mc head myminio/mybucket/myfile.txt
+
+Name: myfile.txt
+Size: 5 KiB
+ETag: "9b74c9897bac770ffc029102a200c5de"
+LastModified: 2025-09-17T12:00:00Z
+Content-Type: text/plain
+Version-ID: null
+~~~
+
+常用配置
+
+| 选项           | 作用                                 |
+| -------------- | ------------------------------------ |
+| `--json`       | 输出 JSON 格式的元数据，方便程序处理 |
+| `--quiet`      | 只输出关键字段（通常配合脚本使用）   |
+| `--version-id` | 指定版本号，查看对象特定版本的元数据 |
 
 
 
@@ -629,6 +861,31 @@ mc cp myminio/my_bucket/photo.jpg anotherminio/my_bucket1/ # 两个minio节点�
 
 
 #### mc legalhold
+
+mc legalhold用于管理对象的法律保留状态
+
+当你对某个对象启用Legal Hold功能后, 这个对象不能被覆盖和删除, 直到你显示移除Legal Hold
+
+即使bucket没有启用Write-Once-Read_Many模式, 这个对象也会被保护
+
+需要注意的是:
+
+- Bucket必须开启版本控制的前提下, 才能使用LegalHold
+- LegalHold是对象级别的, 不影响同bucket下的其他对象
+
+他和Retention的区别在于
+
+- Legal Hold没有到期时间, 必须手动移除
+
+~~~shell
+mc legalhold disable myminio/mybucket/myobject.txt # 关闭legal hold
+mc legalhold enable myminio/mybucket/myobject.txt # 开启legal hold
+mc legalhold info myminio/mybucket/myobject.txt # 查看对象的legal hold状态
+~~~
+
+
+
+
 
 
 
@@ -855,6 +1112,14 @@ mc rb --force myminio/mybucket myminio/backup-bucket # 一次性删除多个buck
 
 #### mc ready
 
+mc ready的主要作用是检查对应的集群的所有节点是否健康, 只有集群的所有节点都健康, 才会返回0
+
+~~~shell
+# 检查 minio 服务是否 ready, 所有节点都健康, 状态码为0
+# 可以通过脚本来判断$?集群是否健康
+mc ready myminio
+~~~
+
 
 
 #### mc replicate
@@ -895,6 +1160,41 @@ mc rm --recursive --force myminio/mybucket # 清空bucket
 
 #### mc stat
 
+mc stat用于显示对象或 Bucket 的详细状态信息，包括大小、修改时间、ETag、版本信息、加密状态等。
+
+他比mc head更详细
+
+~~~shell
+# 查看单个对象的状态
+mc stat myminio/mybucket/myfile.txt
+
+Name: myfile.txt
+Date: 2025-09-17 12:00:00
+Size: 5 KiB
+ETag: "9b74c9897bac770ffc029102a200c5de"
+Version-ID: null
+Storage-Class: STANDARD
+Encryption: SSE-S3
+
+# 查看 bucket 的总体状态（包括对象数量和总大小）
+mc stat myminio/mybucket
+
+Name: mybucket
+CreationDate: 2025-01-01 10:00:00
+Objects: 150
+Size: 1.2 GiB
+~~~
+
+常用选项
+
+| 选项          | 作用                                     |
+| ------------- | ---------------------------------------- |
+| `--recursive` | 递归显示前缀下所有对象的状态             |
+| `--json`      | 输出 JSON 格式，便于程序解析             |
+| `--versions`  | 显示对象所有版本信息（如果开启版本控制） |
+
+
+
 
 
 #### mc support
@@ -906,6 +1206,21 @@ mc rm --recursive --force myminio/mybucket # 清空bucket
 
 
 #### mc tag
+
+mc tag用于管理对象的标签
+
+对象标签是存储在对象元数据里的键值对，用于分类、标记或筛选对象。通过 `mc tag`，你可以给对象添加标签、查看标签或删除标签，而无需改变对象内容。
+
+~~~shell
+# 给对象添加标签
+mc tag set myminio/mybucket/myfile.txt key1=value1,key2=value2
+
+# 查看对象的标签
+mc tag list myminio/mybucket/myfile.txt
+
+# 删除对象的标签
+mc tag remove myminio/mybucket/myfile.txt
+~~~
 
 
 
@@ -931,13 +1246,62 @@ mybucket
 
 #### mc undo 
 
+mc undo 用于撤销上一次执行的批量操作
+
+**支持场景**
+
+- `mc batch` 批量删除或移动的对象（如果开启了版本控制或者目标未被覆盖）
+- `mc mirror` 同步导致的覆盖或删除
+
+**不支持的情况**
+
+- 对象已经被永久删除且没有版本备份
+- 普通单个 `mc rm` 命令删除的对象（没有通过 batch/undo 跟踪）
+
+~~~shell
+# 批量删除对象
+mc find myminio/mybucket --name "*.tmp" --exec "mc rm {}" --watch
+
+# 如果删除错了，可以撤销
+mc undo myminio/mybucket
+~~~
+
+
 
 
 #### mc update
 
+mc update的作用是更新当前使用的mc命令到最新的版本
+
+~~~shell
+# 检查并更新 mc 到最新版本
+mc update
+~~~
+
+常用选项:
+
+| 选项      | 作用                                   |
+| --------- | -------------------------------------- |
+| `--quiet` | 安静模式，不显示下载进度               |
+| `--force` | 强制覆盖当前版本，即使本地已是最新版本 |
+
 
 
 #### mc version
+
+`mc version` 命令的作用是 **管理 Bucket 的版本控制功能**。
+
+~~~shell
+# 查看 bucket 的版本控制状态
+mc version alias/bucket
+
+# 启用版本控制, Bucket 内每个对象的写入、删除操作都会产生新的版本，便于回滚和恢复。
+mc version enable alias/bucket
+
+# 暂停版本控制, 暂停后不再生成新版本但已经存在的版本仍然可以通过 API 或 mc 命令查看、恢复或删除
+mc version suspend alias/bucket
+~~~
+
 
 
 
