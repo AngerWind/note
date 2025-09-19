@@ -1,7 +1,5 @@
 ﻿:: cd C:\Users\Administrator\Desktop\note
 :: 这是注释
-
-
 cd /d "%~dp0"
 git add .
 git commit -m "%date%"
