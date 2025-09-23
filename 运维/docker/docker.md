@@ -1421,20 +1421,80 @@ volumes:  mysql_data:
    # -d让容器在后台运行, 不要占用当前的终端
    # --name指定容器的名字
    # --hostname指定容器的主机名
-   # --volume将容器的/var/lib/registry/docker/registry挂载到当前目录下的registry目录下, 实现数据的
+   # --volume将容器的/var/lib/registry/docker/registry挂载到当前目录下的registry目录下, 实现数据的持久化
+   # -p 将register的服务端口5000映射到本机的5000端口
+   # --restart指定容器的重启策略
+   # registry:latest指定要运行的镜像
    docker run \
      -d \
      --name registry \
      --hostname registry \
      --volume $(pwd)/registry:/var/lib/registry/ \
-     --publish 5000:5000 \
+     -p 5000:5000 \
      --restart unless-stopped \
      registry:latest
    ~~~
 
+3. 之后执行如下的命令, 看看这个私服上面有什么镜像
+
+   ~~~shell
+   curl -XGET http://127.0.0.1:5000/v2/_catalog
    
+   {"repositories":[]}
+   ~~~
 
+4. 之后将想要推送的镜像, 修改为符合私服规范的tag
 
+   ~~~shell
+   # 格式是 docker tag 镜像:tag host:port/镜像:Tag
+   docker tag aaa:1.2 127.0.0.1:5000/aaa:1.2
+   ~~~
+
+5. 默认情况下, docker是不允许通过http将镜像推送到私服的, 需要使用https, 所以我们还需要让docker运行使用http推送镜像
+
+   编辑daemon.json文件, 没有就创建
+
+   - Linux 位于：`/etc/docker/daemon.json`
+   - windows位于：`C:\ProgramData\docker\config\daemon.json`
+
+   ~~~shell
+   {
+     "insecure-registries" : ["127.0.0.1:5000"]
+   }
+   ~~~
+
+   重启docker
+
+   ~~~shell
+   service docker restart
+   ~~~
+
+   > 记得看看register有没有启动, 我们上面配了--restart策略
+
+6. 推送镜像
+
+   ~~~shell
+   docker push 127.0.0.1:5000/aaa:1.2
+   ~~~
+
+7. 再次通过curl来查看docker register中有什么镜像
+
+   ~~~shell
+   curl -XGET http://127.0.0.1:5000/v2/_catalog
+   
+   {"repositories":[aaa]}
+   ~~~
+
+8. 下载docker register中的镜像
+
+   ~~~shell
+   docker rmi -f 127.0.0.1:5000/aaa # 删除原来的镜像
+   docker pull 127.0.0.1:5000/aaa:1.2 # 拉取镜像
+   
+   docker images # 查看镜像
+   ~~~
+
+   
 
 
 
