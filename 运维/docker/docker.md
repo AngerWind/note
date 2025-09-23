@@ -1391,6 +1391,53 @@ volumes:  mysql_data:
 
 
 
+## Docker 私服
+
+已知的docker私服有两种方式来搭建
+
+- docker register
+
+  这是docker官方提供的私服, 比较小巧简单, 只负责镜像的存储和消灾, 没有UI界面, 没有项目, 用户, 设计, 等高级的功能
+
+- harbor
+
+  这个是在docker register的基础上进行了扩展, 面相企业级场景
+
+  自带WebUI界面, 提供用户/角色/项目的权限管理, 支持LDAP/AD的集成, 方便接入公司现有的账号体系, 支持多数据中心, 多harbor之间的镜像同步
+
+
+
+### 通过docker register搭建私服
+
+1. 下载docker register的docker镜像
+
+   ~~~shell
+   docker pull registry:latest
+   ~~~
+
+2. 运行这个镜像
+
+   ~~~shell
+   # -d让容器在后台运行, 不要占用当前的终端
+   # --name指定容器的名字
+   # --hostname指定容器的主机名
+   # --volume将容器的/var/lib/registry/docker/registry挂载到当前目录下的registry目录下, 实现数据的
+   docker run \
+     -d \
+     --name registry \
+     --hostname registry \
+     --volume $(pwd)/registry:/var/lib/registry/ \
+     --publish 5000:5000 \
+     --restart unless-stopped \
+     registry:latest
+   ~~~
+
+   
+
+
+
+
+
 
 
 ## Docker API

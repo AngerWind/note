@@ -3127,15 +3127,13 @@ DNS 服务将返回一个值 hub.atguigu.com 的 CNAME 记录
 
    - 不会分配一个确切的虚拟ip
 
-   - 会在集群内部的dns上添加一条A记录, 格式为`service-name.namespace.svc.cluster.local`, 但是解析出来的ip并不是service的ip, 而直接是pod的ip, 如果有需要可以自己在客户端做些负载均衡策略
+   - 会在集群内部的dns上添加一条A记录, 格式为`<service-name>.<namespace>.svc.cluster.local`, 但是解析出来的ip并不是service的ip, 而直接是pod的ip, 如果有需要可以自己在客户端做些负载均衡策略
 
      ![image-20231106191538447](img/k8s笔记/image-20231106191538447.png)
 
      ![image-20231106191532663](img/k8s笔记/image-20231106191532663.png)
 
-   - 会为每一个pod都添加一个A记录, 格式为`pod-name.service-name.namespace.svc.cluster.local`, 解析出来就直接是pod的ip, 直接访问该域名就可以访问到对应的pod
-
-   - 如果svc和pod在同一个namespace中, 那么pod还可以直接使用短域名来访问svc, 短域名就是svc的name
+     
 
 2. 如果他转发的pod是stateful set类型的pod的话, 那么他会为每一个他关联的pod创建一个域名`<pod-name>.<headless-service-name>.<namespace>.svc.cluster.local`,  你可以直接调用这个域名, 就可以将请求转发给这个statefulset类型的pod了
 
@@ -3170,8 +3168,10 @@ spec:
   selector:
     app: my-app
   ports:
-    - port: 80
-      targetPort: 8080
+    - name: xxx # 端口的名字
+      protocol: TCP # 支持的协议
+      port: 80 # 必填, 在DNS SRV记录中会用到, 即_name._protocol.my-svc
+      targetPort: 8080 # pod的实际端口, 在DNS SRV记录中用到
 ~~~
 
 
