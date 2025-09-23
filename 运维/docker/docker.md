@@ -1409,6 +1409,8 @@ volumes:  mysql_data:
 
 ### 通过docker register搭建私服
 
+https://blog.csdn.net/weixin_44777680/article/details/131495160
+
 1. 下载docker register的docker镜像
 
    ~~~shell
@@ -1471,7 +1473,7 @@ volumes:  mysql_data:
 
    > 记得看看register有没有启动, 我们上面配了--restart策略
 
-6. 推送镜像
+6. 因为docker register不支持用户, 可以直接推送镜像, 不需要登录私服, 所以我们直接推送镜像
 
    ~~~shell
    docker push 127.0.0.1:5000/aaa:1.2
@@ -1494,10 +1496,317 @@ volumes:  mysql_data:
    docker images # 查看镜像
    ~~~
 
+
+上面的步骤是使用http的方式将docker镜像推送到register上的, 如果你想要使用https, 那么可以按照如下的步骤来执行
+
+1. 生成自己的证书
+
+   ~~~shell
+   mkdir -p certs
+   openssl req \
+     -newkey rsa:4096 -nodes -sha256 -keyout certs/domain.key \
+     -addext "subjectAltName = DNS:myregistry.domain.com" \
+     -x509 -days 365 -out certs/domain.crt
+     
+     
+   # 这里需要输入国家名, 以及register的域名
+   # 域名我们随便指定一个就好了, 后续通过/etc/hosts来映射
+   $ sudo openssl req  -newkey rsa:4096 -nodes -sha256 -keyout docker-certs/domain.key   -x509 -days 36500 -out docker-certs/domain.crt
+   Generating a 4096 bit RSA private key
+   ............................................................++
+   ..................................................................++
+   writing new private key to 'docker-certs/domain.key'
+   -----
+   You are about to be asked to enter information that will be incorporated
+   into your certificate request.
+   What you are about to enter is what is called a Distinguished Name or a DN.
+   There are quite a few fields but you can leave some blank
+   For some fields there will be a default value,
+   If you enter '.', the field will be left blank.
+   -----
+   Country Name (2 letter code) [XX]:CN
+   State or Province Name (full name) []:
+   Locality Name (eg, city) [Default City]:
+   Organization Name (eg, company) [Default Company Ltd]:
+   Organizational Unit Name (eg, section) []:
+   Common Name (eg, your name or your server's hostname) []:myregistry.domain.com
+   Email Address []:
+   ~~~
+
+2. 将上面指定的域名, 映射到我们的register地址上
+
+   ~~~shell
+   vim /etc/hosts
+   
+   127.0.0.1 myregistry.domain.com
+   ~~~
+
+3. 拷贝证书到指定的目录, 使docker信任该证书（该路径与证书域名有关，请按实际域名创建证书拷贝路径）
+
+   ~~~shell
+   mkdir -p  /etc/docker/certs.d/myregistry.domain.com
+   
+   cp certs/domain.crt  /etc/docker/certs.d/myregistry.domain.com/ca.crt
+   ~~~
+
+4. 重新push一下
+
+   ~~~shell
+   docker tag aaa:1.2 myregistry.domain.com:5000/aaa:1.2
+   docker push myregistry.domain.com:5000/aaa:1.2
+   
+   The push refers to a repository [myregistry.domain.com/nginx]
+   bdea7c663e86: Pushed 
+   1b22827e15b4: Pushed 
+   d9f50eaf56fa: Pushed 
+   2530717ff0bb: Pushed 
+   e7766bc830a8: Pushed 
+   cb411529b86f: Pushed 
+   bc09720137db: Pushed 
+   3dab9f8bf2d2: Pushed 
+   alpine: digest: sha256:2d4efe74ef541248b0a70838c557de04509d1115dec6bfc21ad0d66e41574a8a size: 1989
+   ~~~
+
    
 
+### 通过harbor搭建私服
+
+https://blog.csdn.net/qq243920161/article/details/136247340
+
+#### harbor架构
+
+在 Harbor 架构里有几个主要组件：
+
+- **Core Service**（核心 API）
+- **Job Service**（任务调度）
+- **Registry**（存储镜像的 docker registry）
+- **Portal**（Web UI）
+- **Database（PostgreSQL）**
+- **Redis**（缓存/队列）
 
 
+
+#### 安装
+
+1. 安装harbor之前, 需要安装好docker和docker-compose, 可以通过如下命令来检查
+
+   ~~~shell
+   docker -v && docker-compose -v
+   ~~~
+
+2. 访问https://github.com/goharbor/harbor/releases, 下载harbor的安装包
+
+   ![image-20250923230016801](img/docker/image-20250923230016801.png)
+
+   一个是在线安装包, 一个是离线安装包, 最好是现在离线安装包
+
+3. 现在安装包之后, 解压到指定了目录下
+
+   ~~~shell
+   tar -zxf harbor-online-installer-v2.10.0.tgz
+   ~~~
+
+   进入目录，会发现有这几个文件
+
+   ~~~shell
+   cd harbor
+   ll
+   ~~~
+
+   ![img](img/docker/c20cdb60446a3545c5ef8f4ad9cbcb7d.png)
+
+4. 从配置的模板文件中复制一份
+
+   ~~~shell
+   cp harbor.yml.tmpl harbor.yml
+   ~~~
+
+   编辑复制的配置文件
+
+   ~~~shell
+   vim harbor.yml
+   ~~~
+
+   需要修改的地方
+
+   ~~~shell
+   # 当前服务器的ip
+   hostname: 192.168.200.105
+   # admin用户登录密码
+   harbor_admin_password: 123456
+   database:  
+     # pg数据库密码  
+     password: 123456
+   http:  
+     # harbor对外的端口
+     port: 8858
+   ~~~
+
+   将https相关的都注释掉
+
+   ~~~shell
+   # https:
+   #   # https port for harbor, default is 443
+   #   port: 443
+   #   # The path of cert and key files for nginx
+   #   certificate: /your/certificate/path
+   #   private_key: /your/private/key/path
+   ~~~
+
+5. 执行如下脚本进行安装
+
+   ~~~shell
+   ./install.sh
+   ~~~
+
+   出现successfully就说明安装成功了 
+
+   ![img](img/docker/ab7795ccc377de4150aefcbade739705.png)
+
+6. 查看运行状态
+
+   ~~~shell
+   docker ps
+   ~~~
+
+   ![img](img/docker/5e5f3a6fab6de6270a8f9171a4263b45.png)
+
+7. 访问harbor, 用户是admin, 密码是yaml中设置的`harbor_admin_password`
+
+   ![img](img/docker/cfd182831a7f2e720ffab4c2b9fbebea.png)
+
+#### 推送镜像
+
+1. 登录harbor
+
+   ![img](img/docker/7b10deafbe744fdcf1001bc8ad1ea461.png)
+
+2. 新建项目
+
+   ![img](img/docker/4b07fcdb6ad5023346272009b54a4a5b.png)
+
+3. 进入项目，目前是没有任何镜像
+
+   ![img](img/docker/8d1d9bb07d7f0f1e766d566f768f2b4f.png)
+
+4. 将barbor仓库地址添加到docker的可信任列表中, 这样就可以直接通过http来推送镜像了, 而不需要使用https
+
+   ~~~shell
+   vim /etc/docker/daemon.json
+   
+   # 添加如下配置
+   {        
+       "insecure-registries":  ["192.168.200.105:8858"]
+   }
+   ~~~
+
+   重启docker
+
+   ~~~shell
+   systemctl daemon-reload
+   systemctl restart docker
+   ~~~
+
+   重启后如果发现harbor的容器都退出去了, 那么可以重新install一下
+
+   ![img](https://i-blog.csdnimg.cn/blog_migrate/a1f3322bc9678aed4843c0c7643c5465.png)
+
+   ~~~shell
+   ./install.sh
+   ~~~
+
+5. 通过docker登录harbor
+
+   ~~~shell
+   # -p指定密码
+   docker login -u admin -p 123456 192.168.200.105:8858
+   ~~~
+
+6. 将想要的镜像, 重新打上符合harbor要求的tag
+
+   ~~~shell
+   # 格式为: docker tag image:tag  host:port/project_name/image:tag
+   docker tag nginx:1.24 192.168.200.105:8858/harbor-test/nginx:1.24
+   ~~~
+
+7. 推送镜像到远程仓库
+
+   ~~~shell
+   docker push 192.168.200.105:8858/harbor-test/nginx:1.24
+   ~~~
+
+8. 刷新一下, 会发现barbor仓库多了一个镜像
+
+   ![img](img/docker/64f29a24f5d983df87dbe99d8d908c5d.png)
+
+
+
+#### 拉取镜像
+
+1. 在另外一台机器上,  将harbor私服添加到docker的可信任列表中, 这样就可以使用http的方式来通讯了
+
+   ~~~shell
+   vim /etc/docker/daemon.json
+   
+   # 添加如下配置
+   {        
+       "insecure-registries":  ["192.168.200.105:8858"]
+   }
+   ~~~
+
+2. 登录harbor私服
+
+   ~~~shell
+   docker pull 192.168.200.105:8858/harbor-test/nginx:1.24
+   ~~~
+
+3. 查看镜像
+
+   ~~~shell
+   docker images
+   ~~~
+
+
+
+#### 新建代理仓库
+
+代理仓库的意思就是, 当我们通过`docker pull`从harbor私服中下载镜像的时候, 如果harbor中没有这个镜像, 他会从镜像仓库中下载到harbor中, 然后在下载到docker客户端中
+
+1. 新建仓库
+
+   ![img](img/docker/436b52b63c3796170799021cf45adcb5.png)
+
+2. 填写仓库的信息和代理信息
+
+   - 官方代理(需要科学上网): [https://registry-1.docker.io](https://registry-1.docker.io/)
+   - 腾讯云代理地址：[https://mirror.ccs.tencentyun.com](https://mirror.ccs.tencentyun.com/)
+
+   ![img](img/docker/c6cf2a79d1457af06692b3275154af77.png)
+
+3. 回到项目中，新建一个项目
+
+   ![img](img/docker/5363ecf1570a4e9ffc4871c5cf391edc.png)
+
+   开启镜像代理，选择刚刚创建的仓库
+
+   ![img](img/docker/4a6b78e33cfb3542f7b993c7d78cc2d7.png)
+
+4. 回到docker服务器上
+
+   - /etc/docker/daemon.json中添加仓库地址
+
+   - docker login进行登录
+
+   - 拉取私服镜像
+
+     ~~~shell
+     docker pull 192.168.100.105:8858/proxy/library/nginx:1.24.0
+     ~~~
+
+     > 注意，项目名后面要加library，否则无法正常拉取镜像
+
+
+   
 
 
 ## Docker API
