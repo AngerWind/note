@@ -311,6 +311,10 @@ docker inspect hello-world:lastest
 
 **docker search -f is-official=true nginx（查询官方提供的带nginx关键字的镜像）**
 
+> docker search只能查询官方的仓库, 包括镜像仓库, 他不能查询私服
+>
+> 如果要查询私服的话, 那么根据不同的私服, 使用不同的查询方式, 比如harbor就要通过web界面来查看
+
 
 
 #### docker pull
@@ -1806,7 +1810,7 @@ https://blog.csdn.net/qq243920161/article/details/136247340
      > 注意，项目名后面要加library，否则无法正常拉取镜像
 
 
-   
+
 
 
 ## Docker API
