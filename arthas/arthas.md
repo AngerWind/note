@@ -719,14 +719,14 @@ condition-express使用ognl表达式, 不符合ognl表达式的调用不包含�
 
 参数
 
-| 参数        | 作用                                                         |
-| ----------- | ------------------------------------------------------------ |
-| -E          | class-pattern, method-pattern是否开启正则表达式匹配, 默认使用通配符匹配 |
-| -c \<value> | 设置监控周期的秒数,  默认60s输出一次监控的结果               |
-| -n \<value> | 设置方法执行多少次后就结束监控                               |
-| -v          | 打印详细信息                                                 |
-| -m \<value> | 设置class-pattern能够匹配的最大个数                          |
-| -b          | 在方法调用之前计算condition-express, 默认是在方法调用之后    |
+| 参数                              | 作用                                                         |
+| --------------------------------- | ------------------------------------------------------------ |
+| -E                                | class-pattern, method-pattern是否开启正则表达式匹配, 默认使用通配符匹配 |
+| -c \<value> </n> --cycle \<value> | 设置监控周期的秒数,  默认60s输出一次监控的结果               |
+| -n \<value>                       | 设置方法执行多少次后就结束监控, 默认不结束, 无限监控         |
+| -v                                | 打印详细信息                                                 |
+| -m \<value>                       | 设置class-pattern能够匹配的最大个数                          |
+| -b                                | 在方法调用之前计算condition-express, 默认是在方法调用之后    |
 
 1. 每5秒输出一次primeFactors的调用情况
 
@@ -743,13 +743,21 @@ condition-express使用ognl表达式, 不符合ognl表达式的调用不包含�
     2018-12-03 19:06:43  demo.MathGame  primeFactors  5      3        2     42.29       40.00%
    ~~~
 
-2. 在方法执行完之后, 过滤统计结果,  即只统计返回值不为null的调用
+2. 每60s输出一次当前周期的采集结果, 采集100次结束
+
+   ~~~shell
+   monitor -c 60 -n 100 demo.MathGame primeFactors
+   ~~~
+
+   
+
+3. 在方法执行完之后, 过滤统计结果,  即只统计返回值不为null的调用
 
    ~~~sh
    monitor -c 5 demo.MathGame primeFactors "returnObj != null"
    ~~~
 
-3. 在方法执行之前过滤, 即只统计第一个参数 <= 2 的调用
+4. 在方法执行之前过滤, 即只统计第一个参数 <= 2 的调用
 
    ~~~sh
    monitor -b -c 5 com.test.testes.MathGame primeFactors "params[0] <= 2"
@@ -1020,14 +1028,51 @@ condition-express是ognl表达式, 可以使用params和returnObj来过滤调用
 
 格式:`trace class-pattern method-pattern [condition-express] `
 
-参数
+参数: 
 
-| 参数                     | 作用                                                         |
-| ------------------------ | ------------------------------------------------------------ |
-| -E                       | class-pattern和method-pattern开启正则匹配, 默认是通配符匹配  |
-| -n \<value>              | 执行次数限制                                                 |
-| -m \<value>              | 指定匹配class的最大数量, 默认为50                            |
-| --skipJDKMethod \<value> | 默认情况下，trace 不会包含 jdk 里的函数调用, 如果需要, 设置为false |
+- `-E`
+
+  trace只会跟踪函数中的子调用, 并不会向下trace多层, 因为trace的代价是非常重的, 所以你可以使用`-E`参数来指定trace多个函数, 来一定程度上达到trace多层的效果
+
+  ~~~shell
+  trace -E com.test.ClassA|org.test.ClassB method1|method2|method3
+  ~~~
+
+- `--exclude-class-pattern`
+
+  在springboot中, 会有非常多的动态代理, 所以你会看到Affect大多数都是2, 因为有一个原生的对象, 一个动态代理
+
+  但是在大多数的情况下, 我们只需要trace原生对象的方法耗时, 因为trace只会跟踪函数中的子调用, 所以trace一个动态代理对象没有任何的意义, 你只会看到MethodInterceptor.intercept()方法的耗时
+
+  我们可以通过`sc`命令来查看Service接口, 以及他的子类, 这样就可以看到动态代理对象的类名, 然后将其排除掉
+
+  ~~~shell
+  # 查找WidgetService类和他的子类
+  [arthas@10]$ sc com.h3c.dashboard.service.WidgetService
+  com.h3c.dashboard.service.WidgetService
+  com.h3c.dashboard.service.impl.WidgetServiceImpl
+  com.h3c.dashboard.service.impl.WidgetServiceImpl$$EnhancerBySpringCGLIB$$19f22b67
+  Affect(row-cnt:3) cost in 36 ms.
+  
+  # trace的时候, 排除掉动态代理对象, 这样trace的就是原生对象了
+  [arthas@10]$ trace com.h3c.dashboard.service.impl.WidgetServiceImpl  getWidgetResourceNew  -n 5 --skipJDKMethod true --exclude-class-pattern com.h3c.dashboard.service.impl.WidgetServiceImpl$$EnhancerBySpringCGLIB$$19f22b67
+  Press Q or Ctrl+C to abort.
+  Affect(class count: 1 , method count: 1) cost in 1197 ms, listenerId: 3
+  ~~~
+
+- `--skipJDKMethod true/fasle`
+
+  默认为true, trace不会包含 jdk 里的函数调用的耗时, 如果有需要可以设置为true
+  
+- `-m number`
+  
+  指定匹配class的最大数量, 默认为50
+  
+- `-n number`
+  
+  限制trace的执行次数
+
+
 
 1. 根据调用函数来过滤, 并且只输出一次结果
 
@@ -1042,7 +1087,101 @@ condition-express是ognl表达式, 可以使用params和returnObj来过滤调用
            `---[0.05447ms] demo.MathGame:print()
    ~~~
 
+2. 动态trace
+
+   3.3.0版本后支持, 在一定程度上实现了多层的trace
+
+   打开终端 1，trace 上面 demo 里的`run`函数，可以看到打印出 `listenerId: 1`：
+
+   ```bash
+   [arthas@59161]$ trace demo.MathGame run
+   Press Q or Ctrl+C to abort.
+   Affect(class count: 1 , method count: 1) cost in 112 ms, listenerId: 1
+   `---ts=2020-07-09 16:48:11;thread_name=main;id=1;is_daemon=false;priority=5;TCCL=sun.misc.Launcher$AppClassLoader@3d4eac69
+       `---[1.389634ms] demo.MathGame:run()
+           `---[0.123934ms] demo.MathGame:primeFactors() #24 [throws Exception]
    
+   `---ts=2020-07-09 16:48:12;thread_name=main;id=1;is_daemon=false;priority=5;TCCL=sun.misc.Launcher$AppClassLoader@3d4eac69
+       `---[3.716391ms] demo.MathGame:run()
+           +---[3.182813ms] demo.MathGame:primeFactors() #24
+           `---[0.167786ms] demo.MathGame:print() #25
+   ```
+
+   现在想要深入子函数`primeFactors`，可以打开一个新终端 2，使用`telnet localhost 3658`连接上 arthas，再 trace `primeFactors`时，指定`listenerId`。
+
+   ```bash
+   [arthas@59161]$ trace demo.MathGame primeFactors --listenerId 1
+   Press Q or Ctrl+C to abort.
+   Affect(class count: 1 , method count: 1) cost in 34 ms, listenerId: 1
+   ```
+
+   这时终端 2 打印的结果，说明已经增强了一个函数：`Affect(class count: 1 , method count: 1)`，但不再打印更多的结果。
+
+   再查看终端 1，可以发现 trace 的结果增加了一层，打印了`primeFactors`函数里的内容：
+
+   ```bash
+   `---ts=2020-07-09 16:49:29;thread_name=main;id=1;is_daemon=false;priority=5;TCCL=sun.misc.Launcher$AppClassLoader@3d4eac69
+       `---[0.492551ms] demo.MathGame:run()
+           `---[0.113929ms] demo.MathGame:primeFactors() #24 [throws Exception]
+               `---[0.061462ms] demo.MathGame:primeFactors()
+                   `---[0.001018ms] throw:java.lang.IllegalArgumentException() #46
+   
+   `---ts=2020-07-09 16:49:30;thread_name=main;id=1;is_daemon=false;priority=5;TCCL=sun.misc.Launcher$AppClassLoader@3d4eac69
+       `---[0.409446ms] demo.MathGame:run()
+           +---[0.232606ms] demo.MathGame:primeFactors() #24
+           |   `---[0.1294ms] demo.MathGame:primeFactors()
+           `---[0.084025ms] demo.MathGame:print() #25
+   ```
+
+   通过指定`listenerId`的方式动态 trace，可以不断深入。另外 `watch`/`tt`/`monitor`等命令也支持类似的功能。
+
+3. 实际案例
+
+   ~~~shell
+   # 通过-E一次性trace多个函数的调用
+   [arthas@10]$ trace  -E \
+   > com.h3c.dashboard.service.impl.WidgetServiceImpl\
+   > |com.h3c.dashboard.service.impl.FileOpServiceImpl\
+   > |com.h3c.dashboard.utils.MinioUtils \
+   > getWidgetResourceNew\
+   > |getFileNames\
+   > |listObjects \
+   > --exclude-class-pattern \
+   > com.h3c.dashboard.service.impl.WidgetServiceImpl$$EnhancerBySpringCGLIB$$19f22b67
+   Press Q or Ctrl+C to abort.
+   # 这里说明了trace到了4个class中的4个方法
+   Affect(class count: 4 , method count: 4) cost in 4187 ms, listenerId: 6
+   `---ts=2025-09-27 23:44:30;thread_name=http-nio-8080-exec-10;id=53;is_daemon=true;priority=5;TCCL=com.h3c.imo.springboot.adapter.ningweb.NingwebEmbeddedWebappClassLoader@442fedac
+       `---[20398.494354ms] com.h3c.dashboard.service.impl.WidgetServiceImpl$$EnhancerBySpringCGLIB$$19f22b67:getWidgetResourceNew()
+           `---[100.00% 20397.773754ms ] org.springframework.cglib.proxy.MethodInterceptor:intercept()
+               `---[100.00% 20397.168013ms ] com.h3c.dashboard.service.impl.WidgetServiceImpl:getWidgetResourceNew()
+                   +---[0.02% 3.24715ms ] org.slf4j.Logger:info() #195
+                   +---[6.43% 1311.323439ms ] com.h3c.dashboard.dao.WidgetDao:findBusinessWidgets() #197
+                   +---[0.02% min=0.027669ms,max=0.444297ms,total=4.564553ms,count=47] com.h3c.dashboard.entity.Widget:getWidgetJsPath() #200
+                   # 一定要注意这里
+                   # 这个方法调用耗时91%
+                   # 这个方法被调用了47次, 最小一次的耗时114ms, 最久的一次2s, 一共耗时18s
+                   +---[91.03% min=114.799611ms,max=2211.908241ms,total=18567.56578ms,count=47] com.h3c.dashboard.service.FileOpService:getFileNames() #202
+                   |   `---[99.95% min=114.660684ms,max=2211.69253ms,total=18558.416866ms,count=47] com.h3c.dashboard.service.impl.FileOpServiceImpl:getFileNames()
+                   |       `---[99.31% min=114.142468ms,max=2209.878992ms,total=18430.955682ms,count=47] com.h3c.dashboard.utils.MinioUtils:listObjects() #371
+                   |           `---[99.95% min=114.027631ms,max=2209.587482ms,total=18421.851998ms,count=47] com.h3c.dashboard.utils.MinioUtils:listObjects()
+                   |               +---[0.44% min=0.032794ms,max=78.044085ms,total=81.73862ms,count=47] io.minio.ListObjectsArgs:builder() #240
+                   |               +---[0.54% min=0.13821ms,max=85.446604ms,total=100.168718ms,count=47] io.minio.ListObjectsArgs$Builder:bucket() #241
+                   |               +---[0.02% min=0.029833ms,max=0.268403ms,total=4.208089ms,count=47] io.minio.ListObjectsArgs$Builder:prefix() #242
+                   |               +---[0.02% min=0.030044ms,max=0.385357ms,total=4.464201ms,count=47] io.minio.ListObjectsArgs$Builder:recursive() #243
+                   |               +---[0.15% min=0.283264ms,max=3.810576ms,total=26.847903ms,count=47] io.minio.ListObjectsArgs$Builder:build() #244
+                   |               +---[0.03% min=0.037452ms,max=0.727815ms,total=5.165727ms,count=47] io.minio.MinioClient:listObjects() #239
+                   |               +---[2.28% min=0.021121ms,max=80.382558ms,total=420.77617ms,count=448] io.minio.Result:get() #248
+                   |               `---[1.71% min=0.041376ms,max=83.073157ms,total=314.645248ms,count=448] io.minio.messages.Item:objectName() #249
+                   +---[0.02% min=0.03488ms,max=0.455496ms,total=4.738847ms,count=47] com.h3c.dashboard.entity.Widget:getWidgetId() #206
+                   +---[0.00% 0.091993ms ] com.h3c.dashboard.entity.Result:createSuccessResult() #208
+                   +---[0.00% 0.086383ms ] com.alibaba.fastjson.JSONObject:<init>() #209
+                   `---[0.00% 0.115052ms ] com.h3c.dashboard.entity.Result:setData() #210
+   ~~~
+
+   
+
+
 
 ## watch
 
