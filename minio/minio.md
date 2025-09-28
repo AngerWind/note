@@ -362,6 +362,10 @@ https://docs.min.io/community/minio-object-store/operations/deployments/baremeta
 
     > 如果访问失败, 记得F5刷新一下, 有可能是缓存的问题
 
+    > minio一共会占用两个端口, 9001是webui的端口
+    >
+    > 9000是S3 API的端口, mc命令, 客户端sdk, aws s3都是通过这个端口进行对象存储的读写的
+
     当然你也可以使用命令行来操作minio, 详情请查看MinIO Client的使用
 
     
@@ -745,7 +749,7 @@ mc find 用于在minio中查找符合条件的对象, 类似linux下的find命�
 # 查找 bucket 下所有对象
 mc find myminio/mybucket
 
-# 查找 bucket 下指定前缀的对象
+# 查找 bucket 下 **/photos/* 中的所有文件, 注意--prefix匹配的是路径而不是匹配文件名前缀
 mc find myminio/mybucket --prefix photos/
 
 # 查找 bucket 下所有 .jpg 文件
