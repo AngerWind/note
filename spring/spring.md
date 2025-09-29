@@ -1500,6 +1500,200 @@ todo
 
 
 
+## 其他
+
+### Spring6.0新特性-@HttpExchange
+
+
+官方文档：https://docs.spring.io/spring-framework/reference/6.1/integration/rest-clients.html#rest-http-interface
+
+
+
+Spring6.0推出了新的HTTP接口（类似Openfeign，但是无法做到根据微服务名称进行负载均衡），Spring框架允许您将HTTP服务定义为Java的接口,  你在其中通过@HttpExchange等注解指定接口调用的返回值, 参数等等
+
+
+
+你可以在服务端中实现这些接口, 并在实现类中实现具体的逻辑, 也可以在客户端中导入这些接口, 然后实现远程调用
+
+
+
+> `@HttpExchange(url = "http://order")`是可以替代OpenFeign，实现通过服务名来进行微服务调用负载均衡的, 因为SpringCloud高版本做了适配。
+
+#### 普通使用
+
+要将一个http定义为java中的接口, 你可以这样
+
+1. 创建一个接口, 并定义不同的方法访问不同的域名
+
+   ~~~java
+   import com.example.demo.model.User;
+   import org.springframework.web.service.annotation.GetExchange;
+   import org.springframework.web.service.annotation.HttpExchange;
+   
+   import java.util.List;
+   
+   @HttpExchange // 可以留空，不强制要求
+   public interface MultiDomainClient {
+   
+       // 方法1：访问 https://jsonplaceholder.typicode.com
+       @GetExchange("https://jsonplaceholder.typicode.com/users")
+       List<User> getUsers();
+   
+       // 方法2：访问另一个域名
+       @GetExchange("https://api.agify.io/?name=bret")
+       String getNamePrediction();
+   
+       // 方法3：访问你自己的服务
+       @GetExchange("http://localhost:8081/api/health")
+       String checkHealth();
+   }
+   ~~~
+
+2. 如果你的接口有相同的域名和前缀, 你也可以这样指定
+
+   ~~~java
+   import com.example.demo.model.User;
+   import org.springframework.web.bind.annotation.PathVariable;
+   import org.springframework.web.service.annotation.GetExchange;
+   import org.springframework.web.service.annotation.HttpExchange;
+   
+   import java.util.List;
+   
+   @HttpExchange("https://jsonplaceholder.typicode.com/helloworld")
+   public interface UserClient {
+   
+       @GetExchange("/users")
+       List<User> getUsers();
+   
+       @GetExchange("/users/{id}")
+       User getUserById(@PathVariable("id") Long id);
+   }
+   ~~~
+
+3. 光定义了接口还不行, 我们还要创建出他们的代理对象, 才能够使用, 有三种方式可以创建接口的代理
+
+   1. 你可以通过最常见的RestTemplate创建接口的代理
+
+      ~~~java
+      RestTemplate restTemplate = new RestTemplate();
+      
+      // 你可以在这里指定baseUrl, 也可以在@HttpExchange中指定, 也可以直接在@GetExchange中指定, 反正都是拼接字符串
+      restTemplate.setUriTemplateHandler(new DefaultUriBuilderFactory("https://api.github.com/"));
+      RestTemplateAdapter adapter = RestTemplateAdapter.create(restTemplate);
+      HttpServiceProxyFactory factory = HttpServiceProxyFactory.builderFor(adapter).build();
+      
+      RepositoryService service = factory.createClient(RepositoryService.class);
+      ~~~
+
+   2. 你也可以通过spring6推出的新的客户端RestClient来创建代理,
+
+      spring6推出RestClient主要是想要取代RestTemplate, RestTemplate和RestClient使用相同的HTTP库， 但是RestClient提供了一种现代的HTTP访问API，方便大家使用
+
+      ~~~java
+      RestClient restClient = RestClient
+          .builder()
+          // 你可以在这里指定baseUrl, 也可以在@HttpExchange中指定, 也可以直接在@GetExchange中指定, 反正都是拼接字符串
+          .baseUrl("https://api.github.com/")
+          .build();
+      
+      RestClientAdapter adapter = RestClientAdapter.create(restClient);
+      HttpServiceProxyFactory factory = HttpServiceProxyFactory.builderFor(adapter).build();
+      RepositoryService service = factory.createClient(RepositoryService.class);
+      ~~~
+
+   3. 如果你在spring-webflux中, 那么你可以通过WebClient来创建实际的代理
+
+      ~~~java
+      WebClient webClient = WebClient
+      	.builder()
+          // 你可以在这里指定baseUrl, 也可以在@HttpExchange中指定, 也可以直接在@GetExchange中指定, 反正都是拼接字符串
+      	.baseUrl("https://api.github.com/")
+      	.build();
+      WebClientAdapter adapter = WebClientAdapter.create(webClient);
+      HttpServiceProxyFactory factory = HttpServiceProxyFactory
+          .builderFor(adapter)
+          .build();
+      
+      RepositoryService service = factory.createClient(RepositoryService.class);
+      ~~~
+   
+4. 有了上面创建接口代理的代码后
+   
+- 你可以直接将他们放到业务代码中, 直接调用, 然后丢弃, 下次用到了再创建就行了
+   - 你也可以将他们注册为@Bean, 然后依赖注入到需要调用他们的Service中
+
+#### 接口方法中能够接受的参数
+
+带注解的HTTP Exchange方法能够接受以下参数
+
+![在这里插入图片描述](img/spring/9580b13ea6734c45a2dbca0ff315efe5.png)
+
+
+
+#### 接口方法的返回值类型
+
+接口中的方法能够使用返回值,  具体要看你使用什么方式实现它的代理的
+
+如果你使用的是RestClient和RestTemplate, 那么这个接口是同步返回的, 能够接收以下的返回值
+
+![在这里插入图片描述](img/spring/e7c1ee9566844610981111d6b16a5f3f.png)
+
+
+
+如果你使用的是WebClient, 那么这个接口是异步返回的, 能够接受以下的返回值
+
+![在这里插入图片描述](img/spring/d54548c789fb4677bbd9727cc6c10923.png)
+
+
+
+#### 错误处理
+
+在默认情况下, RestTemplate会针对4xx和5xx的http状态码抛出RestClientException, 如果你要处理这种异常, 那么可以使用以下的方式
+
+~~~java
+RestTemplate restTemplate = new RestTemplate();
+restTemplate.setErrorHandler(myErrorHandler);
+
+RestTemplateAdapter adapter = RestTemplateAdapter.create(restTemplate);
+HttpServiceProxyFactory factory = HttpServiceProxyFactory.builderFor(adapter).build();
+~~~
+
+
+
+在默认情况下, RestClient会针对4xx和5xx的http状态码抛出RestClientException, 如果你要处理这种异常, 那么可以使用以下的方式
+
+~~~java
+RestClient restClient = RestClient.builder()
+		.defaultStatusHandler(HttpStatusCode::isError, (request, response) -> ...)
+		.build();
+
+RestClientAdapter adapter = RestClientAdapter.create(restClient);
+HttpServiceProxyFactory factory = HttpServiceProxyFactory.builderFor(adapter).build();
+~~~
+
+有关更多详细信息和选项(如取消错误状态代码)，请参见的Javadoc`defaultStatusHandler`在`RestClient.Builder`
+
+
+
+在默认情况下, WebClient会针对4xx和5xx的http状态码抛出WebClientException, 如果你要处理这种异常, 那么可以使用以下的方式
+
+~~~java
+WebClient webClient = WebClient.builder()
+		.defaultStatusHandler(HttpStatusCode::isError, resp -> ...)
+		.build();
+
+WebClientAdapter adapter = WebClientAdapter.create(webClient);
+HttpServiceProxyFactory factory = HttpServiceProxyFactory.builder(adapter).build();
+~~~
+
+
+
+
+
+
+
+
+
 # SpringEL表达式
 
 ## 基本使用
