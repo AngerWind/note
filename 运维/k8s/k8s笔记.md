@@ -7526,7 +7526,7 @@ helm的作用是能让我们一键创建Deployment, Service等等东西,  他的
 
 1. 从https://github.com/helm/helm/releases下载heml安装包, 并拷贝到linux上
 
-   注意查看自己的电脑使用的是arm还是amd
+   注意查看自己的电脑使用的是arm还是amd, 一般来说都是amd64的, arm只在手机和小型机上面使用
 
 2. 解压安装包
 
@@ -7544,14 +7544,19 @@ helm的作用是能让我们一键创建Deployment, Service等等东西,  他的
 
 ## 添加仓库
 
+| 命令                         | 说明                                                         |
+| ---------------------------- | ------------------------------------------------------------ |
+| `helm repo list`             | 列出当前配置的仓库                                           |
+| `helm repo add <name> <url>` | 添加一个新的 chart 仓库                                      |
+| `helm repo remove <name>`    | 删除仓库                                                     |
+| `helm repo update`           | 更新所有仓库索引, helm search依赖本地索引, <br>所以在search之前最好更新一下索引, 否则会找不到最新的版本 |
+| `helm search repo <keyword>` | 在你通过add添加的仓库中搜索chart                             |
+| `helm search hub <keyword>`  | 在 Helm 官方 hub 上搜索 chart                                |
+| `helm pull <chart_name>`     | 将仓库中的chart下载到本地并解压                              |
+
 ~~~shell
 helm repo add microsoft http://mirror.azure.cn/kubernetes/charts
 helm repo add aliyun https://kubernetes.oss-cn-hangzhou.aliyuncs.com/charts
-
-helm repo list
-helm repo update # 更新仓库
-
-helm repo delete microsoft # 删除仓库
 ~~~
 
 
@@ -8249,46 +8254,137 @@ helm install my-nginx nginx --namespace my-ns -f my-values.yaml # 不要使用�
 helm install my-nginx nginx --namespace my-ns --set aaa.bbb=xxx
 ~~~
 
+在安装chart的时候, helm会为这个chart创建的k8s资源添加如下的label
+
+~~~yaml
+labels:
+  app.kubernetes.io/instance: my-nginx      # release 名称
+  app.kubernetes.io/managed-by: Helm        # 表示 Helm 管理
+  app.kubernetes.io/name: nginx             # chart 名称
+  app.kubernetes.io/version: 1.29.2         # chart 的 appVersion
+  helm.sh/chart: nginx-22.0.10              # chart 名称+版本
+~~~
+
+所以你可以通过如下的命令, 来根据label进行过滤, 查找到这个realease创建的所有k8s资源
+
+~~~shell
+# kubectl get all -l "app.kubernetes.io/instance=my-nginx"
+NAME                            READY   STATUS    RESTARTS   AGE
+pod/my-nginx-54dfd88c85-25hvs   1/1     Running   0          46m
+
+NAME               TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)                      AGE
+service/my-nginx   LoadBalancer   10.97.23.137   <pending>     80:32613/TCP,443:30227/TCP   46m
+
+NAME                       READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/my-nginx   1/1     1            1           46m
+
+NAME                                  DESIRED   CURRENT   READY   AGE
+replicaset.apps/my-nginx-54dfd88c85   1         1         1       46m
+~~~
+
 
 
 
 
 ## 相关shell
 
-~~~yaml
-# 仓库相关
-helm repo add microsoft http://mirror.azure.cn/kubernetes/charts
-helm repo add aliyun https://kubernetes.oss-cn-hangzhou.aliyuncs.com/charts
-helm repo list
-helm repo update # 更新仓库
-helm repo delete microsoft # 删除仓库
-helm search repo charts_name # 从仓库中搜索charts
-helm pull chart_name # 将仓库中的chart下载到本地并解压
 
 
-# chart 相关
+安装chart相关
+
+~~~shell
 helm create chart_name # 创建一个chart模板目录
 helm install release_name  charts_name # 根据chart安装release到默认的命名空间中
 helm install release_name --namespace <namespace> charts_name # 根据chart安装release到指定的命名空间中
+
+helm install my-nginx bitnami/nginx # 安装远程仓库中的nginx, 可以通过helm search先搜索
+
+
 helm install release_name charts_name -f <my-values.yaml> # 根据chart安装release, 不要使用chart中的values.yaml变量文件, 而是使用-f指定的yaml文件
 heml install release_name chart_name --set aa.bb=xxx # 根据chart安装release, 并且使用aa.bb来覆盖values.yaml中的变量
+helm install <chart> --generate-name # 安装chart, 并自动生成release的名字
+~~~
+
+chart开发相关
+
+| 命令                       | 说明                                                         |
+| -------------------------- | ------------------------------------------------------------ |
+| `helm create <chart_name>` | 创建一个新的 chart 模板                                      |
+| `helm package <chart_dir>` | 打包 chart 为 `.tgz` 文件                                    |
+| `helm dependency update`   | 更新当前chart依赖的 chart（根据 `Chart.yaml` 中的依赖项）<br>一个chart可以依赖于另外一个chart |
+| `helm dependency list`     | 查看当前chart依赖的 chart（根据 `Chart.yaml` 中的依赖项）    |
 
 
-# release 相关
-helm ls # 查看所有的未被删除的release
-helm status release_name # 查看release的状态
 
-# 删除release
+
+
+参数与模板管理
+
+| 命令                        | 说明                                                  |
+| --------------------------- | ----------------------------------------------------- |
+| `helm show values <chart>`  | 查看 chart 的默认 values.yaml                         |
+| `helm get values <release>` | 查看 release 当前使用的 values                        |
+| `helm get all <release>`    | 查看 release 的所有信息（包含模板、values、manifest） |
+| `helm template <chart>`     | 本地渲染模板（不会部署）                              |
+| `helm lint <chart>`         | 检查 chart 的语法与结构是否正确                       |
+
+
+
+查看release相关
+
+| 命令                                  | 说明                                        |
+| ------------------------------------- | ------------------------------------------- |
+| `helm list`                           | 列出当前 namespace 下的所有 release         |
+| `helm list -A`                        | 列出所有命名空间的 release                  |
+| `helm list -n <name_space>`           | 列出指定命名空间的release                   |
+| `helm status <release_name>`          | 查看 release 当前状态                       |
+| `helm diff upgrade <release> <chart>` | 比较升级前后差异（需安装 `helm diff` 插件） |
+
+| 子命令                        | 说明                                                        |
+| ----------------------------- | ----------------------------------------------------------- |
+| `helm get all <release>`      | 查看该 Release 的所有信息（综合输出）                       |
+| `helm get values <release>`   | 查看部署时的配置参数（values.yaml 合并后的最终值）          |
+| `helm get manifest <release>` | 查看 Helm 渲染后生成的完整 Kubernetes YAML 清单             |
+| `helm get notes <release>`    | 查看 chart 安装后打印的提示信息（一般显示访问方式等）       |
+| `helm get hooks <release>`    | 查看 hooks（在安装/升级/删除过程中触发的任务）              |
+| `helm get metadata <release>` | 查看该 Release 的元数据信息（版本、chart 名称、命名空间等） |
+
+
+
+删除release
+
+~~~shell
+# helm uninstall在helm2中叫做helm delete, 在helm3中改为了uninstall
+# helm2在delete的时候, 会保留版本, 相当于delete也是一个版本
+# helm3在uninstall的时候, 不会保留历史记录/版本, 如果你想要保留版本, 需要使用--keep-history参数
+helm uninstall <release-name> [--namespace <namespace>]
+
+
+# 查看release的版本, 如果删除的时候设置了--keep-history, 那么会查看到删除的版本
+helm history my-nginx
+
+
+# helm2中的命令
 helm del release_name # 逻辑删除一个release
 helm ls --deleted # 查看逻辑删除的release
 helm rollback release_name reversion # 还原一个逻辑删除的release到指定的版本
 heml del --purge release_name  # 完全删除一个release
+~~~
+
+
+
+
+
+~~~yaml
+# release 相关
+helm ls # 查看所有的未被删除的release
+helm status release_name # 查看release的状态
 
 
 # install和upgrade都可以添加--dry-run来打印最终的yaml文件
 helm install chart_name # 根据chart目录中的配置文件, 创建一个release
 helm upgrade chart_name # 根据chart目录中的配置文件, 升级一个release
-helm template chart_name # 打印最终的yaml,  和上面两个命令添加--dry-run一样
+
 
 # 跟新和回滚
 helm history release_name # 查看版本
