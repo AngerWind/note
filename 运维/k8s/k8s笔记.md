@@ -8307,12 +8307,13 @@ helm install <chart> --generate-name # 安装chart, 并自动生成release的名
 
 chart开发相关
 
-| 命令                       | 说明                                                         |
-| -------------------------- | ------------------------------------------------------------ |
-| `helm create <chart_name>` | 创建一个新的 chart 模板                                      |
-| `helm package <chart_dir>` | 打包 chart 为 `.tgz` 文件                                    |
-| `helm dependency update`   | 更新当前chart依赖的 chart（根据 `Chart.yaml` 中的依赖项）<br>一个chart可以依赖于另外一个chart |
-| `helm dependency list`     | 查看当前chart依赖的 chart（根据 `Chart.yaml` 中的依赖项）    |
+| 命令                                                         | 说明                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------ |
+| `helm create <chart_name>`                                   | 创建一个新的 chart 模板                                      |
+| `helm pull bitnami/nginx`<br>`helm pull oci://ghcr.io/telepresenceio/telepresence-oss --version 2.24.1` | 下载一个chart文件到本地                                      |
+| `helm package <chart_dir>`                                   | 打包 chart 为 `.tgz` 文件                                    |
+| `helm dependency update`                                     | 更新当前chart依赖的 chart（根据 `Chart.yaml` 中的依赖项）<br>一个chart可以依赖于另外一个chart |
+| `helm dependency list`                                       | 查看当前chart依赖的 chart（根据 `Chart.yaml` 中的依赖项）    |
 
 
 
@@ -8320,13 +8321,14 @@ chart开发相关
 
 参数与模板管理
 
-| 命令                        | 说明                                                  |
-| --------------------------- | ----------------------------------------------------- |
-| `helm show values <chart>`  | 查看 chart 的默认 values.yaml                         |
-| `helm get values <release>` | 查看 release 当前使用的 values                        |
-| `helm get all <release>`    | 查看 release 的所有信息（包含模板、values、manifest） |
-| `helm template <chart>`     | 本地渲染模板（不会部署）                              |
-| `helm lint <chart>`         | 检查 chart 的语法与结构是否正确                       |
+| 命令                       | 说明                                           |
+| -------------------------- | ---------------------------------------------- |
+| `helm show values <chart>` | 查看 chart 的默认 values.yaml, 包括远程的chart |
+| `helm show chart <chart>`  | 查看chart的简要信息                            |
+| `helm show readme <chart>` | 查看chart的readme                              |
+| `helm show all <chart>`    | 查看chart的所有信息                            |
+| `helm template <chart>`    | 本地渲染模板（不会部署）                       |
+| `helm lint <chart>`        | 检查 chart 的语法与结构是否正确                |
 
 
 
