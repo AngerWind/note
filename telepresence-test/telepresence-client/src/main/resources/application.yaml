@@ -1,0 +1,8 @@
+server:
+  port: 8088
+
+# application.yaml
+spring:
+  profiles:
+    active: dev  # 默认激活 dev 环境
+

@@ -8254,7 +8254,11 @@ helm install my-nginx nginx --namespace my-ns -f my-values.yaml # 不要使用�
 helm install my-nginx nginx --namespace my-ns --set aaa.bbb=xxx
 ~~~
 
-在安装chart的时候, helm会为这个chart创建的k8s资源添加如下的label
+
+
+
+
+在安装chart的时候, 一般的标准chart都会为他创建的这些k8s资源添加标准的label
 
 ~~~yaml
 labels:
@@ -8281,6 +8285,12 @@ deployment.apps/my-nginx   1/1     1            1           46m
 NAME                                  DESIRED   CURRENT   READY   AGE
 replicaset.apps/my-nginx-54dfd88c85   1         1         1       46m
 ~~~
+
+如果你碰到的不是特别标准的chart, 他没有给release创建的k8s创建标准的label, 那么你也可以通过如下的命令来查看执行的k8s的yaml文件, 然后根据显示的内容来查看创建了哪些k8s资源
+
+```shell
+helm get manifest <release>
+```
 
 
 
