@@ -9065,6 +9065,62 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 
 
 
+# Windows上使用kubectl和helm控制远程k8s集群
+
+### kubectl
+
+1. 在Windows上下载kubectl.exe文件, 链接: https://kubernetes.io/releases/download/#binaries
+
+   下载Windows, amd64版本的
+
+   ![在这里插入图片描述](D:\my_code\note\运维\k8s\img\c17644568be40b29f4535147be77c313.png)
+
+2. 将下载下来的kubectl.exe放到一个目录中, 并将这个目录添加到path环境变量下
+
+   ![在这里插入图片描述](D:\my_code\note\运维\k8s\img\4f28658e8bb09cfc2c9254a9278e16cb.png)
+
+3. 检查安装
+
+   ~~~shell
+   D:\software\dev\k8s>kubectl version
+   Client Version: version.Info{Major:"1", Minor:"18", GitVersion:"v1.18.5", GitCommit:"e6503f8d8f769ace2f338794c914a96fc335df0f", GitTreeState:"clean", BuildDate:"2020-06-26T03:47:41Z", GoVersion:"go1.13.9", Compiler:"gc", Platform:"windows/amd64"}
+   Unable to connect to the server: dial tcp [::1]:8080: connectex: No connection could be made because the target machine actively refused it.
+   ~~~
+
+4. 配置k8s的config文件
+
+   我们需要链接到k8s集群, 然后下载`~/.kube/config`文件到Windows上的`C:\Users\Administrator\.kube\config`中
+
+   这样我们windows上的kubectl.exe就可以使用这个config文件来连接远程的k8s集群了
+
+   ![在这里插入图片描述](D:\my_code\note\运维\k8s\img\7075751a1fea481160d486edb1b00bbe.png)
+
+   ![在这里插入图片描述](D:\my_code\note\运维\k8s\img\e2b3eaf79427aa318c10c8b7853c61ff.png)
+
+5. 特别要注意上面图片中的server的域名, 如果是127.0.0.1或者是localhost, 那么需要修改为k8s集群的ip
+
+6. 验证集群的连接
+
+   ~~~shell
+   kubectl get pod
+   ~~~
+
+   
+
+### helm
+
+要在windows上使用helm.exe的话, 需要先配置好上面的kubectl.exe, 只有kubectl.exe能够访问k8s了, helm.exe才可以用
+
+之后我们可以在https://github.com/helm/helm/releases?spm=a2c6h.12873639.article-detail.10.7f3d1a2a8HHxOd中下载helm.exe文件
+
+![img](https://i-blog.csdnimg.cn/blog_migrate/7f320e244a6fd8cbd3c069844b1e30b3.png)
+
+之后将helm.exe配置到path环境变量中就可以直接使用了
+
+
+
+
+
 # 工作中的经验
 
 ## DaemonSet的问题
