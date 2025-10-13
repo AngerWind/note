@@ -9,6 +9,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class HelloController {
     @GetMapping
     public String hello() {
-        return "hello";
+        String appEnv = System.getenv("APP_ENV");
+        if (appEnv == null || appEnv.isEmpty()) {
+            appEnv = "default";
+        }
+        return appEnv;
     }
 }

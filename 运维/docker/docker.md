@@ -1978,7 +1978,7 @@ https://blog.csdn.net/2301_76154806/article/details/141404952
    docker version
    ~~~
 
-   [![img](D:\my_code\note\运维\docker\img\1575518-20241114172035306-987859966.png)
+   [![img](img\1575518-20241114172035306-987859966.png)
 
    获取到Docker服务端版本为24.0.7。
 
@@ -2052,7 +2052,7 @@ https://blog.csdn.net/2301_76154806/article/details/141404952
 
    下载之后解压到指定文件夹，比如我放在`D:\\tools`下。在`D:\\tools`下会多出来一个名字为`docker`的文件夹，里面有如下图**docker.exe、dockerd.exe、docker-proxy.exe**三个文件（docker-compose.exe不用管，后面会讲）。
 
-      ![img](D:\my_code\note\运维\docker\img\1575518-20241114172106666-725117089.png)
+      ![img](img\1575518-20241114172106666-725117089.png)
 
 4. 配置环境变量
 
@@ -2083,7 +2083,8 @@ https://blog.csdn.net/2301_76154806/article/details/141404952
 2. 下载相同版本的docker-compose
 
    访问https://github.com/docker/compose/releases下载对应版本的docker-compose。
-   [![img](D:\my_code\note\运维\docker\img\1575518-20241114172131237-1957205935.png)](https://img2024.cnblogs.com/blog/1575518/202411/1575518-20241114172131237-1957205935.png)
+
+   [![img](img\1575518-20241114172131237-1957205935.png)](https://img2024.cnblogs.com/blog/1575518/202411/1575518-20241114172131237-1957205935.png)
 
    下载后存放到docker客户端所在的目录`D:\\tools\\docker`下，就是在上面看到的`docker-compose.exe`(文件名称是自己改的，下载下来就是上图的名称)。
 
@@ -2105,62 +2106,66 @@ https://blog.csdn.net/2301_76154806/article/details/141404952
 
 1. 在IDEA中安装docker插件, 并重启idea
 
-   ![安装 Docker 插件](https://i-blog.csdnimg.cn/direct/28812146e4a44b3fac512a99afe29af4.png)
+   ![安装 Docker 插件](img/docker/28812146e4a44b3fac512a99afe29af4.png)
 
 2. 配置连接远程的docker
 
-   ![连接远程 Docker](https://i-blog.csdnimg.cn/direct/0829d2f394da4befb79b91c66f113561.png)
+   ![连接远程 Docker](img/docker/0829d2f394da4befb79b91c66f113561.png)
 
 3. 连接成功后, 就可以在IDEA的左下角的Service一栏中, 看到远程的docker镜像和容器了
 
-   ![配置 Docker 连接](https://i-blog.csdnimg.cn/direct/d71f1a10514e4138a2c5898edca377b6.png)
+   ![配置 Docker 连接](img/docker/d71f1a10514e4138a2c5898edca377b6.png)
 
-   ![远程 Docker 容器和镜像](https://i-blog.csdnimg.cn/direct/21dde07a146b4b7eb4ea81b9217528f3.png)
+   ![远程 Docker 容器和镜像](img/docker/21dde07a146b4b7eb4ea81b9217528f3.png)
 
 4. 当然你还可以使用这个插件, 通过界面的方式来操作docker
 
    1. 启动容器
 
-      ![容器操作](https://i-blog.csdnimg.cn/direct/81253ff9d62d471591273ad55c27aebd.png)
+      ![容器操作](img/docker/81253ff9d62d471591273ad55c27aebd.png)
 
    2. 拉取镜像
 
-      ![拉取镜像](https://i-blog.csdnimg.cn/direct/69b0f17cc7ae467090c63d5fbf3317f0.png)
+      ![拉取镜像](img/docker/69b0f17cc7ae467090c63d5fbf3317f0.png)
 
    3. 对已有的镜像进行操作
 
-      ![已有镜像操作](https://i-blog.csdnimg.cn/direct/57749e48b88a4f3db93521da52168385.png)
+      ![已有镜像操作](img/docker/57749e48b88a4f3db93521da52168385.png)
 
    4. 拉取镜像
 
       注意，写 Docker 镜像地址时，需要在镜像名称后面指定版本号。如果不指定，IDEA 会默认使用 `latest`：
 
-      ![镜像地址](https://i-blog.csdnimg.cn/direct/96df5acbe50d433eb17ee7b134f1e0b9.png)
+      ![镜像地址](img/docker/96df5acbe50d433eb17ee7b134f1e0b9.png)
 
-      ![指定版本号](https://i-blog.csdnimg.cn/direct/a19c96083e0f443c96a4fa8328291134.png)
+      ![指定版本号](img/docker/a19c96083e0f443c96a4fa8328291134.png)
 
-      ![镜像配置](https://i-blog.csdnimg.cn/direct/4716db6b3353473291117b2c14f5b6fa.png) ![镜像配置](https://i-blog.csdnimg.cn/direct/3605aff2c08c40fa9413743635cb1bcc.png)
+      ![镜像配置](img/docker/4716db6b3353473291117b2c14f5b6fa.png)
 
+       ![镜像配置](img/docker/3605aff2c08c40fa9413743635cb1bcc.png)
+
+      
+      
       如遇到拉取超时的情况，可以配置国内镜像源，如阿里云的加速器：
-
-      ![配置镜像加速器](https://i-blog.csdnimg.cn/direct/5562cf9805924df7bcc5dc36689dc143.png)
+      
+      ![配置镜像加速器](img/docker/5562cf9805924df7bcc5dc36689dc143.png)
 
 5. 根据镜像创建容器并运行
 
    创建并运行 Docker 容器：
 
-   ![创建并运行容器](https://i-blog.csdnimg.cn/direct/503c4db2622347969a6b19c468193853.png)
+   ![创建并运行容器](img/docker/503c4db2622347969a6b19c468193853.png)
 
-   ![运行容器](https://i-blog.csdnimg.cn/direct/ada302284a2e4eefab36935257417972.png)
+   ![运行容器](img/docker/ada302284a2e4eefab36935257417972.png)
 
    新的 IDEA 版本可能需要额外的参数配置：
 
-   ![配置参数](https://i-blog.csdnimg.cn/direct/bfb000a4dce742818f3c342e1a6082fc.png)
+   ![配置参数](img/docker/bfb000a4dce742818f3c342e1a6082fc.png)
 
    创建成功后，可以在服务器上查看新创建的容器：
 
-   ![查看新容器](https://i-blog.csdnimg.cn/direct/74ef8b462c884887b6278bf30d738b98.png)
+   ![查看新容器](img/docker/74ef8b462c884887b6278bf30d738b98.png)
 
 6. 容器的停止和删除
 
-   ![容器操作](https://i-blog.csdnimg.cn/direct/968c4e94d11b4b16bf7fe895f24c0ab4.png)
+   ![容器操作](img/docker/968c4e94d11b4b16bf7fe895f24c0ab4.png)

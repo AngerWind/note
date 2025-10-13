@@ -16,9 +16,14 @@ public class HelloRemoteController {
 
     @Autowired
     private HelloClient helloClient;
+
     @GetMapping
     public String hello() {
-        log.info("call remote");
-        return helloClient.hello();
+
+        String appEnv = System.getProperty("APP_ENV");
+        if (appEnv == null || appEnv.isEmpty()) {
+            appEnv = "default";
+        }
+        return String.format("client env: %s, server env: %s", helloClient.hello(), appEnv);
     }
 }

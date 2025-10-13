@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telepresence-server
+  labels:
+    app: telepresence-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telepresence-server
+  template:
+    metadata:
+      labels:
+        app: telepresence-server
+    spec:
+      containers:
+        - name: telepresence-server
+          image: telepresence-server:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8088
+          env:
+            - name: APP_ENV
+              value: "server-prod"
