@@ -1004,7 +1004,7 @@ kubectl apply -f apiserver-to-kubelet-rbac.yaml
 
 > <font color=red>一定要让虚拟机能够连接上外网, 否则kubeadm在安装k8s的时候, 会非常的慢</font>
 >
-> <font color=red>同时也不要设置docker的镜像为阿里云, 阿里云非常的垃圾</font>
+> <font color=red>同时也不要设置任何的镜像为阿里云, 阿里云非常的垃圾, 经常会将镜像下架掉</font>
 >
 > <font color=red>如果你觉得能连上外网了, 那么如下命令打开firefox</font>
 >
@@ -1019,6 +1019,12 @@ kubectl apply -f apiserver-to-kubelet-rbac.yaml
 > - https://hub.docker.com/
 >
 > 如果这三个网站在虚拟机上都可以访问, 那么基本就没什么问题了
+
+> <font color=red>如果你使用clash作为代理, 那么一定不要使用`sudo`来执行命令, 因为clash代理是通过当前终端的环境变量来实现的, sudo会切换环境变量, 导致clash的代理无效!!!!!!!!!!!!!!!!!</font>
+
+
+
+
 
 ## 安装及优化
 
@@ -1085,16 +1091,50 @@ $ vim /etc/hosts
 
 (1)在每台机器上执行以下命令配置默认yum源并安装依赖
 
-```shell
+~~~shell
+# 使用官方的yum源
+sudo mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+sudo tee /etc/yum.repos.d/CentOS-Base.repo > /dev/null <<'EOF'
+[base]
+name=CentOS-7 - Base
+baseurl=http://vault.centos.org/7.9.2009/os/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+[updates]
+name=CentOS-7 - Updates
+baseurl=http://vault.centos.org/7.9.2009/updates/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+
+[extras]
+name=CentOS-7 - Extras
+baseurl=http://vault.centos.org/7.9.2009/extras/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+EOF
+
+sudo yum clean all
+sudo yum makecache
+~~~
+
+你也可以使用aliyun来作为yum源
+
+~~~shell
 curl -o /etc/yum.repos.d/CentOS-Base.repo https://mirrors.aliyun.com/repo/Centos-7.repo
-yum install -y yum-utils device-mapper-persistent-data lvm2
-```
+~~~
+
+
 
 6.必备工具安装
 
 (1)在每台机器上执行以下命令安装必备工具
 
 ```shell
+yum install -y yum-utils device-mapper-persistent-data lvm2
 yum install wget jq psmisc vim net-tools telnet yum-utils device-mapper-persistent-data lvm2 git -y
 ```
 
@@ -1155,18 +1195,19 @@ yum install ntpdate -y
 ```shell
 ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 echo 'Asia/Shanghai' >/etc/timezone
-ntpdate time2.aliyun.com
 
-#添加定时任务
-$ crontab -e
-*/5 * * * * /usr/sbin/ntpdate time2.aliyun.com
+# 手动同步一次时间
+ntpdate time.google.com
+
+# 添加定时任务（每5分钟自动校时）
+crontab -e
+# 输入 */5 * * * * /usr/sbin/ntpdate time.google.com
 ```
 
-9.升级系统
-
-在每台机器上执行以下命令升级系统
+9.在每台机器上执行以下命令
 
 ```shell
+# 更新除了系统以外的所有依赖包到最新
 yum update -y --exclude=kernel*
 ```
 
@@ -1377,13 +1418,24 @@ lsmod | grep --color=auto -e ip_vs -e nf_conntrack
 1.在每台机器上执行以下命令安装docker-ce,注意这里安装docker时会把Containerd也装上
 
 ```shell
-# 添加阿里云 Docker 仓库
+# 移除旧版本的docker
+sudo yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine
+
+# 安装依赖包
+sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+
+# 添加docker 官方yum源
+sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+# 添加阿里云 Docker 仓库(可选)
 sudo yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
 
 # 清理缓存并更新元数据
+sudo yum clean all
 sudo yum makecache fast
 
-# 安装 Docker最新稳定版, 这里的最新版由阿里云决定, 不一定是官方的最新版
+# 安装 Docker最新稳定版, 这里的最新版由 官方云/阿里云(如果使用的是aliyundocker仓库) 决定
+# 不一定是官方的最新版
 yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
 # 查看docker版本
@@ -1394,6 +1446,11 @@ Docker version 26.1.4, build 5650f9b
 # 而不是docker-compose
 docker compose version
 Docker Compose version v2.27.1
+
+# 查看containerd的状态
+systemctl start containerd.service
+systemctl status containerd.service
+systemctl enable containerd.service
 ```
 
 **注意!!:**  如果这里安装docker报兼容性错误, 说明之前安装过docker, 没有删除干净
@@ -1477,9 +1534,19 @@ $ vim /etc/containerd/config.toml
   SystemdCgroup = true
 ```
 
-
-
 <img src="img/k8s笔记/v2-4e3076a3f0c87af691dc553eab815486_1440w.webp" alt="img"  />
+
+将docker的cgroup设置为systemd, 添加如下内容
+
+~~~shell
+vim /etc/docker/daemon.json
+
+{
+  "exec-opts": ["native.cgroupdriver=systemd"]
+}
+~~~
+
+
 
 8.在每台机器上执行以下命令将sandbox_image的Pause镜像改成符合自己版本的地址[http://registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.6](https://link.zhihu.com/?target=http%3A//registry.cn-hangzhou.aliyuncs.com/google_containers/pause%3A3.6)
 
@@ -1502,12 +1569,20 @@ sandbox_image = "registry.cn-hangzhou.aliyuncs.com/google_containers/pause:3.6"
 systemctl daemon-reload
 systemctl enable --now containerd
 systemctl enable --now docker
+# 查看containerd和docker的状态
+systemctl status containerd
+systemctl status docker
 
 $ ls /run/containerd/containerd.sock
 /run/containerd/containerd.sock
+
+# 查看docker使用的cgroup
+$ docker info | grep -i cgroup
+ Cgroup Driver: systemd
+ Cgroup Version: 1
 ```
 
-10.在每台机器上执行以下命令配置crictl客户端连接的运行时位置
+10.在每台机器上执行以下命令配置crictl客户端连接的容器运行时环境为containerd
 
 ```shell
 cat > /etc/crictl.yaml <<EOF
@@ -1518,7 +1593,7 @@ debug: false
 EOF
 ```
 
-:11.在每台机器上执行以下命令进行验证
+11.在每台机器上执行以下命令进行验证
 
 ```shell
 $ ctr image ls
@@ -1550,6 +1625,21 @@ sudo systemctl restart docker
 
 1.在每台机器上执行以下命令配置kubernetes的yum源
 
+~~~shell
+# 此操作会覆盖 /etc/yum.repos.d/kubernetes.repo 中现存的所有配置
+cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
+[kubernetes]
+name=Kubernetes
+baseurl=https://pkgs.k8s.io/core:/stable:/v1.34/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v1.34/rpm/repodata/repomd.xml.key
+exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
+EOF
+~~~
+
+当然你也可以使用aliyun的yum源
+
 ```shell
 cat <<EOF > /etc/yum.repos.d/kubernetes.repo
 [kubernetes]
@@ -1573,7 +1663,7 @@ yum list kubeadm.x86_64 --showduplicates | sort -r | grep 1.28
 2.在每台机器上执行以下命令安装1.23最新版本kubeadm、kubelet和kubectl
 
 ```shell
-yum install kubeadm-1.28* kubelet-1.28* kubectl-1.28* -y
+sudo yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes -y
 
 #查看版本, 一定要看清楚, 装的是1.28版本的kubenetes
 kubeadm version
@@ -1608,12 +1698,21 @@ EOF
 ```shell
 systemctl daemon-reload
 systemctl status kubelet
-systemctl enable kubelet
+systemctl enable --now kubelet
 ```
 
 **说明:由于还未初始化，没有kubelet的配置文件，此时kubelet无法启动，无需管理**
 
+5.设置k8s使用的cgroup为systemd
 
+<font color=red>一定要保证containerd, k8s使用的cgroup都是一样的, 同时推荐使用现代的systemd作为cgroup</font>
+
+~~~shell
+vim /var/lib/kubelet/config.yaml
+
+# 添加如下内容
+cgroupDriver: systemd
+~~~
 
 
 
