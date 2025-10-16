@@ -7,10 +7,23 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.support.RestClientAdapter;
 import org.springframework.web.service.invoker.HttpServiceProxyFactory;
+import org.springframework.web.util.UriComponentsBuilder;
+
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 @SpringBootApplication
 public class Application {
     public static void main(String[] args) {
+
+        String encodedUrl = URLEncoder.encode("/dashboard/index.html#/out/view/default/aidc_overview", StandardCharsets.UTF_8);
+        URI uri = UriComponentsBuilder.fromHttpUrl("http://localhost:8080")
+                .queryParam("url", encodedUrl)
+                .build(true)
+                .toUri();
+        System.out.println("After build: " + uri);
+
         SpringApplication.run(Application.class, args);
     }
 

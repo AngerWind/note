@@ -7538,9 +7538,53 @@ helm的作用是能让我们一键创建Deployment, Service等等东西,  他的
 
    ~~~shell
    mv linux-amd64/helm /usr/bin/
-   ~~~
-
    
+chmod a+x /usr/bin/helm
+   ~~~
+   
+
+
+
+## 升级helm
+
+Helm3 安装与升级过程主要是 helm 二进制文件的替换。
+
+- 下载最版本的 Helm
+
+  根据 Kubernetes 的版本选择对应的 helm 版本。
+
+  如，需要将 Helm 升级到 `v3.7.1`，下载对应版本的压缩包冰解压
+
+  ~~~shell
+  $ wget https://get.helm.sh/helm-v3.7.1-linux-amd64.tar.gz
+  $ tar xf helm-v3.7.1-linux-amd64.tar.gz
+  ~~~
+
+- 查找旧版本 Helm 的安装路径
+
+  ~~~shell
+  $ which helm
+  /usr/local/bin/helm
+  ~~~
+
+- 升级 Helm
+
+  使用新版本 helm 二进制文件替换旧版本的 Helm，升级过程就是二进制文件替换的过程
+
+  ~~~shell
+  $ cp linux-amd64/helm /usr/local/bin/helm
+  $ chmod +x /usr/local/bin/helm
+  ~~~
+
+- 升级完成后，查看 helm 版本信息是否正确
+
+  ~~~shell
+  $ helm version
+  ~~~
+
+  
+
+
 
 ## 添加仓库
 
