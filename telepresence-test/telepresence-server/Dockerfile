@@ -13,6 +13,18 @@ RUN mvn clean package spring-boot:repackage -DskipTests -f ./telepresence-server
 FROM eclipse-temurin:17-jdk-jammy
 WORKDIR /app
 
+# 安装网络工具
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iputils-ping \
+    dnsutils \
+    curl \
+    net-tools \
+    telnet \
+    traceroute \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+
 # 拷贝构建产物
 COPY --from=builder /app/telepresence-server/target/*.jar app.jar
 

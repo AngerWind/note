@@ -8,25 +8,25 @@ cd "$current_dir" || exit 1
 
 ./build.sh
 
-docker save telepresence-client:latest -o telepresence-client.tar
-docker save telepresence-server:latest -o telepresence-server.tar
+docker save telepresence-client:latest -o /tmp/telepresence-client.tar
+docker save telepresence-server:latest -o /tmp/telepresence-server.tar
 
-scp telepresence-client.tar cdh106:/tmp/
-scp telepresence-client.tar cdh107:/tmp/
+scp /tmp/telepresence-client.tar cdh112:/tmp/
+scp /tmp/telepresence-client.tar cdh113:/tmp/
 
 # 同理 server 镜像
-scp telepresence-server.tar cdh106:/tmp/
-scp telepresence-server.tar cdh107:/tmp/
+scp /tmp/telepresence-server.tar cdh112:/tmp/
+scp /tmp/telepresence-server.tar cdh113:/tmp/
 
 sudo ctr -n k8s.io images import /tmp/telepresence-client.tar
 sudo ctr -n k8s.io images import /tmp/telepresence-server.tar
 
 # ssh到cdh106和cdh107, 执行上面的命令
-ssh cdh106 "sudo ctr -n k8s.io images import /tmp/telepresence-client.tar"
-ssh cdh107 "sudo ctr -n k8s.io images import /tmp/telepresence-client.tar"
+ssh cdh112 "sudo ctr -n k8s.io images import /tmp/telepresence-client.tar"
+ssh cdh113 "sudo ctr -n k8s.io images import /tmp/telepresence-client.tar"
 
-ssh cdh106 "sudo ctr -n k8s.io images import /tmp/telepresence-server.tar"
-ssh cdh107 "sudo ctr -n k8s.io images import /tmp/telepresence-server.tar"
+ssh cdh112 "sudo ctr -n k8s.io images import /tmp/telepresence-server.tar"
+ssh cdh113 "sudo ctr -n k8s.io images import /tmp/telepresence-server.tar"
 
 
 sudo ctr -n k8s.io images list | grep telepresence

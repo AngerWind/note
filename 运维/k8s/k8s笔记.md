@@ -1117,8 +1117,8 @@ enabled=1
 gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
 EOF
 
-sudo yum clean all
-sudo yum makecache
+yum clean all
+yum makecache
 ~~~
 
 你也可以使用aliyun来作为yum源
@@ -1257,6 +1257,17 @@ wget http://mirrors.coreix.net/elrepo-archive-archive/kernel/el7/x86_64/RPMS/ker
 ```shell
 cd /root && yum localinstall -y kernel-lt*
 ```
+
+查看是否安装成功
+
+~~~shell
+[root@chd111 tmp]# rpm -qa | grep kernel-lt
+kernel-lt-5.4.278-1.el7.elrepo.x86_64
+kernel-lt-headers-5.4.278-1.el7.elrepo.x86_64
+kernel-lt-devel-5.4.278-1.el7.elrepo.x86_64
+~~~
+
+
 
 在每台机器上执行以下命令更改内核启动顺序
 
@@ -1419,20 +1430,20 @@ lsmod | grep --color=auto -e ip_vs -e nf_conntrack
 
 ```shell
 # 移除旧版本的docker
-sudo yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine
+yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine
 
 # 安装依赖包
-sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+yum install -y yum-utils device-mapper-persistent-data lvm2
 
 # 添加docker 官方yum源
-sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 
 # 添加阿里云 Docker 仓库(可选)
-sudo yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
 
 # 清理缓存并更新元数据
-sudo yum clean all
-sudo yum makecache fast
+yum clean all
+yum makecache fast
 
 # 安装 Docker最新稳定版, 这里的最新版由 官方云/阿里云(如果使用的是aliyundocker仓库) 决定
 # 不一定是官方的最新版
@@ -1450,7 +1461,7 @@ Docker Compose version v2.27.1
 # 查看containerd的状态
 systemctl start containerd.service
 systemctl status containerd.service
-systemctl enable containerd.service
+systemctl enable --now containerd.service
 ```
 
 **注意!!:**  如果这里安装docker报兼容性错误, 说明之前安装过docker, 没有删除干净
@@ -1591,6 +1602,8 @@ image-endpoint: unix:///run/containerd/containerd.sock
 timeout: 10
 debug: false
 EOF
+
+systemctl restart containerd
 ```
 
 11.在每台机器上执行以下命令进行验证
@@ -1627,6 +1640,7 @@ sudo systemctl restart docker
 
 ~~~shell
 # 此操作会覆盖 /etc/yum.repos.d/kubernetes.repo 中现存的所有配置
+# 这个仓库只包含kubectl 1.34的相关软件包
 cat <<EOF | sudo tee /etc/yum.repos.d/kubernetes.repo
 [kubernetes]
 name=Kubernetes
@@ -1634,7 +1648,6 @@ baseurl=https://pkgs.k8s.io/core:/stable:/v1.34/rpm/
 enabled=1
 gpgcheck=1
 gpgkey=https://pkgs.k8s.io/core:/stable:/v1.34/rpm/repodata/repomd.xml.key
-exclude=kubelet kubeadm kubectl cri-tools kubernetes-cni
 EOF
 ~~~
 
@@ -1654,16 +1667,23 @@ EOF
 sed -i -e '/mirrors.cloud.aliyuncs.com/d' -e '/mirrors.aliyuncs.com/d' /etc/yum.repos.d/CentOS-Base.repo
 ```
 
+更新yum缓存
+
+~~~shell
+yum clean all
+yum makecache fast
+~~~
+
 在Master01节点查看最新的Kubernetes版本是多少
 
 ```shell
-yum list kubeadm.x86_64 --showduplicates | sort -r | grep 1.28
+yum list kubeadm.x86_64 --showduplicates | sort -r
 ```
 
 2.在每台机器上执行以下命令安装1.23最新版本kubeadm、kubelet和kubectl
 
 ```shell
-sudo yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes -y
+yum install -y kubelet kubeadm kubectl --disableexcludes=kubernetes -y
 
 #查看版本, 一定要看清楚, 装的是1.28版本的kubenetes
 kubeadm version
@@ -1722,14 +1742,27 @@ cgroupDriver: systemd
 
 ~~~shell
 # 提前拉取镜像, 即使这里不拉取, 下面这个命令也会拉取的
+# 需要在多个节点上执行!!!!!
 kubeadm config images pull
 
 # 初始化master, 只需要在一个master节点上执行, 即使你需要多个master
 # worker上不需要执行
 # Note: 需要修改下面的ip为当前master的ip, 和当前k8s的版本号!!!!!!!!!!!!!!!!!!!!!!!!
-kubeadm init --apiserver-advertise-address=192.168.1.105 --image-repository registry.aliyuncs.com/google_containers --kubernetes-version v1.28.2 --service-cidr=10.96.0.0/12 --pod-network-cidr=10.244.0.0/16
 
-kubeadm init --apiserver-advertise-address=192.168.1.105  --kubernetes-version v1.28.2 --service-cidr=10.96.0.0/12 --pod-network-cidr=10.244.0.0/16
+# 使用aliyun拉取
+kubeadm init \
+--apiserver-advertise-address=192.168.1.105 \
+--image-repository registry.aliyuncs.com/google_containers \
+--kubernetes-version v1.28.2 \
+--service-cidr=10.96.0.0/12 \
+--pod-network-cidr=10.244.0.0/16
+
+# 不使用阿里云的版本, 默认从官方仓库拉取(推荐)
+kubeadm init \
+--apiserver-advertise-address=192.168.1.105  \
+--kubernetes-version v1.28.2 \
+--service-cidr=10.96.0.0/12 \
+--pod-network-cidr=10.244.0.0/16
 ~~~
 
 执行完成之后, 会显示如下的内容
@@ -1801,6 +1834,7 @@ kubeadm join 192.168.1.105:6443 --token 4nmo11.lz9pz0c056uma8rz \
    kube-flannel-ds-c2bpd   1/1     Running   0          4m33s
    kube-flannel-ds-xqn7q   1/1     Running   0          4m33s
    kube-flannel-ds-zwkrp   1/1     Running   0          4m33s
+   
    $ kubectl get pod -n kube-system
    NAME                             READY   STATUS    RESTARTS   AGE
    coredns-6d8c4cb4d-4hmkp          1/1     Running   0          23m
@@ -1812,13 +1846,15 @@ kubeadm join 192.168.1.105:6443 --token 4nmo11.lz9pz0c056uma8rz \
    kube-proxy-855xx                 1/1     Running   0          22m
    kube-proxy-m6db6                 1/1     Running   0          23m
    kube-scheduler-cdh105            1/1     Running   1          23m
+   
+   # 查看节点是否ready
    kubectl get nodes
    $ NAME     STATUS   ROLES                  AGE   VERSION
    cdh105   Ready    control-plane,master   23m   v1.23.17
-   cdh106   Ready    <none>                 23m   v1.23.17
+cdh106   Ready    <none>                 23m   v1.23.17
    cdh107   Ready    <none>                 22m   v1.23.17
    ~~~
-
+   
    
 
 ### 初始化失败, 重置
@@ -1884,7 +1920,12 @@ ls /etc/kubernetes/manifests/
    systemctl enable --now kubelet
    ~~~
 
-
+> 这里完成了k8s的搭建, 但是之后一定要关闭clash的tun模式, 否则通过svc的域名访问其他的pod会有问题
+>
+> ```shell
+> systemctl restart containerd
+> systemctl restart kubelet
+> ```
 
 
 
@@ -1935,7 +1976,599 @@ crictl rmi --prune
 
 
 
+# sealos搭建k8s集群
 
+https://www.cnblogs.com/huangSir-devops/p/18847938
+
+https://www.bilibili.com/video/BV1yT7SzkERQ/?spm_id_from=333.337.search-card.all.click&vd_source=f79519d2285c777c4e2b2513f5ef101a
+
+## 什么是sealos？
+
+Sealos 是一款基于 Kubernetes 的轻量级操作系统，专为云原生环境设计，主要用于快速部署和管理 Kubernetes 集群。它采用“容器化内核”的概念，将操作系统和 Kubernetes 深度集成，简化了集群的安装、运维和扩展流程。
+sealos 是一个简单的 Golang 二进制文件，可以安装在大多数 Linux 操作系统中。支持在线和离线安装，适用于amd64和arm64架构。轻松管理节点，安装分布式应用，支持Containerd和Docker运行时。
+
+
+
+### sealos核心特点
+
+- 极简安装
+
+  只需一条命令即可部署完整的 Kubernetes 集群（包括 Master 和 Worker 节点）。
+  支持离线安装，适合内网或无外网环境。
+
+- 容器化内核
+
+  将操作系统核心组件（如 kubelet、containerd）容器化，实现环境隔离和版本控制。
+  避免传统 Linux 发行版的依赖冲突问题。
+
+- 多集群管理
+
+  统一管理多个 Kubernetes 集群，支持集群生命周期管理（创建、扩容、升级、销毁）。
+
+- 内置应用市场
+
+  提供常见云原生应用（如 Prometheus、Istio、Nginx）的一键部署。
+
+- 兼容性
+
+  支持主流 Linux 发行版（如 CentOS、Ubuntu）作为底层系统。 适配 ARM 和 x86 架构。
+
+
+
+### sealos相关资源
+
+GitHub地址：https://github.com/labring/sealos
+中文文档：https://sealos.run/docs/k8s/quick-start/install-cli
+
+
+
+### sealos相关命令
+
+sealos的相关命令，除了集群、节点操作管理之外需要注意一下，关于容器和镜像的命令都和docker一样，我们只需要把`docker`替换成`sealos`即可
+示例：
+
+```shell
+[root@master01 ~]# sealos --help
+sealos is a Kubernetes distribution, a unified OS to manage cloud native applications.
+ 
+## 集群操作
+Cluster Management Commands:
+  apply         Run cloud images within a kubernetes cluster with Clusterfile
+  cert          update Kubernetes API server's cert
+  run           Run cloud native applications with ease, with or without a existing cluster
+  reset         Reset all, everything in the cluster
+  status        state of sealos
+ 
+# 节点管理，添加node节点，删除node节点
+Node Management Commands:
+  add           Add nodes into cluster
+  delete        Remove nodes from cluster
+ 
+# 远程操作管理
+Remote Operation Commands:
+  exec          Execute shell command or script on specified nodes
+  scp           Copy file to remote on specified nodes
+ 
+Experimental Commands:
+  registry      registry related
+ 
+# 容器和镜像命令，和dockers一样
+Container and Image Commands:
+  build         Build an image using instructions in a Containerfile or Kubefile
+  create        Create a cluster without running the CMD, for inspecting image
+  diff          Inspect changes to the object's file systems
+  inspect       Inspect the configuration of a container or image
+  images        List images in local storage
+  load          Load image(s) from archive file
+  login         Login to a container registry
+  logout        Logout of a container registry
+  manifest      Manipulate manifest lists and image indexes
+  merge         merge multiple images into one
+  pull          Pull images from the specified location
+  push          Push an image to a specified destination
+  rmi           Remove one or more images from local storage
+  save          Save image into archive file
+  tag           Add an additional name to a local image
+ 
+Other Commands:
+  completion    Generate the autocompletion script for the specified shell
+  docs          generate API reference
+  env           prints out all the environment information in use by sealos
+  gen           generate a Clusterfile with all default settings
+  version       Print version info
+ 
+Use "sealos <command> --help" for more information about a given command.
+ 
+```
+
+
+
+## kubernetes集群镜像版本支持说明
+
+
+
+### 支持Containerd的k8s
+
+推荐使用 Containerd 作为容器运行时 (CRI) 的集群镜像版本，Containerd 是一种轻量级、高性能的容器运行时，与 Docker 兼容。使用 Containerd 的 Kubernetes 镜像可以提供更高的性能和资源利用率。以下是支持 Containerd 的集群镜像版本支持说明：
+![image](img/k8s笔记/3468887-20250426121645409-343133498.png)
+
+
+
+### 支持Docker的k8s
+
+当然，你也可以选择使用 Docker 作为容器运行时，以下是支持 Docker 的集群镜像版本支持说明：
+![image](img/k8s笔记/3468887-20250426121723408-1107859490.png)
+
+
+
+### 查看集群镜像
+
+sealos 所有的集群镜像都可以在 cluster-image-docs 仓库里找到。
+
+除了推送到 Docker Hub 之外，这些镜像还被同步到了阿里云的镜像仓库。
+
+Docker Hub 上可以通过以下链接查看 Sealos 所有的集群镜像：https://hub.docker.com/u/labring
+
+使用 [Registry Explorer](https://explore.ggcr.dev/) 可以查看 K8s 集群镜像的所有版本，直接输入 `registry.cn-shanghai.aliyuncs.com/labring/kubernetes`，然后点击“Submit Query”：
+![image](img/k8s笔记/3468887-20250426122107582-1415535085.png)
+就会看到这个集群镜像的所有 tag。
+
+Docker Hub 同理，输入 `docker.io/labring/kubernetes` 即可查看所有 tag。
+
+> Note: K8s 的小版本号越高，集群越稳定。例如 v1.29.x，其中的 x 就是小版本号。建议使用小版本号比较高的 K8s 版本。到本文截止时间为止，v1.29 最高的版本号是 v1.29.9，而 v1.30 最高的版本号是 v1.30.5，所以建议使用 v1.29.9。你需要根据实际情况来选择最佳的 K8s 版本
+
+
+
+### Kubernetes集群镜像说明
+
+Sealos 官方发布的集群镜像主要包括以下几种：
+
+- kubernetes：使用 containerd 作为容器运行时（CRI）的 Kubernetes 镜像。
+- kubernetes-docker：使用 docker 作为容器运行时（CRI）的 Kubernetes 镜像。
+- kubernetes-crio：使用 crio 作为容器运行时（CRI）的 Kubernetes 镜像。
+
+
+
+## 安装前置准备
+
+
+
+### 环境信息
+
+| 主机名   | IP地址    | 系统内核    | 系统规格 |
+| -------- | --------- | ----------- | -------- |
+| master01 | 10.0.0.30 | ubuntu22.04 | 2c4g     |
+| node01   | 10.0.0.31 | ubuntu22.04 | 2c4g     |
+| node02   | 10.0.0.32 | ubuntu22.04 | 2c4g     |
+
+
+
+### sealos安装kubernetes要求
+
+- 每个集群节点应该有不同的主机名。主机名不要带下划线。
+- 所有节点的时间需要同步。
+- 需要在 K8s 集群的第一个 master 节点上运行 sealos run 命令，目前集群外的节点不支持集群安装。
+- 建议使用干净的操作系统来创建集群。不要自己装 Docker！
+- 支持大多数 Linux 发行版，例如：Ubuntu、CentOS、Rocky linux。
+- 支持 Docker Hub 中的所有 Kubernetes 版本。
+- 支持使用 Containerd 作为容器运行时。
+- 在公有云上安装请使用私有 IP。
+
+[回到顶部](https://www.cnblogs.com/huangSir-devops/p/18847938#_labelTop)
+
+## 极简安装以Docker为容器运行时的kubernetes单节点集群
+
+
+
+### 前置准备
+
+- 设置主机名，所有节点执行
+
+```cpp
+hostnamectl set-hostname master01
+hostnamectl set-hostname node01
+hostnamectl set-hostname node02
+```
+
+- 时间同步，所有节点执行
+
+```bash
+#同步时区
+ln -svf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+ 
+#下载ntpdate工具用于同步时间
+apt -y install ntpdate
+ntpdate ntp.aliyun.com
+```
+
+- 需要放开端口，所有节点执行
+  尤其是云环境需要注意
+  参考kubernetes官网：https://kubernetes.io/zh-cn/docs/reference/networking/ports-and-protocols/
+  ![image](img/k8s笔记/3468887-20250426123310250-104476576.png)
+  ![image](img/k8s笔记/3468887-20250426123318162-1110381153.png)
+- 下载 Kubernetes 和容器化环境中常用的底层网络和系统工具，所有节点执行
+
+```sql
+apt-get update -y && apt-get install -y ebtables ethtool socat iptables
+```
+
+
+
+### master01节点下载sealos安装工具
+
+下载地址：https://github.com/labring/sealos/releases/tag/v5.0.1
+
+```yaml
+[root@master01 ~]# wget https://github.com/labring/sealos/releases/download/v5.0.1/sealos_5.0.1_linux_amd64.tar.gz
+[root@master01 ~]# tar -xvf sealos_5.0.1_linux_amd64.tar.gz
+[root@master01 ~]# cp sealos /usr/bin/
+# 查看信息
+[root@master01 ~]# sealos version
+SealosVersion:
+  buildDate: "2024-10-09T02:18:27Z"
+  compiler: gc
+  gitCommit: 2b74a1281
+  gitVersion: 5.0.1
+  goVersion: go1.20.14
+  platform: linux/amd64
+```
+
+
+
+### 下载集群镜像
+
+这里使用sealos下载镜像，语法和docker一样，只不过docker替换成sealos即可
+
+```csharp
+# 下载k8s镜像
+[root@master01 ~]# sealos pull registry.cn-shanghai.aliyuncs.com/labring/kubernetes-docker:v1.26.15
+ 
+# 下载helm镜像
+[root@master01 ~]# sealos pull  registry.cn-shanghai.aliyuncs.com/labring/helm:v3.13.2
+ 
+# 下载calico镜像
+[root@master01 ~]# sealos pull registry.cn-shanghai.aliyuncs.com/labring/calico:v3.26.5
+```
+
+
+
+### 运行命令安装集群
+
+```dockerfile
+sealos run registry.cn-shanghai.aliyuncs.com/labring/kubernetes-docker:v1.26.15 registry.cn-shanghai.aliyuncs.com/labring/helm:v3.13.2 registry.cn-shanghai.aliyuncs.com/labring/calico:v3.26.5 \
+     --masters 10.0.0.30 \
+     --nodes 10.0.0.31,10.0.0.32 -p root123
+```
+
+参数说明：
+
+- --masters：k8s master节点地址列表
+- --nodes：k8s node节点列表
+- -p：ssh登录密码,这里我们使用密码即可
+- -i：ssh登录的密钥，
+
+最终显示如图即表示安装成功！！！
+![image](img/k8s笔记/3468887-20250426125723482-859697525.png)
+
+安装成功之后，我们等待所有的pod都启动成功。
+
+```sql
+[root@master01 ~]# kubectl get po -A
+NAMESPACE          NAME                                       READY   STATUS    RESTARTS   AGE
+calico-apiserver   calico-apiserver-59965665cb-dsfd8          1/1     Running   0          83s
+calico-apiserver   calico-apiserver-59965665cb-k96cz          1/1     Running   0          83s
+calico-system      calico-kube-controllers-5699c5bff4-744hp   1/1     Running   0          2m27s
+calico-system      calico-node-972ns                          1/1     Running   0          2m28s
+calico-system      calico-node-fqlml                          1/1     Running   0          2m28s
+calico-system      calico-node-snmlg                          1/1     Running   0          2m28s
+calico-system      calico-typha-6fdb6c64d6-b6pjb              1/1     Running   0          2m19s
+calico-system      calico-typha-6fdb6c64d6-rsphw              1/1     Running   0          2m28s
+calico-system      csi-node-driver-5bght                      2/2     Running   0          2m27s
+calico-system      csi-node-driver-hgx6h                      2/2     Running   0          2m27s
+calico-system      csi-node-driver-p4fsh                      2/2     Running   0          2m27s
+kube-system        coredns-787d4945fb-2x7hw                   1/1     Running   0          2m56s
+kube-system        coredns-787d4945fb-tnbgh                   1/1     Running   0          2m56s
+kube-system        etcd-master01                              1/1     Running   0          3m9s
+kube-system        kube-apiserver-master01                    1/1     Running   0          3m9s
+kube-system        kube-controller-manager-master01           1/1     Running   0          3m10s
+kube-system        kube-proxy-g92s8                           1/1     Running   0          2m56s
+kube-system        kube-proxy-gdhd7                           1/1     Running   0          2m41s
+kube-system        kube-proxy-tbmmc                           1/1     Running   0          2m42s
+kube-system        kube-scheduler-master01                    1/1     Running   0          3m9s
+kube-system        kube-sealos-lvscare-node01                 1/1     Running   0          2m34s
+kube-system        kube-sealos-lvscare-node02                 1/1     Running   0          2m35s
+tigera-operator    tigera-operator-5d4855cc5b-2pp5k           1/1     Running   0          2m36s
+ 
+```
+
+查看node节点是否都处于`Ready`状态
+
+```sql
+[root@master01 ~]# kubectl get nodes
+NAME       STATUS   ROLES           AGE     VERSION
+master01   Ready    control-plane   3m34s   v1.26.15
+node01     Ready    <none>          3m2s    v1.26.15
+node02     Ready    <none>          3m3s    v1.26.15
+```
+
+检查docker是否安装成功
+
+```csharp
+[root@master01 ~]# docker -v
+Docker version 27.3.1, build ce12230
+```
+
+**到此为止，我们的K8s集群安装成功了！！！**
+
+
+
+### 清理K8s集群
+
+如果中途因为一些配置导致K8s集群安装失败，需要修改配置重新安装的话，我们可以使用`sealos reset`命令来重置集群继续安装
+
+```delphi
+[root@master01 ~]# sealos reset
+2025-04-26T12:58:42 info are you sure to delete these nodes?
+Do you want to continue on 'master01' cluster? Input 'master01' to continue: master01 ##这里需要输入主节点的名称
+```
+
+显示如图即表示清理成功
+![image](img/k8s笔记/3468887-20250426131254092-365423709.png)
+
+[回到顶部](https://www.cnblogs.com/huangSir-devops/p/18847938#_labelTop)
+
+## 自定义配置安装（推荐使用！！！）
+
+sealos支持自定义配置Kubernetes集群，实现高效的集群管理，可以自定义pod的网段以及calico的网段.
+
+使用`sealos gen`生成一个Clusterfile
+
+```bash
+sealos gen registry.cn-shanghai.aliyuncs.com/labring/kubernetes-docker:v1.26.15 registry.cn-shanghai.aliyuncs.com/labring/helm:v3.13.2 registry.cn-shanghai.aliyuncs.com/labring/calico:v3.26.5 \
+     --masters 10.0.0.30 \
+     --nodes 10.0.0.31,10.0.0.32 \
+     -p root123 \
+     -o Clusterfile
+```
+
+生成Clusterfile后，可以根据需要更新集群的配置，例如要修改pods的CIDR范围，就可以修改`networking.podSubnet` 和 `spec.data.spec.calicoNetwork.ipPools.cidr` 字段。
+
+最终生成的Clusterfile像这样
+
+```yaml
+[root@master01 ~]# cat Clusterfile
+apiVersion: apps.sealos.io/v1beta1
+kind: Cluster
+metadata:
+  creationTimestamp: null
+  name: default
+spec:
+  hosts:
+    - ips:
+        - 192.168.0.2:22
+        - 192.168.0.3:22
+        - 192.168.0.4:22
+      roles:
+        - master
+        - amd64
+    - ips:
+        - 192.168.0.5:22
+        - 192.168.0.6:22
+        - 192.168.0.7:22
+      roles:
+        - node
+        - amd64
+  image:
+    - labring/kubernetes:v1.25.0
+    - labring/helm:v3.8.2
+    - labring/calico:v3.24.1
+  ssh:
+    passwd: xxx
+    pk: /root/.ssh/id_rsa
+    port: 22
+    user: root
+status: {}
+---
+apiVersion: kubeadm.k8s.io/v1beta2
+kind: ClusterConfiguration
+networking:
+  podSubnet: 10.160.0.0/12
+---
+apiVersion: apps.sealos.io/v1beta1
+kind: Config
+metadata:
+  name: calico
+spec:
+  path: charts/calico/values.yaml
+  strategy: merge
+  data: |
+    installation:
+      enabled: true
+      kubernetesProvider: ""
+      calicoNetwork:
+        ipPools:
+        - blockSize: 26
+          cidr: 10.160.0.0/12
+          encapsulation: IPIP
+          natOutgoing: Enabled
+          nodeSelector: all()
+        nodeAddressAutodetectionV4:
+          interface: "eth.*|en.*"
+ 
+```
+
+
+
+### 启动集群
+
+运行 `sealos apply -f Clusterfile` 启动集群。集群运行成功后会把 Clusterfile 保存到 `/root/.sealos/default/Clusterfile` 文件中，可以修改其中字段来重新 apply 对集群进行变更。
+
+```csharp
+# 启动集群，
+[root@master01 ~]# sealos apply -f Clusterfile
+ 
+# 检查节点
+[root@master01 ~]# kubectl get nodes
+NAME       STATUS   ROLES           AGE   VERSION
+master01   Ready    control-plane   81s   v1.26.15
+node01     Ready    <none>          47s   v1.26.15
+node02     Ready    <none>          49s   v1.26.15
+ 
+# 查看/root/.sealos/default/Clusterfile
+[root@master01 ~]# ll /root/.sealos/default/Clusterfile
+-rw-r--r-- 1 root root 8401 Apr 26 13:20 /root/.sealos/default/Clusterfile
+```
+
+[回到顶部](https://www.cnblogs.com/huangSir-devops/p/18847938#_labelTop)
+
+## 安装以Containerd为容器运行时的kubernetes集群
+
+运行下面的命令即可，当然也可以使用Clusterfile自定配置安装
+
+```dockerfile
+# 直接运行
+sealos run registry.cn-shanghai.aliyuncs.com/labring/kubernetes:v1.26.15 registry.cn-shanghai.aliyuncs.com/labring/helm:v3.13.2 registry.cn-shanghai.aliyuncs.com/labring/calico:v3.26.5 \
+     --masters 10.0.0.30 \
+     --nodes 10.0.0.31,10.0.0.32 -p root123
+```
+
+安装成功，显示如图：
+![image](img/k8s笔记/3468887-20250426133319145-1138960186.png)
+
+以containerd为容器运行时的kubernetes集群没有docker命令，只有sealos命令，sealos可以完成docker的大部分操作，例如拉取镜像，运行容器，构建镜像等等一系列操作。语法和docker一样
+
+[回到顶部](https://www.cnblogs.com/huangSir-devops/p/18847938#_labelTop)
+
+## 安装高可用的kubernetes集群
+
+安装高可用的kubernetes集群也很简单，只需要通过`sealos run`命令中的`--masters`选项指定多个节点即可
+示例：
+
+```dockerfile
+sealos run registry.cn-shanghai.aliyuncs.com/labring/kubernetes:v1.26.15 registry.cn-shanghai.aliyuncs.com/labring/helm:v3.13.2 registry.cn-shanghai.aliyuncs.com/labring/calico:v3.26.5 \
+     --masters 10.0.0.30,10.0.0.34,10.0.0.33 \
+     --nodes 10.0.0.31,10.0.0.32 -p root123
+```
+
+[回到顶部](https://www.cnblogs.com/huangSir-devops/p/18847938#_labelTop)
+
+## sealos针对集群的扩缩容
+
+
+
+### 前置准备
+
+- 时间同步
+- 云环境要放开端口
+  参考kubernetes官网：https://kubernetes.io/zh-cn/docs/reference/networking/ports-and-protocols/
+- 安装k8s使用的底层工具
+
+```sql
+apt-get update -y && apt-get install -y ebtables ethtool socat iptables
+```
+
+
+
+### 添加node节点
+
+```csharp
+sealos add --nodes='10.0.0.21' -p '!Xinxin123'
+```
+
+如图表示扩容成功
+![image](img/k8s笔记/3468887-20250426134637990-1049358351.png)
+
+检查一下
+
+```sql
+[root@master01 ~]# kubectl get nodes
+NAME       STATUS   ROLES           AGE   VERSION
+master     Ready    <none>          40s   v1.26.15
+master01   Ready    control-plane   14m   v1.26.15
+node01     Ready    <none>          14m   v1.26.15
+node02     Ready    <none>          14m   v1.26.15
+```
+
+
+
+### 删除node节点
+
+```go
+sealos delete --nodes='10.0.0.21'
+```
+
+
+
+### 添加master节点
+
+```csharp
+sealos add --master='10.0.0.21' -p '!Xinxin123'
+```
+
+
+
+### 删除master节点
+
+```go
+sealos delete --master='10.0.0.21' -p '!Xinxin123'
+```
+
+[回到顶部](https://www.cnblogs.com/huangSir-devops/p/18847938#_labelTop)
+
+## sealos的私有镜像仓库
+
+参考文档：https://sealos.run/docs/k8s/operations/registry/using_sealoshub_private_registry
+sealos 的私有仓库默认运行在集群的第一个节点上，第一个节点是指创建集群的时候输入的第一个节点的地址，使用下面的命令查看守护进程的状态。
+
+```yaml
+[root@master01 ~]# systemctl status registry.service
+● registry.service - registry: The sealos registry
+     Loaded: loaded (/etc/systemd/system/registry.service; enabled; vendor preset: enabled)
+     Active: active (running) since Sat 2025-04-26 13:32:01 CST; 23min ago
+       Docs: https://www.sealos.io/docs/Intro
+   Main PID: 32257 (registry)
+      Tasks: 7
+     Memory: 72.5M
+        CPU: 40.117s
+     CGroup: /system.slice/registry.service
+             └─32257 /usr/bin/registry serve /etc/registry/registry_config.yml
+```
+
+
+
+### 登录私有容器镜像仓库
+
+sealos 私有仓库使用 --net host 参数运行在 HTTP 下，应当在本地配置 insecure-registries，然后使用第一个节点的 IP 地址进行连接，Docker 客户端配置参考如下：
+
+```json
+{
+  "insecure-registries": ["192.168.1.10:5000"],
+}
+```
+
+使用 `sealos login` 命令来进行登录，默认用户名与密码是 `admin:passw0rd`，默认域名是：sealos.hub，该域名在我们安装k8s集群时，sealos默认帮我们添加好了hosts解析，默认端口是5000
+
+```csharp
+[root@master01 ~]# cat /etc/hosts
+127.0.0.1 localhost
+127.0.1.1 master
+# sealos
+10.0.0.30 sealos.hub
+10.0.0.30 apiserver.cluster.local
+ 
+```
+
+sealos登录私有仓库
+
+```css
+sealos login -u admin -p passw0rd sealos.hub:5000
+```
+
+也可以使用 docker login 命令。
+
+```css
+docker login -u admin -p passw0rd sealos.hub:5000
+```
 
 # K8S的网络模型
 
@@ -7637,12 +8270,16 @@ helm的作用是能让我们一键创建Deployment, Service等等东西,  他的
 
    ~~~shell
    mv linux-amd64/helm /usr/bin/
-   
-chmod a+x /usr/bin/helm
+   chmod a+x /usr/bin/helm
    ~~~
+
+4. 执行helm
+
+   ~~~shell
+   helm version
+   ~~~
+
    
-
-
 
 ## 升级helm
 
@@ -9216,11 +9853,11 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 
    下载Windows, amd64版本的
 
-   ![在这里插入图片描述](D:\my_code\note\运维\k8s\img\c17644568be40b29f4535147be77c313.png)
+   ![在这里插入图片描述](img\c17644568be40b29f4535147be77c313.png)
 
 2. 将下载下来的kubectl.exe放到一个目录中, 并将这个目录添加到path环境变量下
 
-   ![在这里插入图片描述](D:\my_code\note\运维\k8s\img\4f28658e8bb09cfc2c9254a9278e16cb.png)
+   ![在这里插入图片描述](img\4f28658e8bb09cfc2c9254a9278e16cb.png)
 
 3. 检查安装
 
@@ -9236,9 +9873,9 @@ https://www.yuque.com/leifengyang/oncloud/vgf9wk#NRstb
 
    这样我们windows上的kubectl.exe就可以使用这个config文件来连接远程的k8s集群了
 
-   ![在这里插入图片描述](D:\my_code\note\运维\k8s\img\7075751a1fea481160d486edb1b00bbe.png)
+   ![在这里插入图片描述](img\7075751a1fea481160d486edb1b00bbe.png)
 
-   ![在这里插入图片描述](D:\my_code\note\运维\k8s\img\e2b3eaf79427aa318c10c8b7853c61ff.png)
+   ![在这里插入图片描述](img\e2b3eaf79427aa318c10c8b7853c61ff.png)
 
 5. 特别要注意上面图片中的server的域名, 如果是127.0.0.1或者是localhost, 那么需要修改为k8s集群的ip
 
