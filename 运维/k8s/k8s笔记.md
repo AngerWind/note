@@ -4334,6 +4334,12 @@ Events:  <none>
 
 
 
+### 关于IPv6和IPv4的说明
+
+
+
+
+
 # Ingress
 
 文档: https://kubernetes.github.io/ingress-nginx/deploy/#quick-start
