@@ -2873,10 +2873,14 @@ kubectl get cm -n service-software middleware-unified-config -ojsonpath={.data.S
 grep用来查找包含指定内容的字符串, 不过他有几个选项在shell中比较有用
 
 ~~~shell
-grep -i 'hello' file.txt # -i 不区分大小写
-grep -v 'hello' file.txt # 反选, 即选择不匹配的行
 grep -w 'hello' file.txt # 匹配一行中完整的单词, 他不会匹配 hellooo
 grep -x 'hello' file.txt # 精确匹配一行, 常常用来判断其他命令的输出是否包含指定的内容, 比如输出的内容中是否包含特定的数据库
+
+grep -i 'hello' file.txt # -i 不区分大小写
+grep -v 'hello' file.txt # 反选, 即选择不匹配的行
+grep -e "a" -e "b" file.txt # 查找a或者b
+
+grep -rni -e error -e fail . # 递归查找当前目录下所有文件中的error或者fail的行, 并打印行号, 忽略关键字大小写
 ~~~
 
 
