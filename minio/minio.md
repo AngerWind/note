@@ -1309,11 +1309,152 @@ mc version suspend alias/bucket
 
 
 
-#### ma watch
+#### mc watch
+
+`mc watch`用于监听minio中对象的各种事件
+
+格式如下:
+
+~~~shell
+mc wath [flag] alias/bucket/path
+~~~
+
+常用的参数有:
+
+| Flag          | 作用                                                         |
+| ------------- | ------------------------------------------------------------ |
+| `--recursive` | 递归监听子目录/子路径下对象                                  |
+| `--events`    | **指定需要监听的事件类型, 如果不指定默认监听所有事件, 如果要监听多个事件, 使用逗号分隔** |
+| `--json`      | 输出 JSON 格式事件，方便解析                                 |
+| `--prefix`    | 监听指定前缀的对象                                           |
+| `--suffix`    | 监听指定后缀的对象（如 `.jpg`）                              |
+
+一共有如下的几种事件
+
+| 事件            | 描述                                    |
+| --------------- | --------------------------------------- |
+| `put`           | 对象被 PUT 上传（单次上传）             |
+| `post`          | 对象通过 POST 上传                      |
+| `copy`          | 对象被复制                              |
+| `complete`      | 多段上传完成（CompleteMultipartUpload） |
+| `delete`        | 对象被删除                              |
+| `delete-marker` | 删除标记（Versioning 开启时）           |
+
+
+~~~shell
+# 监听myminio集群中的mybucket的所有事件
+mc watch myminio/mybucket
+{
+  "eventName": "s3:ObjectCreated:Put",
+  "key": "test.txt",
+  "size": 12,
+  "eTag": "9b74c9897bac770ffc029102a200c5de"
+}
+
+# 只监听上传事件
+mc watch --events put myminio/mybucket
+
+# 监听上传和删除事件
+mc watch --events put,delete myminio/mybucket
+# 只监听 .jpg文件的上传事件
+mc watch --events put --suffix .jpg --recursive myminio/mybucket
+~~~
 
 
 
+mc watch命令可以结合jq命令来进行过滤和处理
 
+~~~shell
+mc watch myminio/mybucket | jq '.key'
+~~~
+
+mc watch也可以挂载在后台运行, 记录所有事件到日志中
+
+~~~shell
+nohup mc watch myminio/mybucket > events.log 2>&1 &
+~~~
+
+
+
+### mc admin命令
+
+#### mc admin user
+
+
+
+#### mc admin accesskey
+
+
+
+#### mc admin cluster bucket
+
+
+
+#### mc admin cluster bucket
+
+
+
+#### mc admin clster iam
+
+
+
+#### mc admin config
+
+
+
+#### mc admin decommission
+
+
+
+#### mc admin heal
+
+
+
+#### mc admin info
+
+
+
+#### mc admin kms key 
+
+
+
+#### mc admin logs 
+
+
+
+#### mc admin maintenance hosts
+
+
+
+#### mc admin object info
+
+
+
+#### mc admin policy 
+
+
+
+#### mc admin prometheus
+
+
+
+#### mc admin rebalance 
+
+
+
+#### mc admin replicate
+
+
+
+#### mc admin scanner 
+
+
+
+#### mc admin trace
+
+
+
+#### mc admin update
 
 
 

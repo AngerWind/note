@@ -9996,3 +9996,273 @@ spec:
 但是对于daemonset控制的pod, 这种pod默认是能够容忍上面两个污点的, 并且是无限的时长,  所以ds控制的pod不会被驱逐
 
 如果节点恢复后, 那么node的节点会先变成NotReady, 然后kubelet重新注册, 发送心跳, 然后node的状态变成Ready
+
+
+
+## kubectl wait
+
+`kubectl wait`命令主要用于在k8s中, 等待某个资源达到特定的状态,  比如就绪, 已删除等等, 这在自动化脚本, CI/CD流程中都非常有用
+
+- 如果资源在指定的时间内就绪, 那么状态码返回0, 否则状态码返回1
+- kubectl wait监控的是资源的`status.conditions`字段
+- 对于`--for=delete`, 等待资源被删除, 如果没有这个资源, 那么直接返回0
+
+
+
+基本语法如下:
+
+~~~shell
+# condition可选的值有:
+#     PodScheduled: Pod已经调度到指定的节点上
+#     ContainersReady: Pod中所有的容器已经就绪
+#     Initialized: pod的初始化容器已经执行完毕
+#     Ready: Pod就绪
+
+kubectl wait [RESOURCE] --for=condition=<CONDITION> [options]
+kubectl wait [RESOURCE] --for=delete [options]
+~~~
+
+等待Pod就绪
+
+```shell
+# 等待所有的pod都继续
+kubectl wait --for=condition=Ready pod --all -n my-namespace
+
+# 等待某个特定的pod就绪, 并指定超时的时间
+kubectl wait pod/my-pod --for=condition=Ready -n my-namespace --timeout=60s
+
+# 等待带有特定label的pod就绪
+kubectl wait pod --for=condition=Ready -l app=myapp,env=prod --timeout=90s # 多个lable是且的关系
+kubectl wait pod -l "app in (web,api)" --for=condition=Ready # 多个label是或的关系
+```
+
+等待Deployment可用
+
+~~~shell
+# 等待Deployment管理的pod的副本数达到期望, 并且都是Ready状态
+kubectl wait deployment/my-deploy --for=condition=available --timeout=120s
+
+# 等待所有的deployment管理的pod的副本数达到期望, 并且都是Ready状态
+kubectl wait deployment --all --for=condition=available -n my-namespace
+
+# 等待带有特定标签的Deployment可用
+kubectl wait deployment --for=condition=available -l env=prod,tier=frontend --timeout=180s
+~~~
+
+等待Job
+
+~~~shell
+# 等待job执行完毕
+kubectl wait job/my-job --for=condition=complete --timeout=180s
+~~~
+
+等待某个资源被删除
+
+~~~shell
+kubectl delete pod my-pod &
+kubectl wait pod/my-pod --for=delete --timeout=30s
+
+# 等待my-namespace命名空间中所有的pod都被删除
+kubectl wait pod --all --for=delete -n my-namespace
+~~~
+
+等待自定义的资源的某个条件
+
+~~~shell
+# 如果你有一个CRD, 比如mycrd.example.com,  他有一个status.conditions字段
+kubectl wait mycrd/example --for=condition=Ready
+~~~
+
+| 参数                     | 说明                                            |
+| ------------------------ | ----------------------------------------------- |
+| `--for=condition=<cond>` | 指定等待的条件（如 Ready、Available、Complete） |
+| `--for=delete`           | 等待资源被删除                                  |
+| `--timeout=<time>`       | 设置超时时间（如 30s, 1m, 5m），默认无限等待    |
+| `--selector=<label>`     | 使用 label 过滤资源                             |
+| `--all`                  | 选中所有匹配的资源                              |
+| `-n, --namespace`        | 指定命名空间                                    |
+
+
+
+## kubectl patch
+
+`kubectl patch`主要用于通过命令来修改k8s中的资源配置,  他不需要你像`kubectl edit`一样通过交互式的命令来修改k8s的资源, 也不需要你通过`kubect apply`来通过整个完整的yaml来覆盖已经创建的资源配置
+
+他表达的含义是 `只改我想要改的字段, 其他的字段别动`
+
+
+
+基本语法如下
+
+~~~shell
+# 资源类型可以指定
+#  deployment
+#  pod
+#  svc
+#  statefulset
+#  等等
+kubectl patch <资源类型>/<名称> -p '<修改内容>' [选项]
+~~~
+
+`kubectl patch`有一些常用的参数如下
+
+| 参数               | 含义                       |
+| ------------------ | -------------------------- |
+| `-n`               | 指定命名空间               |
+| `--dry-run=client` | 只显示修改结果，不实际执行 |
+| `-o yaml/json`     | 输出修改后的对象           |
+
+
+
+patch分为三种类型, 你可以通过`--type=xxx`来指定patch的type,  如果你什么也不指定的话, 那么默认使用的是strategic
+
+| 类型          | 选项值             | 特点                                            |
+| ------------- | ------------------ | ----------------------------------------------- |
+| **strategic** | `--type=strategic` | 默认类型；理解 K8s 资源结构（能智能合并数组等） |
+| **merge**     | `--type=merge`     | 按 JSON key 合并（简单粗暴）                    |
+| **json**      | `--type=json`      | 使用 JSON Patch 语法（操作性强、适合精确控制）  |
+
+**对于strategic类型的path, 如果指定是值类型那么表示修改, 如果是数组或者map, 表示覆盖和新增, strategicy一般不用于删除的功能**
+
+比如你想要删除pod中挂载的一个env, 那么strategic类型的patch是无能为力的
+
+strategic类型的pathc使用案例如下:
+
+~~~shell
+kubectl patch deployment myapp -p '{"spec": {"replicas": 5}}' # 修改deployment的副本数为5
+# 等效于
+kubectl scale deployment myapp --replicas=5
+
+
+ # 给pod添加label, 或者修改已有的label
+kubectl patch pod mypod -p '{"metadata": {"labels": {"env": "prod"}}}'
+
+# 修改svc的端口
+kubectl patch service mysvc -p '{"spec": {"ports": [{"port": 8080, "targetPort": 80}]}}'
+
+# 给deployment添加环境变量
+kubectl patch deployment myapp -p '{
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [{
+          "name": "myapp",
+          "env": [{"name": "ENV_MODE", "value": "prod"}] # 如果存在覆盖, 不存在添加
+        }]
+      }
+    }
+  }
+}'
+~~~
+
+
+
+**json类型的patch比strategic类型的patch更加的强大, 但是也更加的复杂, 这个patch可以指定一个数组, 数组中的每个对象都有如下的三个属性**
+
+- op: 要进行的操作的类型
+
+  - add: 向对象添加新字段(字段必须不存在), 或者在数组末尾添加新的元素
+
+    ~~~json
+    // 添加spec.replicas = 3
+    {
+      "op": "add",
+      "path": "/spec/replicas",
+      "value": 3
+    }
+    // 0表示数组的第一个元素, -表示数组末尾
+    // 这里表示给containers[0].env数组中添加一个环境变量, 到数组的末尾
+    {
+      "op": "add",
+      "path": "/spec/template/spec/containers/0/env/-",
+      "value": {"name":"DEBUG","value":"true"}
+    }
+    ~~~
+
+  - replace: 修改已有的字段,如果字段不存在会报错
+
+    ~~~json
+    // 修改副本数
+    {
+      "op": "replace",
+      "path": "/spec/replicas",
+      "value": 5
+    }
+    // 更新容器的镜像
+    {
+      "op": "replace",
+      "path": "/spec/template/spec/containers/0/image",
+      "value": "myapp:v2"
+    }
+    ~~~
+
+    
+
+  - remove: 删除对象中的字段, 或者数组中的元素
+
+    ~~~json
+    // 删除spec.replicas字段
+    {
+      "op": "remove",
+      "path": "/spec/replicas"
+    }
+    // 删除spec.template.spec.containers[0].env[0] 这个环境变量
+    {
+      "op": "remove",
+      "path": "/spec/template/spec/containers/0/env/0"
+    }
+    ~~~
+
+  - copy: 把对象或者数组中的元素复制到另外一个路径
+
+    ~~~json
+    // 复制spec.replicas 到 spec.oldReplicas
+    {
+      "op": "copy",
+      "from": "/spec/replicas",
+      "path": "/spec/oldReplicas"
+    }
+    ~~~
+
+  - move: 把对象或者数组中的元素移动到另外一个路径中
+
+    ~~~json
+    // 移动spec.template.spce.containers[0].env[1] 到 数组头部
+    {
+      "op": "move",
+      "from": "/spec/template/spec/containers/0/env/1",
+      "path": "/spec/template/spec/containers/0/env/0"
+    }
+    ~~~
+
+  - test: 在patch的时候, 检查某个字段的值是否符合预期, 如果不符合那么整个patch都会失败, 类似if的作用
+
+    ~~~json
+    // 如果patch的时候, replicas不为3, 那么patch失败
+    {
+      "op": "test",
+      "path": "/spec/replicas",
+      "value": 3
+    }
+    ~~~
+
+- path: 要修改的值的路径
+
+- value: 要操作的值
+
+~~~shell
+# 修改副本数为3, 修改/0/数组索引为0的容器的镜像, 在/0/数组索引为0的容器的环境变量数组末尾添加环境变量
+kubectl patch deployment myapp \
+  --type=json \
+  -p '[
+    {"op": "replace", "path": "/spec/replicas", "value": 3},
+    {"op": "replace", "path": "/spec/template/spec/containers/0/image", "value": "myapp:v2"},
+    {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name":"DEBUG","value":"true"}}
+  ]'
+
+~~~
+
+
+
+
+
