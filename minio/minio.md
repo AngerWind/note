@@ -1380,6 +1380,65 @@ nohup mc watch myminio/mybucket > events.log 2>&1 &
 
 #### mc admin user
 
+这个命令主要用于的minio集群中的用户进行增删改的操作, 支持的操作有如下:
+
+- add: 添加新的用户
+
+- remove: 删除用户
+
+- enbale: 解锁用户
+
+- disable: 禁用用户
+
+- list: 列出所有的用户
+
+- info: 查看单个用户的信息
+
+- sts info:  查看某个用户的临时凭证(Security Token Service), 这个凭证信息一般用于第三方访问, 临时上传/下载
+
+  这个命令可以让管理员看到某个用户是否有sts会话, 会话的状态, 有效期等等
+
+~~~shell
+# 增加用户并设置密码, 添加成功后, 可以给这个用户分配权限
+mc admin user add myminio alice password123
+
+# 删除用户
+mc admin user remove myminio alice
+
+# 禁用用户
+mc admin user disable myminio alice
+
+# 启用用户
+mc admin user enable myminio alice
+
+# 查看所有的用户
+mc admin user list myminio
+
+# 产看aliace的凭证, 如果用户没有sts会话, 那么显示未空或者inactive
+mc admin user sts info myminio alice
+User: alice
+STS Session: active
+Expires: 2025-11-03T20:00:00Z
+
+# list查看用户, 以及他们的状态
+mc admin user list myminio
+alice    enabled
+bob      disabled
+charlie  enabled
+
+# info可以查看用户的状态, 访问权限, 当前活跃的sts会话数量
+mc admin user info myminio alice
+Status: enabled
+Policy: readwrite
+STS Sessions: 1 active
+~~~
+
+todo, rm还是remove, list还是ls
+
+
+
+### mc admin policy 
+
 
 
 #### mc admin accesskey
@@ -1429,8 +1488,6 @@ nohup mc watch myminio/mybucket > events.log 2>&1 &
 #### mc admin object info
 
 
-
-#### mc admin policy 
 
 
 
