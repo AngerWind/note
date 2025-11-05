@@ -10259,7 +10259,6 @@ kubectl patch deployment myapp \
     {"op": "replace", "path": "/spec/template/spec/containers/0/image", "value": "myapp:v2"},
     {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name":"DEBUG","value":"true"}}
   ]'
-
 ~~~
 
 
