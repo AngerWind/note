@@ -1,4 +1,4 @@
-# k8s相关命令
+k8s相关命令
 
 ## 集群相关
 
@@ -10444,6 +10444,196 @@ kubectl patch deployment myapp \
     {"op": "add", "path": "/spec/template/spec/containers/0/env/-", "value": {"name":"DEBUG","value":"true"}}
   ]'
 ~~~
+
+
+
+## kubectl attach
+
+这个命令是让你能够将当前终端附加到pod的**1号程序**的标准输入, 输出, 错误流的命令, 然后你就可以通过这个终端来和pod中的1号程序进行交互, 就像`docker attach`一样
+
+`kubectl attach` 的主要用途包括：
+
+1. **查看正在运行容器的实时输出**（类似 `tail -f`）。
+2. **在交互式容器中执行输入操作**（如果容器支持交互，比如运行 `/bin/bash` 的容器）。
+3. **调试长时间运行的容器**，比如正在运行的服务或后台任务。
+
+语法如下:
+
+~~~shell
+kubectl attach POD_NAME [-c CONTAINER_NAME] [options]
+~~~
+
+常用参数:
+
+| 参数              | 作用                                    |
+| ----------------- | --------------------------------------- |
+| `-i, --stdin`     | 连接标准输入（允许输入命令）            |
+| `-t, --tty`       | 分配一个伪终端（交互式）                |
+| `-c, --container` | 指定要附加的容器（当 Pod 有多个容器时） |
+| `--namespace`     | 指定命名空间                            |
+
+~~~shell
+# 创建一个nginx镜像的容器
+kubectl run busybox-demo --image=busybox --stdin --tty --restart=Never -- sh
+
+# 退出容器后（Ctrl+D 或 exit），它会继续保持运行（因为我们用 --stdin --tty 启动了它）。
+Ctrl + D
+
+# attach到nginx中的PID 1的程序上, 接管他的标准输入, 输出, 错误流
+kubectl attach -it busybox-demo
+
+# 你可以在当前终端上控制这个busybox
+/ # ls
+/ # echo hello
+~~~
+
+
+
+他和其他的一些命令在某些时候能够达到一样的效果, 但是也有一些不同
+
+| 命令                           | 作用               | 特点                       |
+| ------------------------------ | ------------------ | -------------------------- |
+| `kubectl exec -it pod -- bash` | 在容器中执行新命令 | 启动新进程，不影响已有进程 |
+| `kubectl attach -it pod`       | 连接到容器的主进程 | 查看/控制正在运行的进程    |
+| `kubectl logs -f pod`          | 查看日志输出       | 只读、不能交互             |
+| `kubectl debug`                | 创建临时调试容器   | 不影响原容器环境           |
+
+
+
+## kubectl debug
+
+`kubectl debug` 是 Kubernetes 专门用于排查和调试 Pod 的命令，它可以在 不修改原始 Pod 定义的情况下，帮你启动一个“调试容器”，这个调试容器可以访问被调试容器的系统
+
+基本语法:
+
+~~~shell
+kubectl debug <pod-name> [options]
+~~~
+
+| 选项                  | 说明                                            | 示例                               |
+| --------------------- | ----------------------------------------------- | ---------------------------------- |
+| `-it`                 | 分配交互式终端（interactive + tty）             | `-it`                              |
+| `--image=IMAGE`       | 指定调试容器使用的镜像                          | `--image=busybox`                  |
+| `--target=CONTAINER`  | 指定要调试的目标容器（在 Pod 有多个容器时使用） | `--target=app`                     |
+| `--container=NAME`    | 为临时调试容器指定一个名字                      | `--container=debugger`             |
+| `--copy-to=NEW_POD`   | 克隆一个新的 Pod 进行调试（不影响原 Pod）       | `--copy-to=debug-pod`              |
+| `--attach`            | 调试容器创建后自动附着进入调试容器的1号进程     | `--attach`                         |
+| `--namespace`         | 指定命名空间                                    | `--namespace=prod`                 |
+| `--env=KEY=VALUE`     | 向调试容器注入环境变量                          | `--env=DEBUG=true`                 |
+| `--replace`           | 当 `--copy-to` 的 Pod 已存在时，先删除再创建    | `--copy-to=debug-pod --replace`    |
+| `--image-pull-policy` | 控制调试镜像拉取策略 (`IfNotPresent`, `Always`) | `--image-pull-policy=IfNotPresent` |
+
+
+
+使用场景:
+
+1. 假设你想调试一个正在运行的pod, 但是又不想影响到这个pod, 那么你可以复制一个pod进行调试
+
+   ~~~shell
+   # mypod是需要调试的pod
+   # --copy-to=debug-mypod 表示复制一个pod为debug-mypod
+   # --image表示在新的pod中, 使用busybox作为调试容器的镜像
+   # --target指定调试新pod中的mycontainer镜像
+   # --attach (可选) 直接attach到调试容器的1号程序中
+   kubectl debug mypod --image=busybox --target=mycontainer --copy-to=debug-mypod
+   ~~~
+
+   
+
+2. 假设你有一个pod的网络有问题, 你想要在这个pod中调用curl, ping等工具, 那么你可以通过创建一个调试容器, 然后在调试容器中使用这些命令进行排查
+
+   ~~~shell
+   # mypod和--target=mycontainer 指定要调试mypod的mycontainer容器
+   # --image=busybox 指定使用netshoot 创建调试容器
+   # -it 表示分配交互终端
+   kubectl debug -it mypod --image=nicolaka/netshoot --target=mycontainer
+   ~~~
+
+   **这个新的调试容器, 与原来的容器共享同一个网络, 共享存储卷, 共享/tmp, /data目录**
+
+   **你可以在这个调试容器中使用ping, netstat等网络命令进行调试,  在退出伪终端之后, 调试容器会自动被删除**
+
+3. 假设你有一个java容器, 你想要dump这个进程的内存信息, 但是这个容器使用的是jre, 没有相关的 `jmap`, `jstack`, `jcmd` 命令, 那么你可以创建一个带有jdk的调试容器, 然后在这个容器中使用相关命令进行dump
+
+   ~~~shell
+   kubectl debug -it java-app \
+     --image=openjdk:17 \
+     --target=app \
+     --container=debugger
+   
+   # 在调试容器中dump
+   ps -ef | grep java
+   jmap -dump:format=b,file=/tmp/heap_dump.hprof 7
+   
+   # 退出调试容器, 自动被删除
+   exit
+   
+   # 因为调试容器和原来的容器共享/tmp, /data目录, 所以可以直接从原来的容器中复制数据出来
+   kubectl cp java-app:/tmp/heap_dump.hprof ./heap_dump.hprof
+   ~~~
+
+4. 调试节点
+
+   在 Kubernetes 中，**“调试节点”（debug a node）** 指的是使用 `kubectl debug` 命令进入或排查 **运行节点（Node）本身的问题**，而不是 Pod 的问题。
+
+   **调试节点** 就是进入一个 Kubernetes 工作节点（Node）所在的宿主机环境中，来排查系统级或容器运行时的问题。
+
+   有时问题不是出在 Pod，而是出在节点层面，比如：
+
+   - 容器启动失败，日志里提示 runtime 错误；
+   - 节点磁盘空间不足；
+   - CNI 网络插件崩溃；
+   - kubelet 出现奇怪的错误；
+   - iptables、containerd、docker、网络配置异常。
+
+   这些都需要你进入节点本身进行调查，而不是进入 Pod。
+
+   相较于直接ssh到有问题的节点上, **`kubectl debug` 是一种更安全、可审计、Kubernetes 原生的“SSH 进节点”方式。**
+    它不需要节点暴露 SSH 端口，也能进入节点环境进行诊断。
+
+   | 对比点       | SSH 登录节点                          | `kubectl debug node/...`           |
+   | ------------ | ------------------------------------- | ---------------------------------- |
+   | 🔐 安全性     | 必须节点开 SSH 端口，暴露攻击面       | 无需 SSH、只用 Kubernetes API 访问 |
+   | 🧩 权限控制   | 依赖系统账号、密钥                    | 遵循 Kubernetes RBAC 权限模型      |
+   | 📜 审计追踪   | 操作通常不会被审计                    | 所有操作都能在 K8s 审计日志中追踪  |
+   | 🧰 环境隔离   | 登录宿主机直接操作                    | 运行在一个临时 Pod 中，不污染系统  |
+   | 💣 操作风险   | 有误操作风险（删错文件、kill 错进程） | 可以安全 chroot、限定命名空间访问  |
+   | ☁️ 云原生兼容 | 需要云厂商开放节点 SSH                | 在任何云平台上都能用，不依赖 SSH   |
+   | 🚀 自动化能力 | 无法通过 Kubernetes API 自动化        | 可以被自动化脚本/Operator 使用     |
+
+用法: 
+
+~~~shell
+# node/<节点名>：指定要调试的节点。
+# -it：进入交互式终端。
+# --image=busybox：使用 busybox 镜像（你也可以用 ubuntu、centos、nicolaka/netshoot 等调试镜像）。
+kubectl debug node/<节点名> -it --image=busybox
+~~~
+
+执行这个命令后，Kubernetes 会在该节点上：
+
+- 创建一个 **临时调试 Pod**；
+- 这个 Pod 会被 **调度到指定节点**；
+- 并且 **共享该节点的命名空间（namespace）环境**，从而让你能执行节点级命令。
+
+在这个调试环境中，你可以：
+
+```shell
+# 查看节点文件系统
+ls /host
+
+# 检查容器运行时
+chroot /host
+crictl ps
+
+# 查看系统日志或配置
+journalctl -u kubelet
+cat /var/log/messages
+
+# 修复节点问题，例如清理磁盘、重启某些服务等。
+```
+
+
 
 
 

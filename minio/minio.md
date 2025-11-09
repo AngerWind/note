@@ -47,23 +47,43 @@ powershell执行如下命令:
 
 ~~~powershell
 # 下载minio到c盘
-PS> Invoke-WebRequest -Uri "https://dl.min.io/server/minio/release/windows-amd64/minio.exe" -OutFile "C:\minio.exe"
+PS> Invoke-WebRequest -Uri "https://dl.min.io/server/minio/release/windows-amd64/minio.exe" -OutFile ".\minio.exe"
 
 # 设置用户名和密码到环境变量
 PS> setx MINIO_ROOT_USER admin
 PS> setx MINIO_ROOT_PASSWORD password
 
-# server表示启动server端, f:\data为数据目录, :9001表示控制台端口, 绑定到0.0.0.0
-PS> C:\minio.exe server F:\Data --console-address ":9001"
+# server表示启动server端, f:\data为数据目录, :9001表示webUI的端口, 绑定到0.0.0.0
+PS> .\minio.exe server .\Data --console-address ":9001"
+MinIO Object Storage Server
+Copyright: 2015-2025 MinIO, Inc.
+License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
+Version: RELEASE.2025-09-07T16-13-09Z (go1.24.6 windows/amd64)
+
+# 这里告诉你可以通过如下的地址和账号来通过sdk的方式来访问minio
+API: http://192.168.31.162:9000  http://172.18.160.1:9000  http://192.168.1.1:9000  http://192.168.85.1:9000  http://127.0.0.1:9000
+   RootUser: admin
+   RootPass: password
+# 这里告诉你可以通过如下的地址和账号来访问minio的webUi界面
+WebUI: http://192.168.31.162:9001 http://172.18.160.1:9001 http://192.168.1.1:9001 http://192.168.85.1:9001 http://127.0.0.1:9001
+   RootUser: admin
+   RootPass: password
+# 这里告诉你可以通过下面这行命令使用mc来连接minio
+CLI: https://docs.min.io/community/minio-object-store/reference/minio-mc.html#quickstart
+   $ mc alias set 'myminio' 'http://192.168.31.162:9000' 'admin' 'password'
+
+Docs: https://docs.min.io
 ~~~
 
 **MinIO Client**
 
 ~~~powershell
-PS> Invoke-WebRequest -Uri "https://dl.minio.io/client/mc/release/windows-amd64/mc.exe" -OutFile "C:\mc.exe"
+PS> Invoke-WebRequest -Uri "https://dl.minio.io/client/mc/release/windows-amd64/mc.exe" -OutFile ".\mc.exe"
 # 添加minio server到minio client中, 这样以后可以直接通过myminio来调用这个server
 # 可以配置多个server
-C:\mc.exe alias set myminio/ http://MINIO-SERVER MYUSER MYPASSWORD
+.\mc.exe alias set myminio/ http://MINIO-SERVER MYUSER MYPASSWORD
+
+.\mc.exe alias set myminio/ http://localhost:9092 admin password
 ~~~
 
 
@@ -1383,61 +1403,133 @@ nohup mc watch myminio/mybucket > events.log 2>&1 &
 这个命令主要用于的minio集群中的用户进行增删改的操作, 支持的操作有如下:
 
 - add: 添加新的用户
-
-- remove: 删除用户
-
-- enbale: 解锁用户
-
+- remove / rm: 删除用户
+- enable: 解锁用户
 - disable: 禁用用户
-
-- list: 列出所有的用户
-
+- list / ls: 列出所有的用户
 - info: 查看单个用户的信息
-
-- sts info:  查看某个用户的临时凭证(Security Token Service), 这个凭证信息一般用于第三方访问, 临时上传/下载
-
-  这个命令可以让管理员看到某个用户是否有sts会话, 会话的状态, 有效期等等
+- policy: 以json的形式查看当前用户拥有的一些策略, 你在上面通过`mc admin user add` 添加一个用户之后, 这个用户实际上是没有任何权限的,  他不能查看bucket, 不能上传和下载, 设置不能通过mc命令来连接到minio, 你必须通过`mc admin policy`来给这个用户添加相关的策略, 每个策略都会携带相关的权限, 用户根据这些策略决定能访问哪些bucket, 能执行哪些操作(读写) 
 
 ~~~shell
 # 增加用户并设置密码, 添加成功后, 可以给这个用户分配权限
-mc admin user add myminio alice password123
-
-# 删除用户
-mc admin user remove myminio alice
-
-# 禁用用户
-mc admin user disable myminio alice
-
-# 启用用户
-mc admin user enable myminio alice
-
-# 查看所有的用户
-mc admin user list myminio
-
-# 产看aliace的凭证, 如果用户没有sts会话, 那么显示未空或者inactive
-mc admin user sts info myminio alice
-User: alice
-STS Session: active
-Expires: 2025-11-03T20:00:00Z
-
-# list查看用户, 以及他们的状态
-mc admin user list myminio
-alice    enabled
-bob      disabled
-charlie  enabled
+$ ./mc admin user add myminio alice password123
+Added user `alice` successfully.
 
 # info可以查看用户的状态, 访问权限, 当前活跃的sts会话数量
-mc admin user info myminio alice
+$ ./mc admin user info myminio alice
+AccessKey: alice
 Status: enabled
-Policy: readwrite
-STS Sessions: 1 active
+PolicyName:
+MemberOf: []
+
+# 禁用用户
+$ ./mc admin user disable myminio alice
+Disabled user `alice` successfully.
+
+# 启用用户
+$ ./mc admin user enable myminio alice
+Enabled user `alice` successfully.
+
+# 查看所有的用户
+$ ./mc admin user list myminio
+enabled    alice
+
+# 删除用户
+$ ./mc admin user remove myminio alice
+Removed user `alice` successfully.
 ~~~
 
-todo, rm还是remove, list还是ls
+##### mc admin user svcacct
+
+这个命令主要用于管理用户的Service Account
+
+在minio中
+
+- 普通用户（通过 `mc admin user add` 创建）登录 MinIO 控制台或使用 access key/secret key 访问；
+- 但很多程序（如应用服务器、CI/CD、Flink、Airflow 等）不适合直接使用主账号；**Service Account** 是为这些程序准备用户的的“子账号”。
+
+~~~shell
+# 为myminio集群中的alice用户添加一个Service Account, 
+# 这里不仅可以指定minio的普通用户, 还可以是STS和LDAP用户
+$ ./mc admin user svcacct add myminio alice
+Access Key: 973MVU0XHVJHQLD9U59F
+Secret Key: sLcUAfMbw5ntFcVKAsv4tQZ5oWLHqZO25w2Pp7Nu
+Expiration: no-expiry
+
+# 修改Service Account的相关配置, 使用edit或者set命令都可以
+$ ./mc admin user svcacct edit myminio/ '973MVU0XHVJHQLD9U59F' --secret-key 'fkajkfjaferngierhgiue' # 修改Secret key
+Edited service account `973MVU0XHVJHQLD9U59F` successfully.
+$ ./mc admin user svcacct set myminio/ '973MVU0XHVJHQLD9U59F' --expiry 2026-06-24T10:00:00-07:00 # 修改ServiceAccount的过期时间
+Edited service account `973MVU0XHVJHQLD9U59F` successfully.
+
+
+# 列出用户创建的Service Account, 这里的用户可以是minio的普通用户, 也可以是LDAP用户
+$ ./mc admin user svcacct list myminio alice
+   Access Key        | Expiry
+973MVU0XHVJHQLD9U59F | 2026-06-24 17:00:00 +0000 UTC
+
+# 查看ServiceAccount的详情
+$ ./mc admin user  svcacct info myminio 973MVU0XHVJHQLD9U59F
+AccessKey: 973MVU0XHVJHQLD9U59F
+ParentUser: alice
+Status: on
+Name:
+Description:
+Policy: implied
+Expiration: 7 months from now
+
+# 查看用户拥有的policy, 以json的形式
+$ ./mc admin user policy myminio alice
+mc.exe: <ERROR> Unable to fetch user policy document: policy not found for user alice. # 当前用户没有任何的policy, 也就是没有任何的权限
+
+
+# 禁用一个ServiceAccount
+$ ./mc admin user  svcacct disable myminio 973MVU0XHVJHQLD9U59F
+Disabled service account `973MVU0XHVJHQLD9U59F` successfully.
+
+# 启用一个ServiceAccount
+Shen@Wind MINGW64 /j/desktop-shortcut/note/minio/minio_bin (main)
+$ ./mc admin user  svcacct enable myminio 973MVU0XHVJHQLD9U59F
+Enabled service account `973MVU0XHVJHQLD9U59F` successfully.
+
+# 删除一个ServiceAccount
+$ ./mc admin user svcacct remove myminio 973MVU0XHVJHQLD9U59F
+Removed service account `973MVU0XHVJHQLD9U59F` successfully.
+~~~
+
+##### mc admin user sts
+
+这个命令是用来管理集群中的 **STS（Security Token Service）用户** 的。
+
+这类用户不是普通的永久用户，而是**临时用户（temporary credentials）**，通常由外部身份提供者（如 OIDC、LDAP、AD、AssumeRole 等）自动创建，用于短期访问 MinIO。比如如果你启用了 OIDC（例如连接到 Keycloak、Auth0、AWS Cognito）, 每个通过 OIDC 登录 MinIO 的用户，都会对应一个 STS 临时用户。
+
+~~~shell
+# 查看STS的详情(STS没有办法手动创建, 只能通过一些外部系统自动生成)
+mc admin user sts info myminio/ J123C4ZXEQN8RK6ND35I
+~~~
+
+
+
+
+
+
+
+### mc user policy
 
 
 
 ### mc admin policy 
+
+```shell
+# 查看当前minio有哪些策略
+$ ./mc admin policy list myminio
+consoleAdmin  # 允许访问minio控制台并执行管理操作, 一般给web管理员使用
+diagnostics # 允许查看minio的系统信息, 健康状态, 系统诊断等等, 一般给系统监控或者诊断工具使用
+readonly # 只读
+readwrite # 读写
+writeonly # 只写
+...(自定义策略) # 其他一些自己添加的自定义策略
+```
 
 
 
