@@ -4332,9 +4332,193 @@ Events:  <none>
 
 
 
+## 关于SVC的网络栈说明
+
+在svc的yaml文件中, 你可以通过`ipFamilyPolicy`来指定svc双栈还是单栈, 并且他也决定了`ipFamilies`和`clusterIPs`这两个属性的行为
+
+ipFamilyPolicy有如下的可选值
+
+- SingleStack: 单栈, 通过`ipFamilies`来指定ipv4还是ipv6, 如果k8s集群不支持对应的协议, 那么svc会创建失败
+
+  ~~~yaml
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: myservice
+  spec:
+    selector:
+      app: demo
+    ports:
+      - port: 80
+    ipFamilyPolicy: SingleStack # 指定使用单栈
+    ipFamilies: 
+      - IPv4 # 使用ipv4
+  ~~~
+
+- PreferDualStack: 双栈优先, 在你的集群支持双栈的时候分配双栈, 如果你的k8s集群不支持双栈, 那么会分配单栈, 到底是ipv4还是ipv6取决于你的k8s集群哪个协议可用
+
+  ~~~yaml
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: myservice
+  spec:
+    selector:
+      app: demo
+    ports:
+      - port: 80
+    ipFamilyPolicy: PreferDualStack # 优先双栈
+    ipFamilies:
+      - IPv4 # ipv4作为主地址
+      - IPv6 # ipv6为次地址
+  ~~~
+
+- RequireDualStack: 强制双栈, 如果集群不支持双栈，那么svc创建失败
+
+  ~~~yaml
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: myservice
+  spec:
+    selector:
+      app: demo
+    ports:
+      - port: 80
+    ipFamilyPolicy: RequireDualStack # 强制双栈
+    ipFamilies:
+      - IPv6 # ipv6优先
+      - IPv4 # ipv4为次地址
+  ~~~
 
 
-### 关于IPv6和IPv4的说明
+
+对于单栈和双栈, 有下面几点需要注意的:
+
+1. **如果你在创建svc的时候, 没有指定ipFamilyPolicy的话, 那么会被设置为SingleStack, 并且优先使用ipv4(可用的话)**
+
+2. 在双栈的情况下`ipFamilies`中优先指定的那个协议的ip, 会作为主ip, 另外一个会作为次pi
+
+   如果你优先指定ipv4, 那么访问这个svc的时候, 会优先获取到他的ipv4的ip
+
+3. 在单栈和双栈的切换中, 主ip是不可变的, 即
+
+   - 单栈切换双栈, 你只能添加一个次ip
+   - 双栈切单栈, 你只能将次ip删除掉
+
+4.  `clusterIPs`这个字段来指定具体要使用的ip地址, 他指定的ip的顺序, 必须和ipFamilies的顺序一致
+
+   一般情况下我们都不会直接通过这个地址来指定svc的地址, 而是通过系统自动分配ip地址
+
+
+
+如果你要查看你的系统是否支持双栈, 那么你可以通过如下的配置文件来测试一下
+
+~~~yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-dualstack
+spec:
+  ipFamilyPolicy: RequireDualStack
+  ipFamilies: [IPv6, IPv4]  # IPv6 优先
+  selector:
+    app: non-existent-app  # 无实际 Pod，仅测试配置
+  ports:
+    - protocol: TCP
+      port: 80
+~~~
+
+你直接describe一下这个svc
+
+- 如果只有ipv4, 那么表示只支持ipv4
+- 如果只有ipv6那么只支持ipv6
+- 如果两个都有的话, 那么支持双栈
+
+~~~shell
+[root@node-157 ~]# kubectl describe svc test-dualstack
+Name:              test-dualstack
+Namespace:         default
+Labels:            <none>
+Annotations:       <none>
+Selector:          app=non-existent-app
+Type:              ClusterIP
+IP Families:       <none>
+IP:                10.96.192.124 # 只支持ipv4
+IPs:               10.96.192.124
+Port:              <unset>  80/TCP
+TargetPort:        80/TCP
+Endpoints:         <none>
+Session Affinity:  None
+Events:            <none>
+~~~
+
+
+
+
+
+比如我们通过下面的yaml来创建一个svc
+
+~~~yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-simple-service  # 服务名称
+spec:
+  selector:
+    app: my-app  # 关联的 Pod 标签
+  ports:
+    - protocol: TCP       # 协议类型（TCP/UDP）
+      port: 80            # 服务暴露的端口
+      targetPort: 9376    # Pod 监听的端口
+~~~
+
+我们直接describe一下他
+
+~~~shell
+[root@node-157 ~]# kubectl describe svc my-simple-service
+Name:              my-simple-service
+Namespace:         default
+Labels:            <none>
+Annotations:       <none>
+Selector:          app=my-app
+Type:              ClusterIP
+# 因为没有指定ipFamilyPolicy, ipFamilies, clusterIPs
+# 所以ipFamilyPolicy被默认设置为了SingleStack, 并且当前集群支持ipv4和ipv6, 所有优先设置了ipv4
+IP Families:       <none> 
+IP:                10.96.224.4 # 当前svc的主ip
+IPs:               10.96.224.4 # 当前svc使用的所有ip
+Port:              <unset>  80/TCP
+TargetPort:        9376/TCP
+Endpoints:         <none>
+Session Affinity:  None
+Events:            <none>
+~~~
+
+下面我们通过patch命令, 将这个svc修改为双栈的, 并且ipv6优先
+
+~~~shell
+kubectl patch svc my-simple-service --type=merge -p '{
+  "spec": {
+    "ipFamilyPolicy": "RequireDualStack",
+    "ipFamilies": ["IPv6", "IPv4"]
+  }
+}'
+~~~
+
+效果如下:
+
+~~~shell
+
+~~~
+
+> 如果这个svc经过双栈和单栈之间的切换, 主ip有变化, 那么使用到这个svc的pod需要重启, 否则会访问不通这个svc
+
+
+
+
+
+
 
 
 
