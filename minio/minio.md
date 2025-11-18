@@ -47,14 +47,15 @@ powershell执行如下命令:
 
 ~~~powershell
 # 下载minio到c盘
-PS> Invoke-WebRequest -Uri "https://dl.min.io/server/minio/release/windows-amd64/minio.exe" -OutFile ".\minio.exe"
+Invoke-WebRequest -Uri "https://dl.min.io/server/minio/release/windows-amd64/minio.exe" -OutFile ".\minio.exe"
 
 # 设置用户名和密码到环境变量
-PS> setx MINIO_ROOT_USER admin
-PS> setx MINIO_ROOT_PASSWORD password
+setx MINIO_ROOT_USER admin
+setx MINIO_ROOT_PASSWORD password
 
 # server表示启动server端, f:\data为数据目录, :9001表示webUI的端口, 绑定到0.0.0.0
-PS> .\minio.exe server .\Data --console-address ":9001"
+.\minio.exe server .\Data --console-address ":9001"
+
 MinIO Object Storage Server
 Copyright: 2015-2025 MinIO, Inc.
 License: GNU AGPLv3 - https://www.gnu.org/licenses/agpl-3.0.html
@@ -1508,17 +1509,13 @@ Removed service account `973MVU0XHVJHQLD9U59F` successfully.
 mc admin user sts info myminio/ J123C4ZXEQN8RK6ND35I
 ~~~
 
+#### mc user policy
 
 
 
+#### mc admin policy 
 
-
-
-### mc user policy
-
-
-
-### mc admin policy 
+管理权限策略（创建策略、查看策略、删除策略、把策略赋给用户/组）。
 
 ```shell
 # 查看当前minio有哪些策略
@@ -1533,25 +1530,64 @@ writeonly # 只写
 
 
 
+#### mc admin info
+
+查看 MinIO 服务器/集群的状态、节点、磁盘、版本等。
+
+
+
+#### mc admin group 
+
+管理用户组（创建组，把用户加入组，从组移除）。
+
+
+
+#### mc admin object info
+
+查看对象（Object）的底层存储信息。
+
 #### mc admin accesskey
 
-
-
-#### mc admin cluster bucket
-
-
+管理 Access Keys（不是用户）。
 
 #### mc admin cluster bucket
+
+用于管理 **集群级 bucket 配置**（Cluster-wide Bucket Policies）。
+
+功能包括：
+
+- 设置跨区域复制（CRR）
+- 设置 cluster bucket 的 storage-class
+- 配置版本控制、retention
+- cluster 级 bucket 属性同步
+- 分布式 bucket 的一致性管理
+
+
 
 
 
 #### mc admin clster iam
 
+管理整个集群级别的 IAM（身份 / 权限）系统。
+
+包括：
+
+- 集群级用户
+- 集群级策略
+- 集群级角色
+- 集群级权限分配
+- 多租户 IAM 管理
+- 跨集群 IAM 同步
+
+区别于 `mc admin user`（单 namespace），`cluster iam` 控制 **跨 namespace / 多 region / 多 cluster 的 IAM**。
+
+
+
 
 
 #### mc admin config
 
-
+读取或修改 MinIO 的服务端配置（但需重载才能生效）。
 
 #### mc admin decommission
 
@@ -1559,53 +1595,93 @@ writeonly # 只写
 
 #### mc admin heal
 
+修复数据碎片、恢复缺失对象（用于分布式模式的数据自愈）。
 
 
-#### mc admin info
 
 
 
-#### mc admin kms key 
+#### mc admin kms
+
+管理 KMS（密钥管理），主要用于 SSE 加密。
 
 
 
 #### mc admin logs 
 
+查看集群的日志
+
+
+
 
 
 #### mc admin maintenance hosts
 
+**生成一组“maintenance group”（维护组）**，也就是确定哪些主机可以同时下线进行维护，而不会破坏数据冗余。
 
 
-#### mc admin object info
+
+#### mc admin lock
+
+查看锁信息（对象被谁锁住了）。
 
 
+
+#### mc admin inspect 
+
+查看对象在磁盘上的分片、校验和等底层结构。
 
 
 
 #### mc admin prometheus
 
-
+查看/管理 Prometheus 监控配置（获取 metrics URL）。
 
 #### mc admin rebalance 
+
+当你扩容/缩容集群时，用来重新分布对象，使数据在新磁盘/新节点之间均匀。
 
 
 
 #### mc admin replicate
 
-
+管理跨集群复制（配置、检查、启用/禁用）。
 
 #### mc admin scanner 
+
+MinIO 后台有一个 “数据扫描器”（Scanner），负责自动检查数据健康、对象过期、清理、元数据同步等。
+
+
+
+#### mc admin bucket
+
+（部分版本）管理 bucket 的属性（quota、版本控制等）。
+
+
+
+#### mc admin subnet
+
+收集诊断数据并上传到 MinIO Subnet（官方支持使用）。
+
+#### mc admin top
+
+查看 MinIO 当前正在处理的热点请求（类似 top 命令）。
 
 
 
 #### mc admin trace
 
-
+实时查看 MinIO 收到的 API 请求（调试读写问题用的）。
 
 #### mc admin update
 
+更新 MinIO 版本（自动下载安装并重启集群）。
 
+
+
+#### mc admin service
+
+重启/停止 MinIO 服务（对整个集群 or 单节点）。
 
 
 
