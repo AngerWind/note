@@ -6178,7 +6178,8 @@ public class RpcClient {
             group.shutdownGracefully();
         }
     }
-}
+}@EnableAspectJAutoProxy(exposeProxy = true)
+
 ```
 
 服务器端的 service 获取
@@ -6268,7 +6269,8 @@ public class RpcClient {
     public static void main(String[] args) {
         NioEventLoopGroup group = new NioEventLoopGroup();
         LoggingHandler LOGGING_HANDLER = new LoggingHandler(LogLevel.DEBUG);
-        MessageCodecSharable MESSAGE_CODEC = new MessageCodecSharable();
+        MessageCodecSharable@EnableAspectJAutoProxy(exposeProxy = true)
+ MESSAGE_CODEC = new MessageCodecSharable();
         RpcResponseMessageHandler RPC_HANDLER = new RpcResponseMessageHandler();
         try {
             Bootstrap bootstrap = new Bootstrap();
