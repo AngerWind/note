@@ -9544,4 +9544,388 @@ int main(){
 假设epoll被设置为了边缘触发，当客户端写入了100个字符，由于缓冲区从0变为了100，于是服务端epoll_wait触发一次就绪，服务端读取了2个字节后不再读取。这个时候再去调用epoll_wait会发现不会就绪，只有当客户端再次写入数据后，才会触发就绪。
 这就导致如果使用ET模式，那就必须保证要「一次性把数据读取&写入完」，否则会导致数据长期无法读取/写入。
 
-## 
+
+
+
+
+
+
+
+
+# 工作
+
+## 记一次netty udp丢数据的排除过程
+
+### 背景如下
+
+udp的代码如下
+
+~~~java
+@Slf4j
+public class SyslogBindUdpThread implements Runnable {
+
+    private int port;
+
+    public SyslogBindUdpThread(int port) {
+        this.port = port;
+    }
+
+    @Override
+    public void run() {
+        long maxDirectMemory = PlatformDependent.maxDirectMemory();
+        log.info("netty能够使用的直接内存大小是: {} MB", maxDirectMemory / 1024 / 1024);
+
+        EventLoopGroup group = new NioEventLoopGroup(8);
+        try {
+            Bootstrap strap = new Bootstrap();
+            strap.group(group).channel(NioDatagramChannel.class)
+                .handler(new ChannelInitializer<Channel>() {
+                    @Override
+                    protected void initChannel(Channel ch) throws Exception {
+                        // 接收数据放入队列
+                        ch.pipeline().addLast("syslogUdpDecode", new SyslogUdpHandler());
+                    }
+                })
+                .option(ChannelOption.SO_RCVBUF, 256 * 1024 * 1024)
+                .option(ChannelOption.SO_SNDBUF, 256 * 1024 * 1024)
+                .option(ChannelOption.SO_BROADCAST, true)
+                .option(ChannelOption.SO_REUSEADDR, true)
+                .option(ChannelOption.IP_MULTICAST_TTL, 128)
+                .option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(65536));
+            // 启动，阻塞线程
+            strap.bind(port).sync().channel().closeFuture().await();
+        } catch (InterruptedException e) {
+            LogUtil.diagLog(
+                Severity.ERROR,
+                "netty绑定UDP端口 {} 异常：\n{}",
+                String.valueOf(port),
+                ExceptionUtils.getStackTrace(e)
+            );
+            Thread.currentThread().interrupt();
+        } finally {
+            // 优雅退出
+            LogUtil.diagLog(Severity.INFO, "LogReceive 退出...");
+            try {
+                group.shutdownGracefully().sync();
+            } catch (InterruptedException e) {
+                LogUtil.diagLog(Severity.ERROR, "netty关闭异常：\n", e);
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+}
+public class SyslogUdpHandler extends ChannelInboundHandlerAdapter {
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        DatagramPacket packet = (DatagramPacket) msg;
+        ByteBuf byteBuf = packet.content();
+        if (byteBuf == null || !byteBuf.isReadable()) {
+            return;
+        }
+        byte[] bytes = new byte[byteBuf.readableBytes()];
+        byteBuf.readBytes(bytes);
+
+        byteBuf.release();
+        String hostAddress = packet.sender().getAddress().getHostAddress();
+
+        Application.udpReceived.incrementAndGet();
+        SyslogMessageSender.handleMessage(new Message(hostAddress, bytes));
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        LogUtil.diagLog(Severity.ERROR, ExceptionUtils.getStackTrace(cause));
+        ctx.close();
+        super.exceptionCaught(ctx, cause);
+    }
+}
+~~~
+
+我通过python往服务器的端口一次性发送了1000条数据, 耗时1ms,  但是在SyslogMessageSender.handleMessage方法中只能统计到大概550条数据, 所以开始排除到底是哪里丢了护甲
+
+
+
+### 排查过程
+
+首先比较有问题的就是FixedRecvByteBufAllocator(65536)这个东西, 问了ai, 意思是说netty每接受到一个udp数据, netty就是分配64k的内存从内核的缓冲区中读取数据, 保存这个udp数据包,  设置64k的原因是根据udp的协议, 报文最大只能有64k大小, 所以使用这个数值能够保存所有的udp报文包,  如果设置的太小的话, 那么会导致udp报文包读取不全面, 所以初步猜测是这个东西设置的太大了, 如果1000数据直接打进来的话, 需要64M内存, 把直接内存占用满了
+
+但是后面查看了netty这个参数`ChannelOption.SO_RCVBUF`,  这个参数指定的是netty中udp的接受缓冲区的大小, 已经设置为了256M, 是比较大的了, 不应该丢数据
+
+然后又怀疑是不是netty的直接内存设置的太小了, 导致装不下64M, 后面通过`long maxDirectMemory = PlatformDependent.maxDirectMemory();` 来获取可用的直接内存, 发现有800M的大小, 所以也排除了直接内存设置太小的问题
+
+现在开始怀疑是不是pod中的udp缓冲区接受的太小了, 我首先通过如下的命令, 启动了一个debug容器
+
+~~~shell
+# --image-pull-policy这个参数非常重要, 在离线的环境中, 否则k8s会直接去拉取镜像,导致命令一直卡着
+kubectl debug -it -n service-software itoa-syslog-receive-1-666b7695cd-vp99r    --image nicolaka/netshoot --image-pull-policy IfNotPresent
+~~~
+
+启动了一个debug容器之后, 在这个容器中执行如下的命令
+
+~~~shell
+cat /proc/net/snmp | grep -A1 Udp: 
+Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti 
+Udp: 12 0 0 12 0 0 0 0 
+UdpLite: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti 
+~~~
+
+这几个参数的解释如下:
+
+- InDatagrams:  内核成功接收, 并发送给了对应端口的应用
+
+- NoPorts: 内存成功接收, 但是目标端口没有进程在监听 (比如你的udp包是发送到514端口的, 但是没有任何程序监听514端口, 那么这些udp就会被记为NoPorts)
+
+- InErrors: UDP 包接收失败的次数, 常见原因就是
+
+  - 包太大被阶段了
+  - 包数据校验失败
+  - 其他内核错误
+
+- OutDatagrams: 发送成功的udp包, 只是发送成功了, 对端不一定收到了
+
+- RcvbufErrors: 内核的udp接受缓冲区溢出, 导致丢包, 常见的原因如下:
+
+  - 应用处理的太慢了
+  - 系统内核 net.core.rmem_max 太小
+  - 系统负载高，软中断慢
+
+- SndbufErrors: 发送缓冲区溢出导致发送失败的udp包, 常见的原因:
+
+  - socket发送缓存太小了
+  - 内存busy
+  - 发送流控了,  比如qdisc队列满了
+
+- InCsumErrors: udp校验和错误, 在你的网络质量特别差的时候会增加, 常见的原因:
+
+  - NIC 硬件 offloading 撤销不当
+  - 数据损坏
+  - 网卡/驱动问题
+  - 网络抖动导致损坏
+
+- IgnoredMulti:  多播包被丢弃的数量, 一般不重要如果你没有多播的话, 常见原因：
+  - UDP 多播未加入组（IP_ADD_MEMBERSHIP）
+  - 多播地址无监听进程
+  - 多播过滤规则丢弃
+
+之后发送了2000条udp数据到应用中, 然后再次执行
+
+~~~shell
+cat /proc/net/snmp | grep -A1 Udp: 
+Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti 
+Udp: 518 0 1495 13 1495 0 0 0 
+UdpLite: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti
+~~~
+
+可以看到, 成功接收到的udp数据包只有506条, 接受失败的数据有1495条, 并且全部都是因为内核的内存缓冲区溢出导致的
+
+> ai还提示可以通过如下的命令来查看丢包的情况, 
+>
+> ```shell
+> netstat -su | grep -E 'receive|drop'
+> ```
+>
+> 会看到
+>
+> ~~~shell
+> packet receive errors: X
+> packet receive buffer errors: Y
+> ~~~
+>
+> 就说明内核丢包了, 但是netshoot这个容器中的netstat没有`-s`这个参数, 所以就没有使用这个参数
+
+那么这个时候就要查看pod中的查看关于udp内核的参数了,  但是我在问chatgpt, 这几个参数是在宿主机中查看, 还是在pod中查看的时候, chatgpt很坚定的告诉我应该在宿主机中查看, 这就很奇怪了, 因为我明明是在pod中查看到的数据丢包的, 那么我就应该在pod中查看这几个内存参数
+
+然后chatgpt告诉我
+
+**Pod 并没有独立的 UDP 内核栈**
+
+在 Kubernetes 中：
+
+- Pod 运行在 **独立的 Network Namespace**
+- 但 **UDP 的统计信息（/proc/net/snmp）来自 Host 内核**
+- UDP 包在宿主机（node）上被处理，然后通过 CNI 转发到 Pod
+- 如果包在宿主机就被丢掉，Pod 永远收不到，也会在 `/proc/net/snmp` 看到 **丢包统计**
+
+因为内核网络协议栈是 **宿主机独享** 的，不会为容器复制一份。所以Pod 内看到的 `/proc/net/snmp` 是 Node 的实时镜像，不是容器自己的。
+
+因为 **UDP 丢包是发生在宿主机内核层（node）**，所以**所有影响 socket buffer、队列长度、内核 UDP 行为的 sysctl 参数**都必须在 **宿主机（node）** 上查看，而不是在 Pod 中。
+
+**所有网络 sysctl 都属于 宿主机 内核，不属于 Pod**。
+
+Pod / 容器内看到的 `/proc/sys/net/*` 只是 “Namespace-overlaid copy”，真正生效的仍然是宿主机的内核参数。
+
+
+
+udp数据包的流动方向如下: 
+
+```
+NIC → Host Kernel UDP → CNI → Pod → Netty
+```
+
+丢包发生在：
+
+```
+NIC → Host Kernel UDP （这里）
+```
+
+接收缓冲（rmem）满、netdev backlog 满的时候，Host 内核会 drop 包：
+
+```
+InErrors++
+RcvbufErrors++
+```
+
+Pod 只是把这个数字显示出来。
+
+
+
+| 配置项                        | 作用                             | 应该在哪查看？         |
+| ----------------------------- | -------------------------------- | ---------------------- |
+| `net.core.rmem_default`       | socket 默认接收缓冲区            | **宿主机**             |
+| `net.core.rmem_max`           | socket 最大可设置的接收缓冲区    | **宿主机**             |
+| `net.core.wmem_default`       | 默认发送缓冲区                   | **宿主机**             |
+| `net.core.wmem_max`           | 最大发送缓冲区                   | **宿主机**             |
+| `net.core.netdev_max_backlog` | NIC 队列长度                     | **宿主机**             |
+| `net.ipv4.udp_mem`            | UDP 全局内存                     | **宿主机**             |
+| `net.ipv4.udp_rmem_min`       | UDP 最小 rmem                    | **宿主机**             |
+| Pod 的 limit/requests         | 仅限制 cgroup，不影响上述 sysctl | **Pod**（cgroup 查看） |
+
+
+
+所以我在宿主机上执行了如下的命令
+
+~~~shell
+[root@node-157 ~]# sysctl net.core.rmem_max
+sysctl net.core.wmem_max
+sysctl net.core.rmem_default
+sysctl net.core.wmem_default
+sysctl net.core.netdev_max_backlog
+sysctl net.ipv4.udp_rmem_min
+sysctl net.ipv4.udp_wmem_min
+
+net.core.rmem_max = 212992
+net.core.wmem_max = 212992
+net.core.rmem_default = 212992
+net.core.wmem_default = 212992
+net.core.netdev_max_backlog = 1000
+net.ipv4.udp_rmem_min = 4096
+net.ipv4.udp_wmem_min = 4096
+~~~
+
+> 如果没有sysctl这个命令, 那么使用如下的命令也可以看到对应的值的
+>
+> ~~~shell
+> cat /proc/sys/net/core/rmem_default
+> cat /proc/sys/net/core/rmem_max
+> ~~~
+
+同时发现, 如果想要在pod中执行`sysctl -w`来修改pod中的参数的话, 那么是会被拒绝的, 因为k8s的安全策略会拒绝你修改内核的参数
+
+~~~shell
+ itoa-syslog-receive-1-666b7695cd-zvcvq  ~  sysctl -w net.core.rmem_max=134217728    # 128MB
+sysctl -w net.core.rmem_default=67108864 # 64MB
+sysctl -w net.core.wmem_max=134217728    # 128MB
+sysctl -w net.core.wmem_default=67108864 # 64MB
+sysctl: error: 'net.core.rmem_max' is an unknown key
+sysctl: error: 'net.core.rmem_default' is an unknown key
+sysctl: error: 'net.core.wmem_max' is an unknown key
+sysctl: error: 'net.core.wmem_default' is an unknown key
+~~~
+
+
+
+之后我在宿主机上面执行了如下的命令
+
+~~~shell
+sysctl -w net.core.rmem_default=67108864 # socket 默认 receive buffer 大小
+sysctl -w net.core.rmem_max=67108864 # socket 允许的最大 receive buffer 大小（上限）
+sysctl -w net.core.wmem_default=67108864 # socket 默认 send buffer 大小
+sysctl -w net.core.wmem_max=67108864 # # socket 允许的最大 send buffer 大小（上限）
+# UDP 提供一个 最最最小值，比 rmem_default 小一层，用于socket 忙时, 内核自动调整大小时的下限
+# 设置16k, 比默认4k高，提升抗突发流量能力。
+sysctl -w net.ipv4.udp_rmem_min=16384
+sysctl -w net.ipv4.udp_wmem_min=16384
+
+# 一个三元组，用来限制整个系统中 UDP 使用的页数量(低水位, 压力水位, 最大水位)
+sysctl -w net.ipv4.udp_mem="4096 87381 629145"
+
+# UDP 特有的选项内存（per-socket option memory）上限, 用于：UDP 控制信息（cmsg),地址信息,校验数据,各种 UDP metadata, 默认很小（几 KB）
+sysctl -w net.core.optmem_max=2048000
+
+# 在网卡中断收到 UDP 包 → 网络栈，还没送入 socket 缓冲区时，必须先放入 backlog 队列。
+# 如果 backlog 过小, 在高 PPS（packet/s）场景会直接丢包，无法进入 UDP 层。
+sysctl -w net.core.netdev_max_backlog=32768
+~~~
+
+设置了这个命令之后,我将pod删除掉, 重新生成一个pod, 然后往其中发送udp数据, 这次我发送了10000条数据, 发送耗时0.2s,  发现都能够正常接受了, 所有应该就是修改这几个参数就可以了
+
+但是这是手动修改的, 可能不是最好的办法, 最好的办法应该是在pod的yaml中设置
+
+
+
+### 解决办法
+
+在pod的yaml中添加如下的配置:
+
+~~~yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: syslog-server
+spec:
+  securityContext:
+    sysctls:
+      - name: net.core.rmem_max
+        value: "67108864"
+      - name: net.core.rmem_default
+        value: "67108864"
+      - name: net.core.wmem_max
+        value: "67108864"
+      - name: net.core.wmem_default
+        value: "67108864"
+        # 其他参数
+  containers:
+    - name: app
+      image: your-image
+      securityContext:
+        privileged: true
+~~~
+
+如果是deployment的话, 
+
+~~~yaml
+spec:
+  template:
+    spec:
+      securityContext:
+        sysctls:
+          - name: net.core.rmem_max
+            value: "67108864"
+~~~
+
+
+
+并且还要修改每个节点的kubectl的启动参数, 添加
+
+~~~shell
+--allowed-unsafe-sysctls=net.core.rmem_max,net.core.wmem_max,net.core.rmem_default,net.core.wmem_default,net.core.netdev_max_backlog,net.ipv4.udp_rmem_min,net.ipv4.udp_wmem_min
+~~~
+
+或者在k8s的配置文件中设置
+
+~~~shell
+featureGates: {}
+allowedUnsafeSysctls:
+  - "net.core.rmem_max"
+  - "net.core.wmem_max"
+~~~
+
+然后重启 Kubelet：
+
+```
+systemctl daemon-reload
+systemctl restart kubelet
+```
+
+这样 Pod YAML 中的 sysctl 才能生效
