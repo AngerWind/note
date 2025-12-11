@@ -3184,3 +3184,52 @@ select * from city c where c.id in (select ancestor from `relative` r join city 
 select * from city c where c.id in (select descendant from `relative` r join city c on r.ancestor = c.id where `depth` = 2 and name = '美国');
 ~~~
 
+
+
+
+
+## 工作
+
+### 记一次PG数据库死锁的问题
+
+#### 项目背景
+
+这个业务主要有两个流程:
+
+1. 接受从kafka过来的一批次数据, 然后将这些数据保持到数据库, 然后将这些数据库中的特定字段合并在一次, 进行count聚合, 然后将聚合后的数据写入/更新到数据库中
+2. 代码中存在一个定时任务, 用来查找800w条数据之前的老数据和90天之前的老数据,   然后对这些老数据数据count聚合, 然后从数据库中删除老的原始数据, 然后从数据库的聚合表中减去对应的聚合数量
+
+涉及的两个表的sql如下:
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

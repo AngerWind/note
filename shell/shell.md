@@ -2880,7 +2880,7 @@ grep -i 'hello' file.txt # -i 不区分大小写
 grep -v 'hello' file.txt # 反选, 即选择不匹配的行
 grep -e "a" -e "b" file.txt # 查找a或者b
 
-grep -rni -e error -e fail . # 递归查找当前目录下所有文件中的error或者fail的行, 并打印行号, 忽略关键字大小写
+grep -rni -e error -e fail . # 递归查找当前目录下所有文件中的error或者fail的行, -n打印行号, 忽略关键字大小写
 ~~~
 
 
