@@ -2955,6 +2955,55 @@ echo -e "hwllo\nworld" | tr -d '\n' # -d表示删除匹配的字符, 这里表�
 
 
 
+### clear
+
+clear这个命令不是shell中内置的函数, 而是一个外部命令(`/usr/bin/clear`) , 用于清空当前终端显示的内容
+
+他的实现原理是让光标滚动到最上方左侧,  实际上你还是可以通过终端的滚动条 或者 shitf+pageup 来查看之前的内容的
+
+当然如果你是手动想要清理屏幕的话, 那么没必要调用`clear`这个命令, 而是可以直接`ctrl + L` 直接清屏, 这个是shell内置的清屏的方式
+
+
+
+clear这个命令主要用在shell脚本中, 比如你想要**在脚本中不断更新屏幕内容，使界面像一个动态刷新面板，而不是不停地往下滚动。**类似top一样的效果, 那么就可以使用clear命令
+
+比如下面通过`clear`实现了实时显示cup使用率的一个功能, 类似top命令
+
+~~~shell
+#!/bin/bash
+
+while true
+do
+    clear  # 每次循环先清屏
+    echo "===== System Monitor ====="
+    echo "Time: $(date)"
+    echo
+    echo "CPU usage:"
+    top -bn1 | grep "Cpu(s)"
+    echo
+    echo "Memory usage:"
+    free -h
+    echo
+    echo "Press Ctrl+C to exit..."
+
+    sleep 1
+done
+~~~
+
+又比如下面实现了一个进度条的功能
+
+~~~shell
+#!/bin/bash
+
+for i in {1..10}; do
+    clear
+    echo "Progress: $i/10"
+    sleep 0.5
+done
+~~~
+
+
+
 
 
 

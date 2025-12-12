@@ -3189,17 +3189,901 @@ select * from city c where c.id in (select descendant from `relative` r join cit
 
 
 ## 工作
+## 记一次pg数据库死锁的问题
 
-### 记一次PG数据库死锁的问题
+### 背景
 
-#### 项目背景
+期初发现这个问题是因为贵州农信那边反馈, 说syslog的数据聚合数量不对, 需要进行排除, 后来在自己的环境中插入数据库的时候, 因为数据库需要的数据量比较大, 需要800w数据, 经过一晚上的打流, 第二天在查看日志的时候发现里面有数据库死锁的日志产生
 
-这个业务主要有两个流程:
+~~~shell
+2181517 java.sql.BatchUpdateException: Batch entry 3 insert into tbl_syslog_data_agg(data_id, agg, digest, level, message, module, param_list, severity, pri, send_tim
+2181517 e, source_ip, sysname, timestamp, amount, tenant_id,region_id) values ('6e164065-2ce5-48e0-9c4b-c92a9b13669d', '712acd13f9a35e461bf520088c724e564f963bace6fb60
+2181517 061bf82ed106e85eb5', 'Test_Syslog_Digest', '', '111015b3278-9dbf-48df-8fc9-304d81777723', 'Test_Syslog_Module', '', '5', '', 'Dec  1 17:59:32 2025', '10.142.1
+2181517 35.220', 'mj-extension-223-121-vip-125', '1764583164', 4, 'abd2d9f6-36d9-45b8-b7e3-7a793b3a6f2c', NULL)  on CONFLICT (agg) DO update set amount = tbl_syslog_d
+2181517 ata_agg.amount + 4, timestamp = '1764583164' was aborted: ERROR: deadlock detected
+2181518   详细：Process 6262 waits for ShareLock on transaction 5250715; blocked by process 1135.
+2181519 Process 1135 waits for ShareLock on transaction 5250724; blocked by process 6262.
+2181520   建议：See server log for query details.
+2181521   在位置：while inserting index tuple (34,170) in relation "tbl_syslog_data_agg"  Call getNextException to see other errors in the batch.
+2181522         at org.postgresql.jdbc.BatchResultHandler.handleError(BatchResultHandler.java:169) ~[postgresql-42.2.18.jar:42.2.18]
+2181523         at org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2286) ~[postgresql-42.2.18.jar:42.2.18]
+2181524         at org.postgresql.core.v3.QueryExecutorImpl.flushIfDeadlockRisk(QueryExecutorImpl.java:1404) ~[postgresql-42.2.18.jar:42.2.18]
+2181525         at org.postgresql.core.v3.QueryExecutorImpl.sendQuery(QueryExecutorImpl.java:1429) ~[postgresql-42.2.18.jar:42.2.18]
+2181526         at org.postgresql.core.v3.QueryExecutorImpl.execute(QueryExecutorImpl.java:507) ~[postgresql-42.2.18.jar:42.2.18]
+2181527         at org.postgresql.jdbc.PgStatement.internalExecuteBatch(PgStatement.java:870) ~[postgresql-42.2.18.jar:42.2.18]
+2181528         at org.postgresql.jdbc.PgStatement.executeBatch(PgStatement.java:893) ~[postgresql-42.2.18.jar:42.2.18]
+2181529         at org.postgresql.jdbc.PgPreparedStatement.executeBatch(PgPreparedStatement.java:1644) ~[postgresql-42.2.18.jar:42.2.18]
+2181530         at com.zaxxer.hikari.pool.ProxyStatement.executeBatch(ProxyStatement.java:128) ~[HikariCP-3.1.0.jar:?]
+2181531         at com.zaxxer.hikari.pool.HikariProxyPreparedStatement.executeBatch(HikariProxyPreparedStatement.java) ~[HikariCP-3.1.0.jar:?]
+2181532         at com.h3c.listener.upgrade.handler.DBSaveHandler.executeAndCommit(DBSaveHandler.java:291) ~[RuleEngine-1.0-SNAPSHOT.jar:?]
+2181533         at com.h3c.listener.upgrade.handler.DBSaveHandler.saveBatchToDB(DBSaveHandler.java:189) ~[RuleEngine-1.0-SNAPSHOT.jar:?]
+2181534         at com.h3c.listener.upgrade.handler.DBSaveHandler.saveBatchToDBWithRetry(DBSaveHandler.java:120) ~[RuleEngine-1.0-SNAPSHOT.jar:?]
+2181535         at com.h3c.listener.upgrade.handler.DBSaveHandler.lambda$submitToExecutor$0(DBSaveHandler.java:106) ~[RuleEngine-1.0-SNAPSHOT.jar:?]
+2181536         at java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:511) ~[?:1.8.0_372]
+2181537         at java.util.concurrent.FutureTask.run(FutureTask.java:266) ~[?:1.8.0_372]
+2181538         at java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1149) ~[?:1.8.0_372]
+2181539         at java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:624) ~[?:1.8.0_372]
+2181540         at java.lang.Thread.run(Thread.java:826) ~[?:1.8.0_372]
+2181541 Caused by: org.postgresql.util.PSQLException: ERROR: deadlock detected
+2181542   详细：Process 6262 waits for ShareLock on transaction 5250715; blocked by process 1135.
+2181543 Process 1135 waits for ShareLock on transaction 5250724; blocked by process 6262.
+2181544   建议：See server log for query details.
+2181545   在位置：while inserting index tuple (34,170) in relation "tbl_syslog_data_agg"
+2181546         at org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2553) ~[postgresql-42.2.18.jar:42.2.18]
+2181547         at org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2285) ~[postgresql-42.2.18.jar:42.2.18]
+2181548         ... 17 more
+~~~
 
-1. 接受从kafka过来的一批次数据, 然后将这些数据保持到数据库, 然后将这些数据库中的特定字段合并在一次, 进行count聚合, 然后将聚合后的数据写入/更新到数据库中
-2. 代码中存在一个定时任务, 用来查找800w条数据之前的老数据和90天之前的老数据,   然后对这些老数据数据count聚合, 然后从数据库中删除老的原始数据, 然后从数据库的聚合表中减去对应的聚合数量
+然后根据保存信息找到对应的表,  查看这个系统, 发现对这个表进行写和修改操作的地方只有两个业务
 
-涉及的两个表的sql如下:
+涉及到的表也只有两个, 分别如下
+
+~~~sql
+create table tbl_syslog_data
+(
+    data_id    varchar(50) not null
+        primary key,
+    agg        varchar(3000) default NULL::character varying,
+    digest     varchar(255)  default NULL::character varying,
+    level      varchar(50)   default NULL::character varying,
+    message    text,
+    module     varchar(50)   default NULL::character varying,
+    param_list varchar(255)  default NULL::character varying,
+    severity   varchar(50)   default NULL::character varying,
+    pri        varchar(50)   default NULL::character varying,
+    send_time  varchar(50)   default NULL::character varying,
+    source_ip  text,
+    sysname    varchar(256)  default NULL::character varying,
+    timestamp  varchar(50)   default NULL::character varying,
+    tenant_id  varchar(255)  default NULL::character varying,
+    region_id  varchar(255)  default NULL::character varying
+);
+
+alter table tbl_syslog_data
+    owner to kong;
+
+create index tbl_syslog_data_timestamp
+    on tbl_syslog_data (timestamp);
+~~~
+
+~~~sql
+create table tbl_syslog_data_agg
+(
+    data_id    varchar(50) not null
+        primary key,
+    agg        varchar(3000) default NULL::character varying
+        constraint tbl_syslog_data_agg_un
+            unique,
+    digest     varchar(255)  default NULL::character varying,
+    level      varchar(50)   default NULL::character varying,
+    message    text,
+    module     varchar(50)   default NULL::character varying,
+    param_list varchar(255)  default NULL::character varying,
+    severity   varchar(50)   default NULL::character varying,
+    pri        varchar(50)   default NULL::character varying,
+    send_time  varchar(50)   default NULL::character varying,
+    source_ip  text,
+    sysname    varchar(256)  default NULL::character varying,
+    timestamp  varchar(50)   default NULL::character varying,
+    amount     integer,
+    tenant_id  varchar(255)  default NULL::character varying,
+    region_id  varchar(255)  default NULL::character varying
+);
+
+alter table tbl_syslog_data_agg
+    owner to kong;
+
+create index tbl_syslog_data_agg_timestamp
+    on tbl_syslog_data_agg (timestamp);
+~~~
+
+~~~sql
+create table tbl_syslog_data_agg
+(
+    data_id    varchar(50) not null
+        primary key,
+    agg        varchar(3000) default NULL::character varying
+        constraint tbl_syslog_data_agg_un
+            unique,
+    digest     varchar(255)  default NULL::character varying,
+    level      varchar(50)   default NULL::character varying,
+    message    text,
+    module     varchar(50)   default NULL::character varying,
+    param_list varchar(255)  default NULL::character varying,
+    severity   varchar(50)   default NULL::character varying,
+    pri        varchar(50)   default NULL::character varying,
+    send_time  varchar(50)   default NULL::character varying,
+    source_ip  text,
+    sysname    varchar(256)  default NULL::character varying,
+    timestamp  varchar(50)   default NULL::character varying,
+    amount     integer,
+    tenant_id  varchar(255)  default NULL::character varying,
+    region_id  varchar(255)  default NULL::character varying
+);
+
+alter table tbl_syslog_data_agg
+    owner to kong;
+
+create index tbl_syslog_data_agg_timestamp
+    on tbl_syslog_data_agg (timestamp);
+~~~
+
+其中第一个业务是从kafka中接收到一批次的数据之后, 将这一批次的数据保存到数据库的一个操作, 这个操作分两个步骤
+
+- 将这一批次的数据通过insert语句插入到数据库的`tbl_syslog_data`表中
+
+- 对这一批次的数据进行聚合统计, 即根据syslog的`digest, level, message, pri, sysname, source_ip`等字段进行sha256计算, 得到一个agg字段
+
+  然后根据agg字段统计这一批次相同的agg有多少个, 然后对`tbl_syslog_data_agg`表进行一个upsert操作
+  
+
+主要的代码如下:
+
+~~~java
+@Slf4j
+public class SyslogBatchInsert {
+
+    private static final String DATA_SQL = "insert into tbl_syslog_data (data_id,agg,digest,level,message,module,param_list,severity,pri,send_time,source_ip,sysname,timestamp,tenant_id,region_id) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    private static final String DATA_AGG_SQL = "insert into tbl_syslog_data_agg(data_id, agg, digest, level, message, module, param_list, severity, pri, send_time, source_ip, sysname, timestamp, amount, tenant_id,region_id)" +
+        " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)  on CONFLICT (agg) DO update set amount = tbl_syslog_data_agg.amount + ?, timestamp = ?";
+
+    private static final DataSourceManager sm = DataSourceManager.getInstance();
+    private static final Integer BATCH_SIZE = 3000;
+
+    public static void handlerJsonData(LinkedBlockingQueue<RuleMessage> data) throws Exception {
+        List<RuleMessage> dataList = new ArrayList<>(data);
+
+        try (
+            Connection connection = sm.getConnectionByDbName();
+            PreparedStatement dataPreparedStatement = connection.prepareStatement(DATA_SQL);
+            PreparedStatement dataAggPreparedStatement = connection.prepareStatement(DATA_AGG_SQL)
+        ) {
+            connection.setAutoCommit(false);
+
+            // 按照批次划分每一批次, 然后每一批次每一批次进行处理
+            for (int i = 0, batchNum = 1; i < dataList.size(); i += BATCH_SIZE, batchNum++) {
+                // 获取当前批次的位置
+                int end = Math.min(i + BATCH_SIZE, dataList.size());
+
+                // 获取当前批次
+                List<RuleMessage> batch = dataList.subList(i, end);
+                int maxRetry = 5;
+
+                Map<String, LinkedList<RuleMessage>> aggJsonMap = new HashMap<>();
+
+                for (RuleMessage ruleMessage : batch) {
+                    String sendTime = ruleMessage.getSendTime();
+                    String host = ruleMessage.getHost();
+                    Long receiveTime = ruleMessage.getReceiveTime();
+                    String uuid = ruleMessage.getUuid();
+                    String severity = ruleMessage.getSeverity();
+                    String sysname = ruleMessage.getSysname();
+                    String module = ruleMessage.getModule();
+                    String digest = ruleMessage.getDigest();
+                    String message = ruleMessage.getMessage();
+                    String tenantId = ruleMessage.getTenantId();
+                    String regionId = ruleMessage.getRegionId();
+                    // 根据对应的字段, 拼接成对应的aggField
+                    String aggField = buildAggField(
+                        severity,
+                        sysname,
+                        module,
+                        digest,
+                        message,
+                        host,
+                        regionId,
+                        tenantId
+                    );
+                    // 设置tbl_syslog_data表的jdbc参数
+                    setDataPreparedStatements(
+                        dataPreparedStatement, uuid, aggField, digest, message, module, severity,
+                        sendTime, host, sysname, receiveTime, tenantId, regionId
+                    );
+                    // 将对应的aggField和对应的消息放到一个Map<String, LinkedList<RuleMessage>>中, 用于计数
+                    aggJsonMap.putIfAbsent(aggField, new LinkedList<>());
+                    aggJsonMap.get(aggField).add(ruleMessage);
+
+                }
+                // 设置tbl_syslog_data_agg聚合表的批量upsert
+                setDataAggPreparedStatements(dataAggPreparedStatement, aggJsonMap);
+                // 如果提交失败, 报错了, 那么会在这个循环中进行重试
+                for (int j = 0; j < maxRetry; j++) {
+                    try {
+                        // 提交两个批量操作
+                        executeAndCommit(dataPreparedStatement, dataAggPreparedStatement, connection);
+                        dataPreparedStatement.clearBatch();
+                        dataAggPreparedStatement.clearBatch();
+                        break;
+                    } catch (SQLTransientConnectionException |
+                             SQLTransactionRollbackException |
+                             SQLTimeoutException |
+                             BatchUpdateException e) {
+                        log.error("第{}批次数据入库异常, 当前批次大小: {}, 进行重试, 第{}次 ", batchNum, batch.size(), j, e);
+                        rollback(connection);
+                        Thread.sleep(50 + RandomUtils.nextInt(0, 150));
+                    }
+                }
+            }
+        }
+    }
+
+    private static void setDataPreparedStatements(PreparedStatement dataPreparedStatement, String uuid,
+                                                  String aggField, String digest, String message,
+                                                  String module, String severity, String sendTime,
+                                                  String host, String sysname, Long receiveTime, String tenantId, String regionId) throws
+        Exception {
+        dataPreparedStatement.setString(1, uuid);
+        dataPreparedStatement.setString(2, DigestUtil.sha256(aggField));
+        dataPreparedStatement.setString(3, digest);
+        dataPreparedStatement.setString(4, "");
+        dataPreparedStatement.setString(5, message);
+        dataPreparedStatement.setString(6, module);
+        dataPreparedStatement.setString(7, "");
+        dataPreparedStatement.setString(8, severity);
+        dataPreparedStatement.setString(9, "");
+        dataPreparedStatement.setString(10, sendTime);
+        dataPreparedStatement.setString(11, host);
+        dataPreparedStatement.setString(12, sysname);
+        dataPreparedStatement.setString(13, String.valueOf(receiveTime));
+        if (!PRESET_TENANT_ID.equals(tenantId)) {
+            dataPreparedStatement.setString(14, tenantId);
+        } else {
+            dataPreparedStatement.setNull(14, Types.VARCHAR);
+        }
+
+        if (StringUtils.isNotEmpty(regionId)) {
+            dataPreparedStatement.setString(15, regionId);
+        } else {
+            dataPreparedStatement.setNull(15, Types.VARCHAR);
+        }
+        dataPreparedStatement.addBatch();
+    }
+
+    private static void setDataAggPreparedStatements(PreparedStatement dataAggPreparedStatement,
+                                                     Map<String, LinkedList<RuleMessage>> aggDataMap) throws Exception {
+        for (Map.Entry<String, LinkedList<RuleMessage>> entry : aggDataMap.entrySet()) {
+            String aggField = entry.getKey();
+            List<RuleMessage> jsonObjectList = entry.getValue();
+            if (jsonObjectList == null || jsonObjectList.isEmpty()) {
+                continue;
+            }
+            int amount = jsonObjectList.size();
+            RuleMessage first = jsonObjectList.get(0);
+            RuleMessage last = jsonObjectList.get(amount - 1);
+            String sendTime = first.getSendTime(); // 同一批次第一条的发送时间
+            String host = first.getHost();
+            Long receiveTime = first.getReceiveTime(); // 同一批次最后一条的接受时间
+            String uuid = UUID.randomUUID().toString();
+            String severity = first.getSeverity();
+            String sysname = first.getSysname();
+            String module = first.getModule();
+            String digest = first.getDigest();
+            String message = first.getMessage();
+            String tenantId = first.getTenantId();
+            String regionId = first.getRegionId();
+
+            dataAggPreparedStatement.setString(1, uuid);
+            dataAggPreparedStatement.setString(2, DigestUtil.sha256(aggField));
+            dataAggPreparedStatement.setString(3, digest);
+            dataAggPreparedStatement.setString(4, "");
+            dataAggPreparedStatement.setString(5, message);
+            dataAggPreparedStatement.setString(6, module);
+            dataAggPreparedStatement.setString(7, "");
+            dataAggPreparedStatement.setString(8, severity);
+            dataAggPreparedStatement.setString(9, "");
+            dataAggPreparedStatement.setString(10, sendTime);
+            dataAggPreparedStatement.setString(11, host);
+            dataAggPreparedStatement.setString(12, sysname);
+            dataAggPreparedStatement.setString(13, String.valueOf(receiveTime));
+            dataAggPreparedStatement.setInt(14, amount);
+            if (!"preset".equals(tenantId)) {
+                dataAggPreparedStatement.setString(15, tenantId);
+            } else {
+                dataAggPreparedStatement.setNull(15, Types.VARCHAR);
+            }
+            if (StringUtils.isNotEmpty(regionId)) {
+                dataAggPreparedStatement.setString(16, regionId);
+            } else {
+                dataAggPreparedStatement.setNull(16, Types.VARCHAR);
+            }
+            dataAggPreparedStatement.setInt(17, amount);
+            dataAggPreparedStatement.setString(18, String.valueOf(receiveTime));
+
+            dataAggPreparedStatement.addBatch();
+        }
+
+    }
+
+
+    private static void executeAndCommit(PreparedStatement dataPreparedStatement, PreparedStatement dataAggPreparedStatement, Connection connection) throws
+        SQLException {
+        if (dataPreparedStatement != null) {
+            dataPreparedStatement.executeBatch();
+        }
+        if (dataAggPreparedStatement != null) {
+            dataAggPreparedStatement.executeBatch();
+        }
+        connection.commit();
+    }
+
+    private static void rollback(Connection connection) {
+        if (connection != null) {
+            try {
+                connection.rollback();
+            } catch (SQLException e) {
+                log.error("Failed to rollback transaction: ", e);
+            }
+        }
+    }
+
+    private static String buildAggField(String severity, String sysname, String module, String digest, String message, String host, String regionId, String tenantId) {
+        String splitField = "l|s|m";
+        String agg = severity + splitField + sysname + splitField + module + splitField + digest + splitField + message + splitField + host;
+        if (StringUtils.isNotEmpty(regionId)) {
+            agg = agg + splitField + regionId;
+        }
+        if (StringUtils.isNotEmpty(tenantId)) {
+            agg = agg + splitField + tenantId;
+        }
+        return agg;
+    }
+}
+
+public class RuleMessage  {
+    // 优先级
+    @Getter
+    @Setter
+    private String pri;
+
+    // 发送时间
+    @Getter
+    @Setter
+    private String sendTime;
+
+    // 系统名称
+    @Getter
+    @Setter
+    private String sysname;
+
+    // 模块名称
+    @Getter
+    @Setter
+    private String module;
+
+    // 严重级别
+    @Getter
+    @Setter
+    private String severity;
+
+    // 摘要
+    @Getter
+    @Setter
+    private String digest;
+
+    // 详细消息
+    @Getter
+    @Setter
+    private String message;
+    @Getter
+    @Setter
+    private  String host;
+    @Getter
+    @Setter
+    private  String tenantId;
+    @Getter
+    @Setter
+    private  Long receiveTime;
+    @Getter
+    @Setter
+    private  String regionId;
+    // 省略部分字段
+    // .....
+}
+~~~
+第二个业务是一个定时任务, 在每天的1点和13点执行, 他的作用是防止`tbl_syslog_data`这个表中的数据过多, 所以他会删除90天之前的数据,  然后如果数据量还是太多了, 那么他只会保留最近的800w条数据, 其余的老的数据会删除掉
+
+主要涉及的代码如下:
+
+~~~java
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteEsDataByDay() {
+        long currentTimeMillis = System.currentTimeMillis();
+
+        LogUtil.diagLog(
+            Severity.INFO,
+            "开始执行定时删除数据的任务, 删除90天之前的数据和800w行之前的数据"
+        );
+        try {
+            // 查询到截止到800w数据的最小的时间戳
+            String timestampLimit8MillionStr = syslogDataMapper.minTimestampLimit8Million();
+            long timestampLimit8Million = 0;
+            if (StringUtils.isNotBlank(timestampLimit8MillionStr)) {
+                timestampLimit8Million = Long.parseLong(timestampLimit8MillionStr);
+            }
+            // 计算90天之前的时间戳
+            long time90DaysAgo = currentTimeMillis / 1000 - 90 * 24 * 60 * 60;
+            // 取一个最大值, 之前的数据全部删除掉
+            long timeToDelete = Math.max(time90DaysAgo, timestampLimit8Million);
+
+
+           // 先查询出要删除哪些数据, 不同的agg的聚合数量是多少, 为后续修改聚合表做准备
+            List<AggCnt> deletedAgg = syslogDataMapper.selectAggLessTimeStamp(String.valueOf(timeToDelete));
+
+            if (CollectionUtils.isEmpty(deletedAgg)) {
+                // 没有要聚合的数据
+                return;
+            }
+
+            // 将查询出来的agg和count转换为map
+            Map<String, Integer> aggCnt = deletedAgg.stream()
+                .collect(Collectors.toMap(
+                    AggCnt::getAgg,      // Key 提取器
+                    AggCnt::getCnt,      // Value 提取器
+                    (oldValue, newValue) -> oldValue // 合并函数（如果有重复key）
+                ));
+            
+            // 删除原始表中的数据
+            int deletedRow = syslogDataMapper.deleteDataLessTimeStamp(String.valueOf(timeToDelete));
+            long deletedSyslogDataTimestamp = System.currentTimeMillis();
+
+            // 减少聚合表中对应agg的数量
+            int modifiedRow =  syslogDataAggMapper.batchDecreaseAmountByValues(aggCnt);
+
+            // 如果聚合数量归0了, 那么就要删除掉这行数据
+            int deleteZeroOrNegativeAmountRecords = syslogDataAggMapper.deleteZeroOrNegativeAmountRecords();
+
+
+        } finally {
+			// do something
+        }
+
+    }
+~~~
+
+~~~java
+@Mapper
+public interface SyslogDataMapper {
+    /**
+    <select id="minTimestampLimit8Million" resultType="string">
+        select timestamp from tbl_syslog_data order by timestamp desc limit 1 offset 8000000
+    </select>
+    */
+    String minTimestampLimit8Million();
+    
+    /**
+    <select id="selectAggLessTimeStamp" resultType="com.h3c.common.entity.vo.AggCnt">
+        select agg, count(agg) as cnt from tbl_syslog_data
+        where timestamp  &lt;= #{timestamp} group by agg
+    </select>
+    */
+    List<AggCnt> selectAggLessTimeStamp(@Param("timestamp") String timestamp);
+    public class AggCnt {
+    	private String agg;
+    	private Integer cnt;
+	}
+    
+    /**
+    <delete id="deleteDataLessTimeStamp">
+        delete from tbl_syslog_data where CAST(timestamp AS BIGINT)&lt;=#{timestamp, jdbcType=BIGINT}
+    </delete>
+    */
+    int deleteDataLessTimeStamp(@Param("timestamp") Long timestamp);
+}
+
+@Mapper
+public interface SyslogDataAggMapper {
+    /**
+    <update id="batchDecreaseAmountByValues">
+        UPDATE tbl_syslog_data_agg
+        SET amount = amount -
+        <foreach collection="aggValueMap" item="value" index="agg" separator=" " open="CASE" close="ELSE 0 END">
+            WHEN agg = #{agg} THEN #{value}
+        </foreach>
+        WHERE agg IN
+        <foreach collection="aggValueMap" index="agg" open="(" separator="," close=")">
+            #{agg}
+        </foreach>
+    </update>
+    */
+    int batchDecreaseAmountByValues(@Param("aggValueMap") Map<String, Integer> aggValueMap);
+    
+    /**
+    <delete id="deleteZeroOrNegativeAmountRecords">
+        DELETE FROM tbl_syslog_data_agg
+        WHERE amount &lt;= 0
+    </delete>
+    */
+    int deleteZeroOrNegativeAmountRecords();
+}
+~~~
+
+
+### 第一次代码修改
+
+首先出现了死锁的时候, 我直接从数据库的日志中查找代码, 但是和代码里面的报错是一样的, 只说了是哪个sql执行的时候出现了死锁, 两个事务在互相等待,  但是并没有说明另外一个事务到底是什么, 所以从数据库和代码中的报错了开并没有看出来到底是怎么死锁了
+
+然后我直接把数据库中关于死锁的报错丢给chatgpt, 问问他到底是什么情况
+
+> 和chatgpt的对话在如下的链接中
+>
+> https://chatgpt.com/share/693b78cd-2838-800b-a150-8f5642df7492
+
+~~~shell
+我有一个pg数据库, 他会将日志seasql-%u.csv文件下, 现在有一个死锁问题, 下面是所有有关deadlock的日志, 帮我解析一下
+[root@seasql-base-0 log]# grep deadlock *.csv
+seasql-2.csv:2025-11-25 00:29:52.112 CST,"kong","syslog_db",1292479,"177.177.153.29:41368",692453e3.13b8bf,355,"UPDATE waiting",2025-11-24 20:47:31 CST,147/29979,3234351,LOG,00000,"process 1292479 detected deadlock while waiting for ShareLock on transaction 3234353 after 1000.128 ms","Process holding the lock: 1327915. Wait queue: .",,,,"while updating tuple (472,98) in relation ""tbl_syslog_data_agg""","UPDATE tbl_syslog_data_agg
+seasql-2.csv:2025-11-25 00:29:52.114 CST,"kong","syslog_db",1292479,"177.177.153.29:41368",692453e3.13b8bf,356,"UPDATE",2025-11-24 20:47:31 CST,147/29979,3234351,ERROR,40P01,"deadlock detected","Process 1292479 waits for ShareLock on transaction 3234353; blocked by process 1327915.
+seasql-2.csv:2025-11-25 00:45:06.711 CST,"kong","syslog_db",1332425,"177.177.153.29:59568",69248725.1454c9,31,"INSERT waiting",2025-11-25 00:26:13 CST,119/37153,3238656,LOG,00000,"process 1332425 detected deadlock while waiting for ShareLock on transaction 3238654 after 1000.151 ms","Process holding the lock: 1292479. Wait queue: .",,,,"while inserting index tuple (568,3) in relation ""tbl_syslog_data_agg""","insert into tbl_syslog_data_agg(data_id, agg, digest, level, message, module, param_list, severity, pri, send_time, source_ip, sysname, timestamp, amount, tenant_id,region_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)  on CONFLICT (agg) DO update set amount = tbl_syslog_data_agg.amount + $17, timestamp = $18",,,"PostgreSQL JDBC Driver","client backend",,-5651435701064934521
+seasql-2.csv:2025-11-25 00:45:06.711 CST,"kong","syslog_db",1332425,"177.177.153.29:59568",69248725.1454c9,32,"INSERT",2025-11-25 00:26:13 CST,119/37153,3238656,ERROR,40P01,"deadlock detected","Process 1332425 waits for ShareLock on transaction 3238654; blocked by process 1292479.
+
+你数据库里的两个死锁事件都发生在表：
+tbl_syslog_data_agg
+都是 UPSERT（INSERT ... ON CONFLICT ... DO UPDATE） 和 UPDATE 之间互相竞争造成的。
+死锁关系图如下（简化）：
+
+第一次死锁：
+ 1292479 UPDATE  等待 3234353
+ 1327915（持锁者） 等待别人 → 死锁
+
+第二次死锁：
+ 1332425 INSERT on conflict 等待 3238654
+ 1292479（持锁者） 又参与阻塞 → 死锁
+
+
+主要特征：你的系统中多个会话同时在对 tbl_syslog_data_agg 做 UPDATE / INSERT ON CONFLICT，竞争同一条记录或索引项，导致互相等待行锁与元组锁（ShareLock on transaction），最终被 PostgreSQL 检测为死锁。
+~~~
+
+根据chatgpt的提示, 我将tbl_syslog_data_agg的表结构和 涉及到agg的两个sql都丢给了chatgpt, 并告诉了他是批处理时
+
+~~~txt
+我的表结构如下
+	create table tbl_syslog_data_agg
+(
+    data_id    varchar(50) not null
+        primary key,
+    agg        varchar(3000) default NULL::character varying
+        constraint tbl_syslog_data_agg_un
+            unique,
+    digest     varchar(255)  default NULL::character varying,
+    level      varchar(50)   default NULL::character varying,
+    message    text,
+    module     varchar(50)   default NULL::character varying,
+    param_list varchar(255)  default NULL::character varying,
+    severity   varchar(50)   default NULL::character varying,
+    pri        varchar(50)   default NULL::character varying,
+    send_time  varchar(50)   default NULL::character varying,
+    source_ip  text,
+    sysname    varchar(256)  default NULL::character varying,
+    timestamp  varchar(50)   default NULL::character varying,
+    amount     integer,
+    tenant_id  varchar(255)  default NULL::character varying,
+    region_id  varchar(255)  default NULL::character varying
+);
+
+alter table tbl_syslog_data_agg
+    owner to kong;
+
+create index tbl_syslog_data_agg_timestamp
+    on tbl_syslog_data_agg (timestamp);
+
+在这个表上面主要有两个sql会进行批处理任务
+ private static final String DATA_AGG_SQL = "insert into tbl_syslog_data_agg(" +
+        "data_id, agg, digest, level, message, module, param_list, " +
+        "severity, pri, send_time, source_ip, sysname, timestamp, amount, tenant_id,region_id" +
+        ")" +
+        " values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)  " +
+        "on CONFLICT (agg) DO update set amount = tbl_syslog_data_agg.amount + ?, timestamp = ?";
+我会通过PreparedStatement的executeBatch来执行批量upsert
+另外一个sql是
+<update id="batchDecreaseAmountByValues">
+        UPDATE tbl_syslog_data_agg
+        SET amount = amount -
+        <foreach collection="aggValueMap" item="value" index="agg" separator=" " open="CASE" close="ELSE 0 END">
+            WHEN agg = #{agg} THEN #{value}
+        </foreach>
+        WHERE agg IN
+        <foreach collection="aggValueMap" index="agg" open="(" separator="," close=")">
+            #{agg}
+        </foreach>
+    </update>
+	
+	
+	void batchDecreaseAmountByValues(@Param("aggValueMap") Map<String, Integer> aggValueMap);
+进行批量修改
+
+另外我的这个pg数据库是通过patronictl来进行管理的, 下面是pg的配置
+failsafe_mode: true
+loop_wait: 10
+master_start_timeout: 120
+master_stop_timeout: 10
+maximum_lag_on_failover: 33554432
+postgresql:
+  parameters:
+    archive_mode: 'on'
+    archive_timeout: 1800s
+    cron.database_name: seasql
+    hot_standby: 'on'
+    hot_standby_feedback: true
+    idle_in_transaction_session_timeout: 10min
+    idle_session_timeout: 10min
+    lock_timeout: 10min
+    log_autovacuum_min_duration: 0
+    log_checkpoints: 'on'
+    log_connections: 'on'
+    log_destination: stderr
+    log_disconnections: 'on'
+    log_line_prefix: '%t [%p]: [%l-1] %c %x %d %u %a %h '
+    log_lock_waits: 'on'
+    log_min_duration_statement: 1000
+    log_replication_commands: true
+    log_statement: ddl
+    log_temp_files: 0
+    log_truncate_on_rotation: true
+    logging_collector: true
+    max_connections: '2000'
+    max_logical_replication_workers: 8
+    max_prepared_transactions: 0
+    max_replication_slots: 10
+    max_slot_wal_keep_size: 20GB
+    max_standby_archive_delay: 10min
+    max_standby_streaming_delay: 3min
+    max_sync_workers_per_subscription: 6
+    max_wal_senders: 10
+    max_wal_size: 10GB
+    password_encryption: md5
+    promote_trigger_file: promote.signal
+    superuser_reserved_connections: 10
+    tcp_keepalives_idle: 900
+    tcp_keepalives_interval: 100
+    timezone: Asia/Shanghai
+    track_commit_timestamp: true
+    track_functions: none
+    unix_socket_directories: /tmp
+    vacuum_defer_cleanup_age: 0
+    wal_compression: 'on'
+    wal_keep_size: 8GB
+    wal_level: hot_standby
+    wal_log_hints: 'on'
+    wal_receiver_status_interval: 1s
+    wal_receiver_timeout: 60s
+  remove_data_directory_on_creating_replication_failed: true
+  remove_data_directory_on_rewind_failure: true
+  use_pg_rewind: true
+  use_slots: true
+retry_timeout: 10
+synchronous_mode: true
+synchronous_node_count: 1
+ttl: 30
+
+
+
+下面我会基于你提供的：
+✔ 表结构
+✔ Upsert SQL（ON CONFLICT）批处理
+✔ UPDATE CASE WHEN 批量修改 amount
+✔ PostgreSQL（Patroni）配置
+✔ 之前看到的死锁日志
+
+给出 完整、精确、深入的死锁根因分析，并提供 可以从根本上解决的方案。
+
+🧨 一、你当前死锁的根因（100% 确定）
+
+你的两个 SQL 都是在竞争：
+UNIQUE(agg) 的索引锁 + 行锁
+导致死锁几乎必然发生。
+
+1. Upsert 会锁 UNIQUE 索引项
+你的 UPSERT：
+INSERT ... ON CONFLICT (agg) DO UPDATE
+
+PostgreSQL 的实现方式：
+插入前先对 unique index on agg 做 索引扫描
+拿下冲突 key（agg）的 unique index 元组锁 (SIReadLock / ShareLock)
+再尝试更新行 → 需要 row lock
+
+2. UPDATE CASE WHEN agg = XXX 形式，也会锁住多行 + 多次判断
+
+你的 UPDATE：
+UPDATE tbl_syslog_data_agg
+SET amount = amount - CASE 
+    WHEN agg = 'A' THEN 3
+    WHEN agg = 'B' THEN 2
+    ...
+END
+WHERE agg IN ('A','B',...)
+
+这个 SQL 特性：
+PostgreSQL 会先扫描 WHERE agg IN (...) 的所有行
+对每行加 Row Share / Row Exclusive 锁
+CASE WHEN 在执行时也会访问整个 row
+
+3. 两者访问同一批 agg 时，锁顺序不一致 = 死锁根因
+
+典型死锁场景：
+
+Session A (UPSERT)            Session B (UPDATE)
+-----------------------------------------------
+锁住 agg = X 的 unique index   锁住 agg = Y 的行锁
+准备锁住 agg = Y 的行锁        准备锁住 agg = X 的 unique index
+→ 相互等待 → 死锁
+
+⚠ 你是批处理（executeBatch），多个 agg 一起执行
+
+每批提交中访问 agg 的顺序不一致 → 死锁概率指数增长
+
+🔥 二、为什么死锁频繁发生在你的场景？
+✔ 因为你的两个 SQL 分别以不同的顺序访问多个 agg
+UPSERT 批处理：
+
+假设一批里：
+agg: B A E D
+则锁顺序（unique index 锁顺序）可能是：
+B → A → E → D
+UPDATE CASE WHEN 批处理：
+你传的是 Map<String,Integer>，没有排序：
+MyBatis foreach 遍历 Map 时顺序不固定
+可能生成：
+WHEN A THEN ...
+WHEN B THEN ...
+WHEN D THEN ...
+WHEN E THEN ...
+
+那么 UPDATE 的锁顺序是：
+A → B → D → E
+
+❗ 两个 SQL 中 agg 的访问顺序不同，就会导致锁获取顺序不同，而这是死锁最常见的根源。
+~~~
+
+
+
+根据chatgpt的提示,  主要的问题是我的这两个sql, 在update更新数据的时候, 修改的行的先后顺序不一致, 所以导致了死锁, 所以只要保证在更新数据的时候, 两个sql都是按照固定的属性来更新数据的, 就不会死锁了
+
+所以我的想法很理所当然的就是对批处理的数据, 根据agg进行排序, 然后再进行提交, 所以我对代码做了如下的修改
+
+~~~java
+// 在插入数据的时候, 批量更新设置agg参数的时候, 传入一个treemap
+// 这样在setDataAggPreparedStatements方法的for循环中, 就能够正确的设置按照顺序来设置agg了, 这样就可以按照顺序来进行更新了
+setDataAggPreparedStatements(dataAggPreparedStatement, new TreeMap<>(aggJsonMap));
+
+
+// 在批量删除, 并减少agg数据的时候, 也传入一个treemap
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteEsDataByDay() {
+        long currentTimeMillis = System.currentTimeMillis();
+        try {
+            String timestampLimit8MillionStr = syslogDataMapper.minTimestampLimit8Million();
+            long timestampLimit8Million = 0;
+            if (StringUtils.isNotBlank(timestampLimit8MillionStr)) {
+                timestampLimit8Million = Long.parseLong(timestampLimit8MillionStr);
+            }
+            long time90DaysAgo = currentTimeMillis / 1000 - 90 * 24 * 60 * 60;
+            long timeToDelete = Math.max(time90DaysAgo, timestampLimit8Million);
+            List<AggCnt> deletedAgg = syslogDataMapper.selectAggLessTimeStamp(String.valueOf(timeToDelete));
+            if (CollectionUtils.isEmpty(deletedAgg)) {
+                return;
+            }
+
+            // 这里转换为了Treemap, 这样在batchDecreaseAmountByValues方法中, mybatis的for循环可以正确的按照顺序来设置参数
+            Map<String, Integer> aggCnt = deletedAgg.stream()
+        		.collect(Collectors.toMap(
+            		AggCnt::getAgg,      
+            		AggCnt::getCnt,      
+            		(oldValue, newValue) -> oldValue, 
+            		TreeMap::new         
+        	));
+            int deletedRow = syslogDataMapper.deleteDataLessTimeStamp(String.valueOf(timeToDelete));
+            long deletedSyslogDataTimestamp = System.currentTimeMillis();
+            int modifiedRow =  syslogDataAggMapper.batchDecreaseAmountByValues(aggCnt);
+            int deleteZeroOrNegativeAmountRecords = syslogDataAggMapper.deleteZeroOrNegativeAmountRecords();
+
+        } finally {
+        }
+
+    }
+~~~
+
+本来以为只要将增加agg和减少agg的两个方法都传入一个TreeMap, 这样就可以按照顺序来设置sql的参数, 这样更新数据的时候就是按照顺序更新的, 没想到还是太年轻了
+
+我重新调整了定时任务的执行评论, 让他每分钟执行一次, 同时减少要保存的数据量到30w, 这样删除数据的任务就可以频繁的执行了
+
+同时我还增加了数据的发送, 这样让保存数据的任务也频繁的执行
+
+果不其然死锁还是发生了
+
+
+
+
+### 第二次修改
+
+这次修改之后, 我明明都已经将数据排好序进行修改了, 但是死锁还是发生了, 所以我开始怀疑是不是不是这两个sq导致的死锁, 而是这两个业务并发修改`tbl_syslog_data`和`tbl_syslog_data_agg`两个表同时导致的
+
+但是没道理, 业务1对`tbl_syslog_data`的新增都是最新的数据, 而业务2对`tbl_syslog_data`的删除, 都是老的数据, 所以他们两个的业务在处理数据的时候, 永远没有交集
+
+所以我又尝试做了一次修改, 在业务2做任何的修改之前, 先通过select for update获取到agg表中所有行的锁, 再进行修改, 代码如下
+
+~~~java
+// 在插入数据的时候, 批量更新设置agg参数的时候, 传入一个treemap
+// 这样在setDataAggPreparedStatements方法的for循环中, 就能够正确的设置按照顺序来设置agg了, 这样就可以按照顺序来进行更新了
+setDataAggPreparedStatements(dataAggPreparedStatement, new TreeMap<>(aggJsonMap));
+
+
+// 在批量删除, 并减少agg数据的时候, 也传入一个treemap
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteEsDataByDay() {
+        long currentTimeMillis = System.currentTimeMillis();
+        try {
+            String timestampLimit8MillionStr = syslogDataMapper.minTimestampLimit8Million();
+            long timestampLimit8Million = 0;
+            if (StringUtils.isNotBlank(timestampLimit8MillionStr)) {
+                timestampLimit8Million = Long.parseLong(timestampLimit8MillionStr);
+            }
+            long time90DaysAgo = currentTimeMillis / 1000 - 90 * 24 * 60 * 60;
+            long timeToDelete = Math.max(time90DaysAgo, timestampLimit8Million);
+            List<AggCnt> deletedAgg = syslogDataMapper.selectAggLessTimeStamp(String.valueOf(timeToDelete));
+            if (CollectionUtils.isEmpty(deletedAgg)) {
+                return;
+            }
+
+            // 这里转换为了Treemap, 这样在batchDecreaseAmountByValues方法中, mybatis的for循环可以正确的按照顺序来设置参数
+            Map<String, Integer> aggCnt = deletedAgg.stream()
+        		.collect(Collectors.toMap(
+            		AggCnt::getAgg,      
+            		AggCnt::getCnt,      
+            		(oldValue, newValue) -> oldValue, 
+            		TreeMap::new         
+        	));
+            
+            // 在做任何的修改之前, 先获取到tbl_syslog_data_agg表中要修改的行的锁, 再进行修改
+            syslogDataAggMapper.lockAggRow(aggCnt.keySet());
+            
+            int deletedRow = syslogDataMapper.deleteDataLessTimeStamp(String.valueOf(timeToDelete));
+            long deletedSyslogDataTimestamp = System.currentTimeMillis();
+            int modifiedRow =  syslogDataAggMapper.batchDecreaseAmountByValues(aggCnt);
+            int deleteZeroOrNegativeAmountRecords = syslogDataAggMapper.deleteZeroOrNegativeAmountRecords();
+
+        } finally {
+        }
+
+    }
+
+@Mapper
+public interface SyslogDataAggMapper {
+    /**
+    <select id="lockAggRow" resultType="java.lang.Integer">
+        select amount from tbl_syslog_data_agg
+        where agg in (
+        <foreach collection="aggSet" item="item" separator=",">
+            #{item, jdbcType=VARCHAR}
+        </foreach>
+        )
+        for update
+    </select>
+    */
+    List<Integer> lockAggRow(@Param("aggSet") Set<String> aggSet);
+}
+~~~
+
+重新测试, 结果发现还是死锁了, 但是现在死锁变成了`select amount from tbl_syslog_data_agg where agg in (...)` 这个sql了
 
 
 
@@ -3207,6 +4091,260 @@ select * from city c where c.id in (select descendant from `relative` r join cit
 
 
 
+### 第三次修改
+
+经过这次的排除,  就非常的肯定了, 就是两个操作`tbl_syslog_data_agg`的sql相互嵌套, 发生的死锁, 无关`tbl_syslog_data`这个表的sql, 因为我将select for update提到最前面, 第二个业务都还没有操作`tbl_syslog_data`表呢就直接报死锁了
+
+所以现在非常的肯定, 就是两个操作`tbl_syslog_data_agg`的sql相互嵌套, 发生的死锁
+
+并且这次死锁还携带了一份比较干净的日志, 没有多余的, 直接表明了就是这两个sql发生了死锁
+
+具体可以查看`seasql-3.csv`
+
+然后再次排查代码, 发现第一次修改代码的时候, 还是有疏漏的
+
+~~~java
+for (RuleMessage ruleMessage : batch) {
+    log.debug("syslog jsonObject:{}.", ruleMessage);
+    String sendTime = ruleMessage.getSendTime();
+    String host = ruleMessage.getHost();
+    Long receiveTime = ruleMessage.getReceiveTime();
+    String uuid = ruleMessage.getUuid();
+    String severity = ruleMessage.getSeverity();
+    String sysname = ruleMessage.getSysname();
+    String module = ruleMessage.getModule();
+    String digest = ruleMessage.getDigest();
+    String message = ruleMessage.getMessage();
+    String tenantId = ruleMessage.getTenantId();
+    String regionId = ruleMessage.getRegionId();
+    // 这里的构建聚合key, 只是将这几个字段拼接在了一次, 并没有真正的进行sha256计算
+    String aggField = buildAggField(
+        severity,
+        sysname,
+        module,
+        digest,
+        message,
+        host,
+        regionId,
+        tenantId
+    );
+    setDataPreparedStatements(
+        dataPreparedStatement, uuid, aggField, digest, message, module, severity,
+        sendTime, host, sysname, receiveTime, tenantId, regionId
+    );
+    aggJsonMap.putIfAbsent(aggField, new LinkedList<>());
+    aggJsonMap.get(aggField).add(ruleMessage);
+
+}
+// 在这个方法里面才真正的进行sha256计算出真正保存到数据库中的aggkey
+setDataAggPreparedStatements(dataAggPreparedStatement, new TreeMap<>(aggJsonMap));
+~~~
+
+上面代码中, 一开始我以为aggJsonMap中保存的key就已经是保存到数据库中的最终数据了, 但是没想到根本不是, 他只是上面几个字段拼接了一下, 在保存到数据库的时候还要进行一次sha256
+
+~~~java
+    private static void setDataAggPreparedStatements(PreparedStatement dataAggPreparedStatement,
+                                                     Map<String, LinkedList<RuleMessage>> aggDataMap) throws Exception {
+        for (Map.Entry<String, LinkedList<RuleMessage>> entry : aggDataMap.entrySet()) {
+            String aggField = entry.getKey();
+            List<RuleMessage> jsonObjectList = entry.getValue();
+            if (jsonObjectList == null || jsonObjectList.isEmpty()) {
+                continue;
+            }
+            int amount = jsonObjectList.size();
+            RuleMessage first = jsonObjectList.get(0);
+            RuleMessage last = jsonObjectList.get(amount - 1);
+            String sendTime = first.getSendTime(); // 同一批次第一条的发送时间
+            String host = first.getHost();
+            Long receiveTime = first.getReceiveTime(); // 同一批次最后一条的接受时间
+            String uuid = UUID.randomUUID().toString();
+            String severity = first.getSeverity();
+            String sysname = first.getSysname();
+            String module = first.getModule();
+            String digest = first.getDigest();
+            String message = first.getMessage();
+            String tenantId = first.getTenantId();
+            String regionId = first.getRegionId();
+
+            dataAggPreparedStatement.setString(1, uuid);
+            // !!!!! 这里还会进行一次sha256计算
+            dataAggPreparedStatement.setString(2, DigestUtil.sha256(aggField));
+            // .....其他代码
+        }
+    }
+~~~
+
+所以我第一次代码修改根据就是无效的, 传进去是有序的, 但是进行sha256之后又是无序的了
+
+
+
+### 第四次修改
+
+然后我又对上面的代码进行了修改, 在`buildAggField`方法中直接进行sha256计算, 然后返回
+
+~~~java
+    private static String buildAggField(String severity, String sysname, String module, String digest, String message, String host, String regionId, String tenantId) {
+        String splitField = "l|s|m";
+        String agg = severity + splitField + sysname + splitField + module + splitField + digest + splitField + message + splitField + host;
+        if (StringUtils.isNotEmpty(regionId)) {
+            agg = agg + splitField + regionId;
+        }
+        if (StringUtils.isNotEmpty(tenantId)) {
+            agg = agg + splitField + tenantId;
+        }
+        // 在这里直接返回
+        return DigestUtil.sha256(agg);
+    }
+
+// 然后再设置jdbc参数的时候,不再进行sha256
+dataAggPreparedStatement.setString(2, aggField);
+~~~
+
+这样在传入的TreeMap中, agg这个字段就是有序的了
+
+但是意外还是发生了, 还是出现了死锁
+
+
+
+### 第五次修改
+
+我再次排查了一下两个业务的代码,  这次可以非常肯定的是业务1是顺序更新顺序的, 然后我重新审视了一下下面这个代码
+
+~~~xml
+    <select id="lockAggRow" resultType="java.lang.Integer">
+        select amount from tbl_syslog_data_agg
+        where agg in (
+        <foreach collection="aggSet" item="item" separator=",">
+            #{item, jdbcType=VARCHAR}
+        </foreach>
+        )
+        for update
+    </select>
+~~~
+
+这个sql虽然我传入的map是一个TreeMap, 但是在底层数据库更新的时候, 还真不一定是按照treemap的顺序来更新的, 所以我将这个sql发送给了chatgpt, 他的回答是这样的
+
+> 对话记录在这个链接的中间部分: https://chatgpt.com/share/693be0f5-b110-800b-b3b5-6c890d7fd52e
+
+~~~shell
+pg在执行update case when 的时候可以有序更新吗
+
+结论先说：PostgreSQL 在执行 UPDATE ... SET col = CASE WHEN ... 时，本身并不会保证按某个顺序（例如主键顺序）依次更新行。
+即使你写了：
+UPDATE tbl SET x = CASE WHEN ... END
+ORDER BY id;
+PG 仍然不会按 ORDER BY 的顺序更新（因为 UPDATE 不支持有效的 ORDER BY）。
+❗重点：PG 的 UPDATE 没有“行顺序保证”
+你写的 UPDATE 语句：
+UPDATE tbl_syslog_data_agg
+SET amount = CASE WHEN ...
+WHERE agg IN (...)
+实际执行流程是：
+PG 先根据 WHERE 扫描符合行（扫描顺序由执行计划决定
+找到一行就更新一行，不保证顺序
+多事务同时执行时，锁顺序可能不一致 → 产生死锁
+这也是你会遇到死锁的核心原因。
+❓那 PG 能不能强制顺序更新？
+可以做到，但 不是直接在 UPDATE 上做 ORDER BY。
+你必须使用一种技巧：
+✅ 方法 1：子查询强制排序（推荐）
+
+你可以这样写：
+UPDATE tbl_syslog_data_agg t
+SET amount = CASE WHEN ...
+FROM (
+    SELECT agg
+    FROM tbl_syslog_data_agg
+    WHERE agg IN (...)
+    ORDER BY agg  -- 强制锁顺序
+) s
+WHERE t.agg = s.agg;
+
+这样：
+
+子查询先生成 有序行列表
+UPDATE 根据这个有序列表逐条锁行
+保证事务之间 锁行顺序一致
+大幅减少死锁概率
+这也是 PG 官方在 wiki 上提到的避免死锁的标准方式。
+~~~
+
+
+所以根据chatgpt的回答, 还是这个update的sql没有按照顺序来执行
+
+所以我将上面的sql根据公司的deepseek的提示改成了这样
+
+~~~xml
+<update id="batchDecreaseAmountByValues">
+	UPDATE tbl_syslog_data_agg t
+        SET amount = amount -
+        <foreach collection="aggValueMap" item="value" index="agg" separator=" " open="CASE" close="ELSE 0 END">
+            WHEN t.agg = #{agg} THEN #{value}
+        </foreach>
+        from (
+            select agg
+            from tbl_syslog_data_agg
+            where agg in
+            <foreach collection="aggValueMap" index="agg" open="(" separator="," close=")">
+            #{agg}
+            </foreach>
+            order by agg
+        ) s
+        WHERE t.agg = s.agg;
+</update>
+~~~
+
+但是还是发生了死锁, 最终我还是问了chatgpt, 他给我的答复是要改成下面这个样子
+
+~~~xml
+<update id="batchDecreaseAmountByValues">
+        UPDATE tbl_syslog_data_agg t
+        SET amount = amount - s.value
+        FROM (
+        SELECT agg, value
+        FROM (
+        VALUES
+        <foreach collection="aggValueMap" item="value" index="agg" separator=",">
+            (#{agg}, #{value})
+        </foreach>
+        ) AS tmp(agg, value)
+        ORDER BY agg
+        ) s
+        WHERE t.agg = s.agg;
+</update>
+~~~
+
+就相当于在更新tbl_syslog_data_agg表的时候, 必须从s表中一个一个取数据
+
+之后经过一晚上的测试, 终于是没有死锁的产生了
+
+
+
+### 补充
+
+其实当时也想到了另外一种改法, 就是在减少agg的那个任务中, 不使用如下的语法进行批量的修改
+
+~~~sql
+<update id="batchDecreaseAmountByValues">
+        UPDATE tbl_syslog_data_agg
+        SET amount = amount -
+        <foreach collection="aggValueMap" item="value" index="agg" separator=" " open="CASE" close="ELSE 0 END">
+            WHEN agg = #{agg} THEN #{value}
+        </foreach>
+        WHERE agg IN
+        <foreach collection="aggValueMap" index="agg" open="(" separator="," close=")">
+            #{agg}
+        </foreach>
+    </update>
+~~~
+
+而是修改成如下的sql, 然后按照treemap在for循环中一次一次执行就好了
+
+~~~sql
+update tbl_syslog_data_agg set amount = amount - #{cnt} where agg = #{agg}
+~~~
+
+但是考虑到这个定时任务只会半天执行一次, 如果数据量大一点的话, `tbl_syslog_data`表中的数据半天能有100w, 那么`tbl_syslog_data_agg`这个表的数据1w多估计也不是个事, 所以单条单条执行的话, 效率应该会很慢, 按照deepseek的说法, 更新1000条数据, 批量更新的话需要50-200ms, 而for循环单条数据更新的话, 需要5-20s
 
 
 
