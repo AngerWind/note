@@ -3033,6 +3033,25 @@ case函数只返回第一个符合条件的值，剩下的case部分自动被忽
   	      end ) = 1
   ```
 
+> case when 用在批量update中
+
+```shell
+# 将a, b, c的金额分别减掉1, 2, 3, 进行批量更新
+update account set amount = amount - (
+case id 
+  when 'a' then 1
+  when 'b' then 2
+  when 'c' then 3
+  else 0
+end
+)
+where id in ('a', 'b', 'c');
+```
+
+
+
+
+
 #### mysql 多表连接删除
 
 https://www.jb51.net/article/107813.htm
@@ -3186,9 +3205,7 @@ select * from city c where c.id in (select descendant from `relative` r join cit
 
 
 
-
-
-## 工作
+# 工作
 ## 记一次pg数据库死锁的问题
 
 ### 背景
@@ -4345,27 +4362,6 @@ update tbl_syslog_data_agg set amount = amount - #{cnt} where agg = #{agg}
 ~~~
 
 但是考虑到这个定时任务只会半天执行一次, 如果数据量大一点的话, `tbl_syslog_data`表中的数据半天能有100w, 那么`tbl_syslog_data_agg`这个表的数据1w多估计也不是个事, 所以单条单条执行的话, 效率应该会很慢, 按照deepseek的说法, 更新1000条数据, 批量更新的话需要50-200ms, 而for循环单条数据更新的话, 需要5-20s
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
