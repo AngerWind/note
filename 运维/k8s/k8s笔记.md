@@ -9374,6 +9374,454 @@ helm rollback release_name # 回滚到上一个版本
 heml rollback release_name reversion # 回滚到指定的版本, 也可以回滚已经删除的release
 ~~~
 
+# helm template
+
+在go中, 提供了两个关于template的包
+
+- text/template:  这个包提供了最基础的template的功能, 类似于jsp
+- html/template: 这个包在text/template的基础上, 提供了html的专项优化, 解决了模板引擎中关于html的漏洞
+
+
+
+## hello world
+
+下面这个案例用于渲染一个html文件
+
+~~~xml
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>Go Web</title>
+	</head>
+	<body>
+		{{ . }}
+	</body>
+</html>
+~~~
+
+下面是渲染的go程序
+
+~~~go
+package main
+
+import (
+	"html/template"
+	"net/http"
+)
+
+func tmpl(w http.ResponseWriter, r *http.Request) {
+    // 读取一个文件, 并将其转换为Template类型的对象
+	t1, err := template.ParseFiles("test.html")
+	if err != nil {
+		panic(err)
+	}
+	// 传入一个对象给这个模板, 然后执行Execute进行渲染
+	// 渲染完毕之后, 将其渲染的结果写入到一个Writer中
+	// 可以是http.ResponseWriter, 也可以是os.Stdout
+	t1.Execute(w, "hello world")
+}
+
+func main() {
+    // 启动一个http服务器
+	server := http.Server{
+		Addr: "127.0.0.1:8080",
+	}
+	http.HandleFunc("/tmpl", tmpl)
+	server.ListenAndServe()
+}
+~~~
+
+在上面的html文件中, 使用了一个template的语法`{{.}}`,  这里的`.`表示的就是你Execute中传入的对象
+
+上面只是除了一个字符串到里面, 当然你也可以传入一个结构体到里面, 比如下面的案例
+
+~~~go
+type Person struct {
+	Name string
+	Age  int
+}
+
+func main(){
+	p := Person{"longshuai",23}
+	tmpl, _ := template.New("test").Parse("Name: {{.Name}}, Age: {{.Age}}")
+	_ = tmpl.Execute(os.Stdout, p)
+}
+~~~
+
+他会输出如下的内容:
+
+~~~txt
+Name: longshuai, Age: 23
+~~~
+
+
+
+## 注释
+
+在template引擎中, 他是完全按照文本的格式进行替换的, 会保留所有空白, 换行. 所以千万不要对解析的内容随意的缩进, 换行
+
+如果你想要注释掉某个内容, 不希望template引擎进行转换的话, 那么可以在`{{/* xxx  */}}`来进行注释
+
+~~~go
+func main() {
+	p := Person{"longshuai", 23}
+	tmpl, _ := template.New("test").Parse(
+		`Name:{{/*.Name  */}}, Age: {{.Age}}`)
+	_ = tmpl.Execute(os.Stdout, p)
+}
+~~~
+
+上面的代码会出现如下的内容
+
+~~~txt
+Name:, Age: 23
+~~~
+
+template在渲染的时候, 会将注释的内容全部删除掉
+
+> 千万不要协写成` Name:{{ /*.Name  */ }}`,  注释要紧紧和花括号连在一起去, 前后都是, 不能有多余的内容, 否则会报错
+
+## 去除空白
+
+上面说到, 对于要解析的内容, 不要有随意的缩进和换行, 比如
+
+~~~go
+func main() {
+	p := Person{"longshuai", 23}
+	tmpl, _ := template.New("test").Parse(
+		`
+{{/* .Name */}}
+哈哈哈
+`)
+	_ = tmpl.Execute(os.Stdout, p)
+}
+~~~
+
+会输出如下的内容
+
+~~~shell
+
+
+哈哈哈
+~~~
+
+因为template在渲染的时候, 会将注释的内容全部删除掉, 但是`{{/* .Name */}}`后面其实还有一个不可见的换行符的, 这个在渲染的时候并不是被去除掉, 所以会多一个换行, 你想要去除掉换行, 那么`-`来去除掉
+
+- `{{- xxx }}`会去除掉这个占位符前面所有的换行符, 制表符, 空格等所有的空白
+- `{{ xxx -}}`会去除掉这个占位符后面的所有的制表符, 换行符, 空格等所有的空白
+- `{{- xxx -}}`会去除掉占位符前后所有的空白
+
+比如下面的内容, 被渲染后
+
+~~~go
+func main() {
+	p := Person{"longshuai", 23}
+    // 渲染的时候去除掉#后面的注释
+	tmpl, _ := template.New("test").Parse(
+		`
+{{- 23 }} < {{ 45 }} # 第一个横杆会将第一行的换行删除掉
+{{ 23 }} < {{- 45 }} # 去除掉<到45之前的空白
+{{ 23 -}} < {{ 45 }} # 去除23到<之前的空白
+{{ 23 -}} < {{- 45 }} # 去除23到<和<到45之间的空白
+    {{- 23 }}<{{ 45 -}} # 第一个横杆去除23到上一行45之间的空白, 第二个横杆去除45到下一行23之间的空白
+    {{ 23 }}
+`)
+	_ = tmpl.Execute(os.Stdout, p)
+}
+~~~
+
+会输出如下的内容
+
+~~~txt
+23 < 45
+23 <45
+23< 45
+23<4523<4523
+~~~
+
+
+
+## 管道
+
+
+
+
+
+## 变量
+
+在template中, 还可以定义变量, 规则如下:
+
+- 模板变量必须以 `$` 开头
+
+- 只能通过 `:=` 赋值
+
+- 不能重新赋值（只读）
+
+~~~go
+package main
+
+import (
+	"os"
+	"text/template"
+)
+
+type User struct {
+	Name string
+	Age  int
+}
+
+func main() {
+	tpl := `
+{{- $age := .Age -}}
+{{- $name := .Name -}}
+User {{ $name }} is {{ $age }} years old.
+`
+    // Must会接受New返回的两个参数, 如果第二个参数err不为nil, 那么会自动帮你panic, 算是一个辅助函数
+	t := template.Must(template.New("demo").Parse(tpl))
+	user := User{
+		Name: "Alice",
+		Age:  23,
+	}
+	_ = t.Execute(os.Stdout, user)
+}
+~~~
+
+上面的内容会输出如下的内容
+
+~~~txt
+User Alice is 23 years old.
+~~~
+
+
+
+### 变量的作用域
+
+需要注意的是, 模板中定义的变量是有作用域的. if, range, with都会有自己的作用域
+
+### if的作用域
+
+~~~go
+{{ $name := .Name }} // name在当前的模板中都可用
+
+{{ if gt .Age 18 }}
+  Adult: {{ $name }} 
+  {{ $x := "adult" }} // x只在if结构体内可用
+{{ end }}
+
+Name outside if: {{ $name }}
+{{ $x }}  // 这里会报错
+~~~
+
+
+
+### range的作用域
+
+range中的变量
+
+~~~go
+type Data struct {
+	Items []string
+}
+~~~
+
+~~~gotemplate
+Items:
+{{- range $i, $v := .Items }}
+  {{ $i }} => {{ $v }}
+{{- end }}
+~~~
+
+上面饿代码输出如下:
+
+~~~txt
+Items:
+0 => apple
+1 => banana
+2 => orange
+~~~
+
+其中`$i`是索引,  `$v`表示迭代的元素, `.`表示当前迭代的元素, 也就是`$v`
+
+
+
+因为在range的作用域中, `.`已经变成了当前迭代的元素, 所有如果你想要获取外层的`.`, 那么需要先将他赋值给其他的变量
+
+~~~go
+{{ $root := . }}
+
+{{ range .Items }}
+  Item: {{ . }}, User: {{ $root.Name }}
+{{ end }}
+~~~
+
+
+
+### with作用域
+
+with的作用是开启一个新的作用域, 然后将某个变量赋值给这个作用域中的`.`
+
+~~~go
+{{ with .User }}
+  Name: {{ .Name }}
+  Age:  {{ .Age }}
+{{ end }}
+
+// 等效于
+
+{{ $u := .User }}
+Name: {{ $u.Name }}
+Age:  {{ $u.Age }}
+~~~
+
+
+
+### 全局的变量
+
+有一个特殊的变量`$`,  他代表模板的最顶级作用域对象, 也就是你调用Execute()传入的对象,  他是一直不变的, 不管在哪里
+
+// todo $和define
+
+
+
+
+
+## 结构控制
+
+### if
+
+在go template中, 有如下几种形式的if
+
+~~~go
+// if
+{{ if CONDITION }}
+  ...
+{{ end }}
+
+// if else
+{{ if CONDITION }}
+Enabled
+{{ else }}
+Disabled
+{{ end }}
+
+// if else if else
+{{ if CONDITION }}
+Senior
+{{ else if CONDITION1 }}
+Adult
+{{ else }}
+Minor
+{{ end }}
+~~~
+
+如果if后面接的是一个变量, 比如下面这种形式
+
+~~~go
+{{ if .XXX }}
+Name: {{ .XXX }}
+{{ end }}
+~~~
+
+那么
+
+| 值             | 结果  |
+| -------------- | ----- |
+| `""`           | false |
+| `0`            | false |
+| `nil`          | false |
+| 空 slice / map | false |
+| 非空           | true  |
+
+
+
+#### if中的比较
+
+如果你要在if中比较数值的大小, 那么需要使用如下的方式, 而不是直接使用大于号和小于号
+
+~~~go
+{{ if gt .Age 18 }}
+Adult
+{{ end }}
+~~~
+
+常见的比较函数
+
+| 函数 | 含义     |
+| ---- | -------- |
+| `eq` | 等于     |
+| `ne` | 不等于   |
+| `gt` | 大于     |
+| `ge` | 大于等于 |
+| `lt` | 小于     |
+| `le` | 小于等于 |
+
+#### if中的逻辑判断
+
+如果你要在if中进行逻辑判断, 那么可以参考如下的形式
+
+and
+
+~~~gotemplate
+{{ if and .Enabled (gt .Age 18) }}
+Adult and enabled
+{{ end }}
+~~~
+
+or
+
+~~~gotemplate
+{{ if or (eq .Env "test") (eq .Env "dev") }}
+Non-prod
+{{ end }}
+~~~
+
+not
+
+~~~gotemplate
+{{ if not .Disabled }}
+Active
+{{ end }}
+~~~
+
+#### if和去除空白
+
+在使用if-end的时候, 特别要注意的是, if和end行中的换行都会被保留, 比如
+
+~~~gotemplate
+{{ if not .Disabled }}
+Active
+{{ end }}
+~~~
+
+在被渲染之后是这个样子
+
+~~~txt
+
+Active
+
+~~~
+
+因为if行和end行中的换行被保留了下来, 所以推荐的写法是, 当然具体情况取决于你想要的渲染之后的内容
+
+~~~gotemplate
+{{- if not .Disabled -}}
+Active
+{{- end -}}
+~~~
+
+
+
+### range
+
+
+
+
+
+### with
+
+
+
 
 
 # kubernetes-dashboard
