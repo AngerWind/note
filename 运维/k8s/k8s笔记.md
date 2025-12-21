@@ -8533,6 +8533,349 @@ helm repo add aliyun https://kubernetes.oss-cn-hangzhou.aliyuncs.com/charts
 
 ## 创建自定义charts
 
+要使用自定义的chart的话, 首先你可以使用如下的命令来创建一个chart
+
+~~~shell
+helm create mychart
+~~~
+
+他会生成如下结构(只是演示, 有些可能没有)
+
+~~~text
+mychart/
+├── Chart.yaml
+├── values.yaml
+├── charts/
+├── templates/
+│   ├── _helpers.tpl
+│   ├── deployment.yaml
+│   ├── service.yaml
+│   ├── ingress.yaml
+│   ├── serviceaccount.yaml
+│   ├── hpa.yaml
+│   ├── NOTES.txt
+│   └── tests/
+│       └── test-connection.yaml
+└── .helmignore
+~~~
+
+
+
+### chart中各个文件的作用
+
+#### Chart.yaml
+
+他是一个chart的必须文件, 里面包含了这个chart本身的一些信息
+
+~~~yaml
+apiVersion: v2 # 制定Chart.yaml的规范版本, 在helm3中必须指定v2
+name: my-web-app # 当前chart的名字
+description: >
+  A Helm chart for deploying My Web Application.
+  This application provides REST APIs and background jobs.
+  
+# 表示当前的chart是一个app, 可以直接helm install
+# 另外一个可选择是library, 表示是公共模板, 不能install
+type: application 
+
+version: 1.4.2 # 当前chart的版本
+appVersion: "2.3.7" # 业务应用的版本
+
+kubeVersion: ">=1.23.0 <1.30.0" # 声明当前Chart支持的k8s的版本范围, 如果版本不匹配, 安装会报错
+
+# 下面三个属性是当前chart的home page
+home: https://github.com/example/my-web-app
+sources:
+  - https://github.com/example/my-web-app
+  - https://github.com/example/my-web-app-deploy
+icon: https://raw.githubusercontent.com/example/my-web-app/main/docs/logo.png
+
+# 关键字, 在helm search / Artifact Hub 中搜索有用
+keywords:
+  - web
+  - spring-boot
+  - backend
+  - api
+
+# 负责任信息
+maintainers:
+  - name: Alice Zhang
+    email: alice@example.com
+    url: https://example.com/alice
+  - name: Bob Li
+    email: bob@example.com
+
+# 申明当前chart需要依赖的chart
+dependencies:
+  - name: redis
+    version: "~17.3.0"
+    repository: "https://charts.bitnami.com/bitnami"
+    alias: cache # 安装的时候重命名这个chart
+    condition: cache.enabled
+
+# helm不使用这个, 主要用于第三方平台(Artifact Hub)读取
+annotations:
+  category: backend
+  support: "support@example.com"
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: GitHub
+      url: https://github.com/example/my-web-app
+    - name: Documentation
+      url: https://example.com/docs
+~~~
+
+
+
+#### values.yaml
+
+所有模板变量的默认值来源
+
+~~~yaml
+replicaCount: 1
+
+image:
+  repository: nginx
+  tag: "1.25"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 80
+~~~
+
+你可以在`templates/`中的模板中使用`.Values`来使用这里面的值, 比如
+
+~~~yaml
+# templates/aa.yaml
+{{ .Values.image.repository }}
+~~~
+
+
+
+当然这里面的值也可以被覆盖
+
+~~~shell
+helm install . -f custom.yaml --set key=value
+~~~
+
+
+
+#### .helmignore
+
+这是一个可选的文件, 类似`.gitignore`, 可以决定哪些文件不打包进chart, 减少chart包的体积, 避免把无关的文件发送给Helm
+
+~~~txt
+.git/
+*.swp
+*.tmp
+~~~
+
+
+
+#### charts目录
+
+这是一个目录, 主要用于存放子chart(依赖), 他的目录结构类似如下
+
+~~~text
+charts/
+├── mysql-9.4.0.tgz
+└── redis/
+    ├── Chart.yaml
+    └── templates/
+~~~
+
+这类子chart主要有两种来源
+
+1. 本地解压后的子Chart
+2. .tgz打包好的依赖
+
+如果你在`Chart.yaml`中声明了`dependencies`, 那么helm就会下载这些文件到charts这个目录里面
+
+
+
+#### templates目录
+
+这个目录里面保存的是你要创建的资源的模板, 比如deployment.yaml, service.yaml等等
+
+~~~yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mychart.fullname" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+~~~
+
+
+
+#### _helpers.tpl
+
+如果你有通用的模板, 那么可以定义在这个文件里面, 比如下面的文件
+
+~~~yaml
+# _helpers.tpl
+
+{{- define "mychart.fullname" -}}
+{{ .Release.Name }}-{{ .Chart.Name }}
+{{- end -}}
+~~~
+
+你可以在templates中的yaml文件中通过include, template 来调用这些模板
+
+> 这个文件里面只能定义模板, 不做其他的用途
+
+
+
+#### NOTES.txt
+
+这个文件主要用于安装/升级完成之后, 显示给用户的提示信息
+
+~~~txt
+Your application is now running.
+
+Access it via:
+  http://{{ .Release.Name }}.example.com
+~~~
+
+这个文件常常用于
+
+- 提示你可以访问哪些地址来操作release
+- 提示默认的账号密码
+- 提示你后续需要进行的操作等等
+
+
+
+#### templates/tests目录
+
+`templates/tests/` 用来定义 Helm Chart 的“**post-install tests**”,  他们通常是Pod和Job, 用来来验证 Chart 是否工作正常
+
+
+
+1. `templates/tests`中的文件怎么被helm识别的
+
+   tests 里的 YAML 本质上还是 **Kubernetes 资源模板**，但多了一个关键注解：
+
+   ```
+   metadata:
+     annotations:
+       "helm.sh/hook": test
+   ```
+
+   只要：
+
+   - 资源在 `templates/` 下（通常放在 `templates/tests/`）
+   - 带有 `helm.sh/hook: test`
+
+   👉 Helm 就会把它当成 **测试资源**
+
+2. `templates/tests`中的文件什么时候执行
+
+   **他们不会自动执行**, 你必须手动执行：
+
+   ```
+   helm test <release-name>
+   ```
+
+   执行流程：
+
+   1. Helm 找到所有 `helm.sh/hook: test` 的资源
+   2. 创建这些资源（Pod / Job）
+   3. 等待它们完成
+   4. 根据退出状态判断测试成功或失败, 如果容器exit code为0表示测试成功, 否则失败
+
+3. `templates/tests`中的文件通常会指定hook-delete-policy这个annotation
+
+   因为默认情况下测试完的pod/job还是会留在集群中, 所以你可以通过hook-delete-policy来指定是否要删除
+
+   ~~~yaml
+   metadata:
+     annotations:
+       "helm.sh/hook": test
+       "helm.sh/hook-delete-policy": hook-succeeded
+   ~~~
+
+   | 值                   | 含义           |
+   | -------------------- | -------------- |
+   | hook-succeeded       | 成功后删除     |
+   | hook-failed          | 失败后删除     |
+   | before-hook-creation | 创建前先删旧的 |
+
+
+
+一个经典案例就是
+
+~~~yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "mychart.fullname" . }}-test-connection"
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command:
+        - wget
+      args:
+        - "--spider"
+        - "http://{{ include "mychart.fullname" . }}:{{ .Values.service.port }}"
+  restartPolicy: Never
+~~~
+
+他会启动一个pod, 并通过wgt --spider来调用对应的接口, 如果能连通那么exit 0否则exit 非0
+
+
+
+### chart的依赖
+
+~~~yaml
+# 申明当前chart需要依赖的chart
+# 对于依赖的chart, 他会下载到charts的根目录下面
+dependencies:
+  # 下面会从bitnami中下载mysql:9.14.0的chart到 charts/mysql中
+  # charts/
+  #   mysql/
+  #     Chart.yaml
+  #     values.yaml
+  #     templates/
+  - name: mysql
+    version: ">=9.0.0 <10.0.0" # 依赖mysql的版本, 表达式类似node
+    repository: "https://charts.bitnami.com/bitnami"
+    alias: db
+    
+    # 在什么情况下需要依赖mysql, 他会去values.yaml中查找这个值
+    # 多个条件使用逗号隔开, 是or的关系
+    condition: mysql.enabled,global.mysql.enabled 
+    # 用于批量控制依赖, 他回去values.yaml中查找 tags.database和tags.stateful
+    tags:
+      - database
+      - stateful
+    import-values:
+      - child: auth.rootPassword
+        parent: mysqlRootPassword
+~~~
+
+
+
+
+
+
+
+
+
+### 自定义chart的相关命令
+
+~~~shell
+helm create mychart  # 创建一个chart
+helm install . -f custom.yaml --set key=value
+~~~
+
+
+
+
+
 ~~~shell
 helm create chart_name 
 helm install release_name chart_dir # 根据创建出来的chart文件夹, 生成一个release
@@ -8974,8 +9317,6 @@ spec:
 Helm 中的 hook（钩子）是一种特殊的模板资源机制，用于在 Helm 的安装、升级、删除等生命周期事件中，插入自定义行为（如执行一个初始化 Job、清理脚本等）。
 
 **如果hook 运行失败默认会中断 Helm 流程**
-
-
 
 
 
