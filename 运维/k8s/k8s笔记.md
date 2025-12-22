@@ -8975,6 +8975,17 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 
 5. 通过charts目录来安装一个release, 可以使用`--set image.tag=1.25`来覆盖Values中的值
 
+   也可以通过-f 来指定一个新yaml文件作为values.yaml文件来覆盖chart中的values.yaml中的值(项目中的values.yaml依旧生效)
+
+   优先级如下, 从高到低
+
+   ~~~txt
+   values.yaml
+   charts/*/values.yaml
+   -f custom.yaml
+   --set key=value
+   ~~~
+
    ~~~shell
    install web2 hello-world/ --set image.tag=1.25
    ~~~
@@ -8984,9 +8995,9 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
 6. 更新release
 
    想要更新release, 有两种办法
-   
+
    - 我们直接修改chart中的文件,  比如这里我们将`values.yaml`中的`image.tag`修改为`1.25`, 然后调用如下命令
-   
+
      ~~~shell
      # 根据hello-world中的chart文件, 来更新web2这个release
      # 不真正的更新, 而是查看即将用于执行的配置文件
@@ -8995,11 +9006,11 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
      # 根据hello-world中的chart文件, 来更新web2这个release
      helm upgrade web2 hello-world/
      ~~~
-   
+
       
-   
+
    - 我们也可以直接在命令行中指定属性, 来覆盖`values.yaml`中的`image.tag`属性
-   
+
      ~~~shell
      # 可以先通过helm upgrade web2 hello-world/  --set image.tag=1.25 --dry-run来查看即将用于执行的配置文件
      
@@ -9717,10 +9728,16 @@ heml rollback release_name reversion # 回滚到指定的版本, 也可以回滚
 
 # helm template
 
-在go中, 提供了两个关于template的包
+https://www.cnblogs.com/f-ck-need-u/p/10053124.html
 
-- text/template:  这个包提供了最基础的template的功能, 类似于jsp
-- html/template: 这个包在text/template的基础上, 提供了html的专项优化, 解决了模板引擎中关于html的漏洞
+https://www.cnblogs.com/f-ck-need-u/p/10035768.html
+
+- 在深入语法前，必须先明确 Go 模板的核心基础 —— 两大包的定位与语法设计本质，这是理解所有语法的前提：
+
+  | 包名            | 核心定位           | 语法支持                        | 核心差异点                      | 官方设计目标                               |
+  | --------------- | ------------------ | ------------------------------- | ------------------------------- | ------------------------------------------ |
+  | `text/template` | 通用文本模板引擎   | 支持所有基础语法与高级特性      | 无自动转义，输出原始文本        | 适配配置文件、日志、邮件正文等非 HTML 场景 |
+  | `html/template` | 安全 HTML 模板引擎 | 完全继承`text/template`所有语法 | 上下文感知自动转义，防 XSS 注入 | 适配 Web 页面、HTML 邮件等场景             |
 
 
 
@@ -9935,10 +9952,9 @@ func main() {
 在template中, 还可以定义变量, 规则如下:
 
 - 模板变量必须以 `$` 开头
-
-- 只能通过 `:=` 赋值
-
-- 不能重新赋值（只读）
+- 通过 `{{ $变量名 := pipeline }}`创建变量并赋值
+- 通过`{{ $变量名 = pipeline }}` 对已经存在的变量进行赋值
+- 子作用域可定义与父作用域同名变量，会覆盖父作用域变量（局部优先）。
 
 ~~~go
 package main
