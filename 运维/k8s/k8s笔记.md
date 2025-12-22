@@ -8830,6 +8830,86 @@ spec:
 
 ### chart的依赖
 
+在helm的chart.yaml中, 你可以声明一个`dependencies`字段, 这个字段主要用来声明当前Helm Chart所依赖的其他Chart (通常被称为是子chart),  他是实现chart复用和模块化管理的核心机制
+
+~~~yaml
+apiVersion: v2
+name: my-app
+version: 1.0.0
+
+dependencies:
+  - name: redis
+    version: 14.8.8
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+    tags:
+      - backend
+    import-values:
+      - data: redisData
+~~~
+
+各个字段的说明如下
+
+| 字段            | 类型   | 说明                                                         |
+| --------------- | ------ | ------------------------------------------------------------ |
+| `name`          | string | 依赖的 Chart 名称（通常是 Chart 的 `Chart.yaml` 中的 `name`）。 |
+| `version`       | string | 指定依赖 Chart 的版本，可以使用 semver 范围，如 `">=14.0.0 <15.0.0"`。 |
+| `repository`    | string | 如果你使用的是远程仓库中的第三方chart, 那么这个字段是指定helm仓库的url<br />如果你的子chart就是你自己写的, 并且放在`charts`目录下面, 那么可省略这个字段。 |
+| `condition`     | string | 用来控制是否启用这个依赖 Chart。通常指向父项目的 `values.yaml` 中的布尔值，例如 `redis.enabled`。 |
+| `tags`          | list   | 用于对依赖 Chart 分类，通过 `--set <tag>=true` 启用或禁用同一标签下的所有依赖。 |
+| `import-values` | list   | 用于从子 Chart 的 `values.yaml` 导入部分值到父 Chart 的 `values.yaml`。可以是简单映射或嵌套映射。 |
+
+
+
+#### 条件控制
+
+在`dependencies`中,  condition和tags是控制这个子chart是否启用的关键
+
+- condition
+
+  通过 `values.yaml` 中的布尔值启用或禁用某个 Chart，例如：
+
+  ```yaml
+  redis:
+    enabled: false
+  ```
+
+  如果 `condition: redis.enabled`，那么 子chart redis就不会被渲染执行
+
+  当然condition可以设置为多条件的情况, 他们之间是and的条件, 只有在所有都成立的时候执行子chart
+
+  ~~~yaml
+  condition:
+    - redis.enabled
+    - common.enabled
+  ~~~
+
+- tags
+
+  你可以给多个子chart设置tags, 然后在安装或者升级的时候, 通过`--set <tag>=true|false`批量控制是否启用一批次的子chart
+
+  ~~~yaml
+  tags:
+    - backend
+    - cache
+  ~~~
+
+  ~~~yaml
+  helm install my-app ./my-chart --set backend=true
+  ~~~
+
+  多个tag之间是or的条件, 只要有一个条件成立,那么tag就会成立
+
+- condition和tags之间
+
+  如果你同时设置了condition和tags的话, 那么只有同时condition和tags同时成立, 那么子chart才会被渲染执行
+
+
+
+#### import-values
+
+
+
 ~~~yaml
 # 申明当前chart需要依赖的chart
 # 对于依赖的chart, 他会下载到charts的根目录下面
