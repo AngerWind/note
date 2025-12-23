@@ -8512,7 +8512,9 @@ Helm3 安装与升级过程主要是 helm 二进制文件的替换。
 
 
 
-## 添加仓库
+## 三方chart
+
+### 命令行
 
 | 命令                         | 说明                                                         |
 | ---------------------------- | ------------------------------------------------------------ |
@@ -8528,6 +8530,145 @@ Helm3 安装与升级过程主要是 helm 二进制文件的替换。
 helm repo add microsoft http://mirror.azure.cn/kubernetes/charts
 helm repo add aliyun https://kubernetes.oss-cn-hangzhou.aliyuncs.com/charts
 ~~~
+
+
+
+你可以通过如下命令来增加, 删除, 更新一个仓库
+
+~~~shell
+helm repo add bitnami https://charts.bitnami.com/bitnami # 添加仓库
+helm repo add myrepo https://repo.example.com \
+  --username admin \
+  --password xxx # 添加需要认真的私有仓库
+
+helm repo list # 查看现有仓库
+
+# 更新仓库的index.yaml文件, helm search不是实时搜索仓库, 而是查找本地的index.yaml文件
+# 所以不更新这个index.yaml文件, 你就找不到新的版本的chart
+helm repo update
+
+helm repo remove bitnami # 删除一个仓库
+~~~
+
+
+
+**chart除了可以保存在helm的repository中, 中央仓库中, 还可以保持在OCI仓库中, 这个OCI仓库也是私有仓库的一种, 但是他主要用来存放镜像, chart之类的东西**
+
+OCI仓库相较于helm repository仓库, 有以下几点不同
+
+- 使用专门的oci协议来拉取文件, 而helm repository使用http协议
+- 支持认证, RBAC等等
+- 可以和镜像一起统一治理
+
+你可以使用如下的命令来登录一个OCI仓库, 比如barbor
+
+~~~shell
+helm registry login harbor.example.com
+helm registry login harbor.example.com  -u admin -p password # 带认证
+
+helm registry logout harbor.example.com # 退出oci仓库
+
+helm push myapp-1.2.0.tgz oci://harbor.example.com/helm # 推送chart到oci仓库
+helm pull oci://harbor.example.com/helm/myapp --version 1.2.0 # 从oci仓库中下载chart
+
+~~~
+
+
+
+有了仓库之后, 你就可以搜索仓库中的第三方chart文件了
+
+~~~shell
+helm repo update # 搜索之前一定要执行这个命令, 更新index文件
+
+helm search repo mysql # 这个命令会查找本地的repo对应的index文件, 并搜索名称包含mysql的的chart
+
+
+helm search repo mysql --versions # 显示chart的所有的版本
+helm search repo mysql --devel # 包含开发版本
+helm search repo mysql --version 9.14.2 # 查找指定的版本
+~~~
+
+当然你也可以在helm的公共仓库Helm Hub中查找chart
+
+~~~shell
+helm search hub kafka # 这个命令实时查找中央仓库中的chart
+~~~
+
+
+
+在找到你想要查看的chart之后, 你可能想要看看chart里面写了什么东西, 他的values.yaml中可以指定哪些变量, 那么你可以使用下面的命令
+
+~~~shell
+helm show all bitnami/mysql # 查看所有内容, 通常没什么大用, 因为内容太多了
+helm show chart bitnami/mysql # 查看chart的信息 
+helm show crds bitnami/mysql # 查看charts的CRDS
+helm show readme bitnami/mysql # 查看charts的readme
+helm show values bitnami/mysql # 查看chart的values.yaml
+~~~
+
+
+
+之后如果你确认是你想要下载的chart, 你就可以通过helm pull把想要的chart下载到本地, 为后面的安装做准备
+
+~~~shell
+helm pull bitnami/mysql # 下载最新的版本
+helm pull bitnami/mysql --version 9.14.2 # 下载指定的版本
+helm pull oci://harbor.example.com/helm/myapp  --version 1.2.0 # 从oci仓库下载
+~~~
+
+当然你也可以直接安装chart
+
+~~~shell
+helm install myapp  oci://harbor.example.com/helm/myapp  --version 1.2.0 # 直接安装chart
+~~~
+
+
+
+
+
+### 中央仓库
+
+我们这里以安装nginx为例, 首先访问https://artifacthub.io/, 搜索框中搜索 `nginx`
+
+![image-20250708211107420](img/k8s笔记/image-20250708211107420.png)
+
+点击右侧的install
+
+![image-20250708211227876](img/k8s笔记/image-20250708211227876.png)
+
+首先添加通过`helm repo`添加仓库, 然后通过`helm install` 来安装这个nginx 
+
+![image-20250708211328021](img/k8s笔记/image-20250708211328021.png)
+
+~~~shell
+# 添加nginx的仓库
+helm repo add bitnami https://charts.bitnami.com/bitnami
+
+# 根据仓库中的nginx的chart, 创建一个my-nginx的release
+helm install my-nginx bitnami/nginx --version 21.0.6
+
+# 当然, 你也可以直接下载仓库中的nginx的chart, 这会下载一个nginx-21.0.6.tgz到本地
+helm pull oci://registry-1.docker.io/bitnamicharts/nginx --version 21.0.6
+tar -xzvf tar -zxvf nginx-21.0.6.tgz # 解压出一个nginx目录
+helm install my-nginx nginx # 根据nginx中的chart来创建my-nginx
+
+# 当然, 你也可以指定release安装到你想要的namespace中
+helm install my-nginx nginx --namespace my-ns # 指定安装到my-ns的命名空间中
+
+# 如果你不想要使用nginx/values.yaml来配置chart, 那么也可以自己指定一个文件来替代values.yaml
+helm install my-nginx nginx --namespace my-ns -f my-values.yaml # 不要使用默认的values.yaml而是使用my-values.yaml
+
+# 如果你不想要完全覆盖values.yaml中, 只想覆盖个别的属性, 那么可以使用--set属性来覆盖
+helm install my-nginx nginx --namespace my-ns --set aaa.bbb=xxx
+~~~
+
+
+
+
+
+
+
+
 
 
 
@@ -8908,156 +9049,280 @@ dependencies:
 
 #### import-values
 
+这个字段在 Helm v3 中非常重要，它用于 **将子 Chart 的值映射到父 Chart 的 values 中**,  **这样你就可以在父chart中的values.yaml中控制子chart的行为了**
 
+
+
+比如你有一个redis的子chart, 他的values.yaml如下:
 
 ~~~yaml
-# 申明当前chart需要依赖的chart
-# 对于依赖的chart, 他会下载到charts的根目录下面
+config:
+  maxmemory: "256mb"
+  maxclients: 1000
+password: "123456"
+~~~
+
+那么你可以通过`import-values`将这段代码导入父chart的values.yaml的某个路径下, 比如
+
+~~~yaml
 dependencies:
-  # 下面会从bitnami中下载mysql:9.14.0的chart到 charts/mysql中
-  # charts/
-  #   mysql/
-  #     Chart.yaml
-  #     values.yaml
-  #     templates/
-  - name: mysql
-    version: ">=9.0.0 <10.0.0" # 依赖mysql的版本, 表达式类似node
+  - name: redis
+    version: 14.8.8
     repository: "https://charts.bitnami.com/bitnami"
-    alias: db
-    
-    # 在什么情况下需要依赖mysql, 他会去values.yaml中查找这个值
-    # 多个条件使用逗号隔开, 是or的关系
-    condition: mysql.enabled,global.mysql.enabled 
-    # 用于批量控制依赖, 他回去values.yaml中查找 tags.database和tags.stateful
-    tags:
-      - database
-      - stateful
     import-values:
-      - child: auth.rootPassword
-        parent: mysqlRootPassword
+      - redisConfig: config
+      - password
+~~~
+
+其中`password` 用于将redis这个chart中的`password`键及其子内容导入到父 Chart 的 `values.yaml` 下。
+
+`redisConfig: config`将redis这个子chart的values.yaml中的config这个字段导入到父chart的values.yaml中的redisConfig这个key下面
+
+这就相当于你在父chart的values.yaml中写了下面的代码一样
+
+~~~yaml
+redisConfig:
+  maxmemory: "256mb"
+  maxclients: 1000
+password: "123456"
 ~~~
 
 
 
+当然你也可以在父chart中实际指定这些值, 来覆盖子chart中的values.yaml
+
+~~~yaml
+redisConfig:
+  maxmemory: "512mb"  # 覆盖子 Chart 的 maxmemory
+password: "abcdef"    # 覆盖子 Chart 的 password
+~~~
 
 
 
+#### 依赖第三方子chart
+
+如果你的chart依赖的是第三方的子chart, 那么你可以通过如下的命令来下载这个子chart
+
+```shell
+helm dependency update
+```
+
+你执行上面的命令后, 他会查找`charts.yaml`中的`dependencies`字段, 如果这个子chart是一个第三方依赖, 那么他会去远程仓库中下载这个chart对应的tgz压缩包, 并保持到`charts/`这个目录下, 并生成对应的`Chart.lock`文件
+
+~~~text
+my-chart/
+├── Chart.yaml
+├── Chart.lock      👈 自动生成 / 更新
+├── charts/         👈 下载好的依赖 Chart
+│   ├── redis-14.8.8.tgz
+│   └── postgresql-12.3.4.tgz
+└── values.yaml
+~~~
 
 
 
-### 自定义chart的相关命令
+当然还有一个命令
 
 ~~~shell
-helm create mychart  # 创建一个chart
-helm install . -f custom.yaml --set key=value
+helm dependency build
 ~~~
 
+他和`helm dependency update`的区别在于
+
+| 命令     | 行为                                                         |
+| -------- | ------------------------------------------------------------ |
+| `update` | **重新解析 Chart.yaml，拉取最新符合条件的依赖，并更新 Chart.lock <br />适合用于第一次生成lock文件, 或者更新依赖** |
+| `build`  | **严格按照 Chart.lock 下载依赖，不解析版本范围**<br />**适用于已经有了lock文件, 要下载对应的依赖** |
 
 
 
+
+
+### chart的安装/测试/升级/调试/回滚
+
+#### 准备
+
+首先你可以通过如下的命令来创建一个chart模版
 
 ~~~shell
-helm create chart_name 
-helm install release_name chart_dir # 根据创建出来的chart文件夹, 生成一个release
-helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
+[root@node-157 helm-test]# helm create myapp
+Creating myapp
+[root@node-157 helm-test]# ls
+myapp
+[root@node-157 helm-test]# tree
+.
+└── myapp
+    ├── charts
+    ├── Chart.yaml
+    ├── templates
+    │   ├── deployment.yaml
+    │   ├── _helpers.tpl
+    │   ├── hpa.yaml
+    │   ├── ingress.yaml
+    │   ├── NOTES.txt
+    │   ├── serviceaccount.yaml
+    │   ├── service.yaml
+    │   └── tests
+    │       └── test-connection.yaml
+    └── values.yaml
 ~~~
 
-1. 创建chart目录
+你可以将`templates/`中不需要的文件全部删除掉, 并添加你自己的k8s资源文件, 比如下面添加了两个志愿文件
 
-   ~~~shell
-   helm create hello-world
-   ~~~
+~~~yaml
+# deployment.yaml 
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # 这里引用了一个变量, 通过这个变量可以引用helm install 传入进来的release name
+  name: {{.Release.Name}}-deploy 
+  # 通过这个变量来引用values.yaml中的ns变量
+  namespace: {{.Values.ns}} 
+spec:
+  # # 通过这个变量来引用values.yaml中的replicas变量
+  replicas: {{.Values.replicas}} 
+  selector:
+    matchLabels:
+      app: {{.Release.Name}}
+  template:
+    metadata:
+      labels:
+        app: {{.Release.Name}}
+    spec:
+      containers:
+        - name: {{.Release.Name}}-c
+          image: {{.Values.image.name}}:{{.Values.image.tag}}
+          ports:
+            - name: http-web-svc # 端口名字
+              containerPort: 80
+              
+# service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{.Release.Name}}-svc
+  namespace: {{.Values.ns}}
+spec:
+  type: NodePort
+  selector:   # 表现选择器, 选择指定的pod
+    app: {{.Release.Name}}
+  ports:
+    - name: name1
+      port: 80 # 访问service内部ip的端口
+      protocol: TCP
+      targetPort: http-web-svc # 转发到的端口, 可以直接写端口名字, 也可以使用数字
+~~~
 
-   <img src="img/k8s笔记/image-20231024153413429.png" alt="image-20231024153413429" style="zoom:50%;" />
+之后你可以在values.yaml中添加你需要的变量
 
-   该命令会在本地目录下创建一个chart_name目录, 里面有charts, templates目录和Charts.yaml, values.yaml文件
+~~~yaml
+replicas: 3
+ns: default
+image:
+  name: nginx
+  tag: 1.24
+~~~
 
-   - Chart.yaml: 当前chart属性配置文件, **通常不需要修改**
-- templates: 编写k8s的yaml模板文件放在这个目录, 在安装release的时候, helm会执行这些yaml文件并创建对应的k8s资源
-  
-   - values.yaml: 定义变量, 在templates中的文件可以引用到这些变量
-- charts: 不知道干什么的目录, 没有用上
-   - .helmignore: 可选的文件, 类似.gitignore, 在打包heml的时候, 指定不需要打包的文件
 
-   
 
-2. 将templates中的模板文件全部删除, 并在其中编写yaml文件, 我们现在添加两个
+#### 子依赖
 
-   `deployment.yaml`
+如果你的chart有子依赖,  那么可以添加到`Chart.yaml`中的`dependencies`字段中
 
-   ~~~yaml
-   apiVersion: apps/v1
-   kind: Deployment
-   metadata:
-     # 这里引用了一个变量, 通过这个变量可以引用helm install 传入进来的release name
-     name: {{.Release.Name}}-deploy 
-     # 通过这个变量来引用values.yaml中的ns变量
-     namespace: {{.Values.ns}} 
-   spec:
-     # # 通过这个变量来引用values.yaml中的replicas变量
-     replicas: {{.Values.replicas}} 
-     selector:
-       matchLabels:
-         app: {{.Release.Name}}
-     template:
-       metadata:
-         labels:
-           app: {{.Release.Name}}
-       spec:
-         containers:
-           - name: {{.Release.Name}}-c
-             image: {{.Values.image.name}}:{{.Values.image.tag}}
-             ports:
-               - name: http-web-svc # 端口名字
-                 containerPort: 80
-   ~~~
+你可以通过如下的命令来查看一个chart中包含了哪些子chart
 
-   `service.yaml`
+~~~shell
+helm dependency list
+~~~
 
-   ~~~yaml
-   apiVersion: v1
-   kind: Service
-   metadata:
-     name: {{.Release.Name}}-svc
-     namespace: {{.Values.ns}}
-   spec:
-     type: NodePort
-     selector:   # 表现选择器, 选择指定的pod
-       app: {{.Release.Name}}
-     ports:
-       - name: name1
-         port: 80 # 访问service内部ip的端口
-         protocol: TCP
-         targetPort: http-web-svc # 转发到的端口, 可以直接写端口名字, 也可以使用数字
-   ~~~
+之后你可以通过如下的命令下载依赖的子依赖的tag压缩包
 
-   ![image-20231024154736774](img/k8s笔记/image-20231024154736774.png)
+~~~helm
+helm dependency update myapp
+~~~
 
-3. 在values.yaml中添加变量
+上面的命令会读取`dependencies`字段, 然后下载对应的chart压缩包到`charts/`中, 然后生成`Chart.lock`到根目录下面
 
-   ~~~yaml
-   replicas: 3
-   ns: default
-   image:
-     name: nginx
-     tag: 1.24
-   ~~~
+如果你的chart已经有了`Chart.lock`文件, 你也可以使用下面的命令来下载子chart,  他会严格按照`Chart.lock`中指定的版本来下载
 
-   
+~~~shell
+helm dependency build myapp
+~~~
 
-4. 查看helm即将用于执行的yaml配置文件
 
-   ~~~shell
-   helm install --dry-run web2 hello-world/
-   ~~~
 
-   <img src="img/k8s笔记/image-20231024161010076.png" alt="image-20231024161010076" style="zoom:50%;" />
 
-5. 通过charts目录来安装一个release, 可以使用`--set image.tag=1.25`来覆盖Values中的值
 
-   也可以通过-f 来指定一个新yaml文件作为values.yaml文件来覆盖chart中的values.yaml中的值(项目中的values.yaml依旧生效)
+#### 调试
 
-   优先级如下, 从高到低
+你在完成了Chart的内容编写之后, 可以通过如下的命令来校验char中的各个文件是否有语法问题, 是否缺少必要的字段等等
+
+~~~shell
+helm lint myapp
+~~~
+
+如果上面的代码通过了, 那么就可以进行安装了, 但是在安装之前, 你可以通过如下的命令来查看一下最终要执行的k8s资源到底长什么样子
+
+~~~shell
+helm template my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2
+~~~
+
+如果你想要更详细的内容, 那么你可以添加上`--debug`选项
+
+~~~shell
+helm template my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2 --debug
+~~~
+
+当然你也可以将渲染后的内容, 输出到指定的文件中, 便于查看
+
+~~~shell
+helm template my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2 > rendered.yaml
+~~~
+
+如果你不想查看渲染之后的所有文件, 只想查看特定的文件渲染后的样子, 那么可以使用如下命令
+
+~~~shell
+helm template my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2 --show-only templates/deployment.yaml
+~~~
+
+
+
+#### 安装
+
+在查看了最终渲染后的资源文件之后, 那么你可以使用如下命令进模拟安装
+
+~~~shell
+helm install my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2  --dry-run # 模拟安装
+helm install my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2  --dry-run --debug # 带调试信息的模拟安装
+~~~
+
+如果模拟安装没有问题的话, 那么你就可以执行真正的安装了
+
+~~~shell
+helm install my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2 # 直接安装
+
+helm install my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2 --debug # 带调试信息的安装
+
+helm install my-release myapp -f aaa.yaml -f bbb.yaml --set key1=value1 --set key2=value2 --debug  2>&1 | tee install-debug.log # 保持调试信息到日志文件中
+~~~
+
+当然还有一些flag可以在安装和升级的时候可以使用的
+
+| Flag               | 说明                                 | 适用命令                   |
+| ------------------ | ------------------------------------ | -------------------------- |
+| -n, --namespace    | 指定安装的release的命名空间          | install, upgrade, list等   |
+| --create-namespace | 如果指定的ns不存在, 那么自动创建     | install, upgrade           |
+| -f, --values       | 指定values文件, 可以多次指定多个文件 | install, upgrade, template |
+| --set              | 甚至参数值                           | install, upgrade           |
+| --dry-run          | 模拟运行                             | install, upgrade           |
+| --debug            | 输出调试信息                         | install, upgrade, template |
+| --wait             | 等待就绪                             | install, upgrade           |
+| --timeout          | 指定超时时间                         | install, upgrade           |
+| --atomic           | 失败自动回滚                         | install, upgrade           |
+| --version          | 指定chart版本                        | install, upgrade           |
+| -o, --output       | 指定要输出的格式                     | install, get               |
+
+如果你同时指定了`-f`和`--set`, 那么他们的优先级如下, 从低到高
 
    ~~~txt
    values.yaml
@@ -9066,340 +9331,238 @@ helm upgrade release_name chart_dir # 根据chart文件夹, 更新配置
    --set key=value
    ~~~
 
-   ~~~shell
-   install web2 hello-world/ --set image.tag=1.25
-   ~~~
 
-   ![image-20231024160700995](img/k8s笔记/image-20231024160700995.png)
 
-6. 更新release
+#### 测试
 
-   想要更新release, 有两种办法
-
-   - 我们直接修改chart中的文件,  比如这里我们将`values.yaml`中的`image.tag`修改为`1.25`, 然后调用如下命令
-
-     ~~~shell
-     # 根据hello-world中的chart文件, 来更新web2这个release
-     # 不真正的更新, 而是查看即将用于执行的配置文件
-     helm upgrade web2 hello-world/ --dry-run
-          
-     # 根据hello-world中的chart文件, 来更新web2这个release
-     helm upgrade web2 hello-world/
-     ~~~
-
-      
-
-   - 我们也可以直接在命令行中指定属性, 来覆盖`values.yaml`中的`image.tag`属性
-
-     ~~~shell
-     # 可以先通过helm upgrade web2 hello-world/  --set image.tag=1.25 --dry-run来查看即将用于执行的配置文件
-     
-     helm upgrade web2 hello-world/  --set image.tag=1.25 # --set会覆盖values.yaml中的属性
-     ~~~
-
-   <img src="img/k8s笔记/image-20231024161339519.png" alt="image-20231024161339519" style="zoom:50%;" />
-
-<img src="img/k8s笔记/image-20231024161436643.png" alt="image-20231024161436643" style="zoom:50%;" />
-
-7. 查看历史记录
-
-   ~~~shell
-   helm history web2 # 查看名为web2的release的更新记录
-   ~~~
-
-   ![image-20231024161536371](img/k8s笔记/image-20231024161536371.png)
-
-8. 回滚
-
-   ~~~shell
-   helm rollback web2 # 回滚是按照上一个版本的内容,  新生成了一个版本
-   ~~~
-
-   ![image-20231024161705618](img/k8s笔记/image-20231024161705618.png)
-
-9. 删除
-
-   ~~~shell
-   # 使用这种方式删除release, 会删除掉k8s相关的Deployment, Service等等, 
-   # 但是实际上他并不是删除, 而是生成了一个新的版本, 并将其标记为删除
-   # 这样你通过helm ls就看不到这个release了
-   # 并且如果你创建一个同名的release, 他会报错说release已经存在
-   helm del web2 # 删除名为web2的release
-   
-   # 查看所有已经逻辑删除的release
-   helm list --deleted
-   
-   # 对于已经删除的release, 你可以对他进行还原
-   helm rollback web2 5 # 5表示版本号, 可以通过helm status web2查看版本信息
-   
-   # 真正的完全删除release
-   helm delete --purge web2
-   ~~~
+在`templates/`目录下有一个特殊的`test`目录,  这个目录下的文件在`helm install`的时候会被渲染, 但是不会被执行, 这个目录下的文件主要用于chart在被安装之后, 用于测试release是否正常工作的脚本, 类似于**post-install tests**, 所以他们通常是Pod和Job类型的资源文件
 
 
 
-### templates目录中的语法
+这些文件必须带有如下的hook标识, 并且保持在`templates/test`目录下, 才会被任务是测试文件
 
-在helm的chart文件夹中, 我们可以在template中编写yaml来定义我们要创建的k8s的资源, 比如Deployment, Service, Role, ConfigMap等等
-
-当然在templates中的yaml也可以使用values.yaml中的变量
-
-```yaml
-# chart目录结构
-# my-chart/
-# ├── Chart.yaml          # Chart 元数据
-# ├── values.yaml         # 默认配置值
-# └── templates/
-#     ├── deployment.yaml # 使用变量的 Deployment 模板
-#     └── service.yaml    # 使用变量的 Service 模板
-
-# values.yaml
-replicaCount: 2          # 副本数
-image:
-  repository: nginx      # 镜像名称
-  tag: "1.23.4"          # 镜像标签
-  pullPolicy: IfNotPresent
-service:
-  type: ClusterIP        # 服务类型
-  port: 80               # 服务端口
-resources:
-  limits:
-    cpu: "500m"
-    memory: "512Mi"
-
-# templates/deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
+~~~yaml
 metadata:
-  name: {{ .Release.Name }}-nginx  # 使用 Release 名称, 通过helm install命令安装release的时候, 会传递进来
-  labels:
-    app: {{ .Values.image.repository }}  # 直接引用 values.yaml 的变量
-spec:
-  replicas: {{ .Values.replicaCount }}   # 引用副本数
-  selector:
-    matchLabels:
-      app: {{ .Values.image.repository }}
-  template:
-    metadata:
-      labels:
-        app: {{ .Values.image.repository }}
-    spec:
-      containers:
-      - name: nginx
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"  # 拼接镜像名和标签
-        imagePullPolicy: {{ .Values.image.pullPolicy }}
-        ports:
-        - containerPort: 80
-        resources:
-          {{- toYaml .Values.resources | nindent 10 }}  # 引用嵌套的 resources 配置oyment.yaml
-```
+  annotations:
+    "helm.sh/hook": test
+~~~
 
-上面能够调用的语法, 本质上是Go模版语言的语法, 下面对能够使用的语法做详细的说明
 
-1. 直接获取values.yaml中的变量
 
-   ```yaml
-   # values.yaml
-   aa:
-     bb: "hello world"
-   
-   # templates/deployment.yaml
-   apiVersion: apps/v1
-   kind: Deployment
-   metadata:
-     name: myapp
-   spec:
-     replicas: {{ .Values.aa.}}
-   ```
+这些文件必须通过如下的命令来执行
 
-2. 获取values.yaml中的变量, 并用引号括起来
+~~~shell
+helm test <release-name>
+~~~
 
-   ~~~yaml
-   # values.yaml
-   image:
-     repository: nginx
-     tag: 1.21
-     pullPolicy: IfNotPresent
-   # templates/deployment.yaml
-   spec:
-     containers:
-       - name: nginx
-         image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
-         # 获取image.pullPolicy的值, 并用括号括起来, 等效于 "IfNotPresent"
-         imagePullPolicy: {{ .Values.image.pullPolicy | quote }} 
-   ~~~
+执行流程：
 
-   
+1. Helm 找到所有 `helm.sh/hook: test` 的资源
+2. 创建这些资源（Pod / Job）
+3. 等待它们完成
+4. 根据退出状态判断测试成功或失败, 如果容器exit code为0表示测试成功, 否则失败
 
-3. 直接获取values.yaml中的变量, 并设置默认值
 
-   ```yaml
-   # values.yaml
-   replicaCount: 1
-   image:
-     repository: aaa
-     tag: bbb
-     
-   # templates/deployment.yaml
-   apiVersion: apps/v1
-   kind: Deployment
-   metadata:
-     name: myapp
-   spec:
-     replicas: {{ .Values.replicaCount | default 2 }}
-     template:
-       metadata:
-         labels:
-           app: myapp
-       spec:
-         containers:
-         - name: myapp
-           image: "{{ .Values.image.repository | default "nginx" }}:{{ .Values.image.tag | default "latest" }}"
-   ```
 
-3. 可以在yaml中使用if条件判断
 
-   ~~~yaml
-   # values.yaml
-   enabledFeature: true
-   
-   # templates/deployment.yaml
-   apiVersion: apps/v1
-   kind: Deployment
-   metadata:
-     name: myapp
-   spec:
-     replicas: 3
-     template:
-       metadata:
-         labels:
-           app: myapp
-       spec:
-         containers:
-         - name: myapp
-           image: "nginx:latest"
-   {{- if .Values.enabledFeature }}
-         env:
-           - name: FEATURE_ENABLED
-             value: "true"
-   {{- else }}
-         env:
-           - name: FEATURE_ENABLED
-             value: "false"
-   {{- end }}
-   ~~~
 
-4. 在if条件判断中, 可以使用各种比较运算符
+#### 查看
 
-   ~~~yaml
-   # values.yaml
-   replicaCount: 3
-   env: "prod"
-   # templates/deployment.yaml
-   {{- if eq .Values.env "prod" }}
-   # 这是生产环境
-   {{- end }}
-   
-   {{- if ne .Values.env "dev" }}
-   # 不是开发环境
-   {{- end }}
-   
-   {{- if gt .Values.replicaCount 1 }}
-   # 副本数大于1
-   {{- end }}
-   
-   {{- if lt .Values.replicaCount 10 }}
-   # 副本数小于10
-   {{- end }}
-   ~~~
+如果你安装了多个release, 那么可以通过如下命令来查看这些release
 
-5. 还可以使用if-elseif-else结构
+~~~shell
+helm list -A
+helm list -n my-namespace
+helm ls -n my-namespace # 简写
+~~~
 
-   ~~~yaml
-   {{- if eq .Values.env "dev" }}
-   # 开发环境
-   {{- else if eq .Values.env "prod" }}
-   # 生产环境
-   {{- else }}
-   # 其他环境
-   {{- end }}
-   ~~~
+~~~shell
+[root@kysp32303node2 ai-algorithm-initdb]# helm list -A | grep syslog
+syslog                          service-software        1               2025-12-12 20:25:33.60101914 +0800 CST  deployed        syslog-12.3.3                        3.8.3
+syslog-kafka-init               service-software        2               2025-12-23 14:58:30.848726059 +0800 CST deployed        common-kafka-init-12.3.3             3.8.3
+syslog-rule                     service-software        1               2025-12-12 20:25:33.53787081 +0800 CST  deployed        syslog-rule-12.3.3                   3.8.3
+~~~
 
-6. 还可以使用与, 或, 非进行逻辑判断
 
-   ~~~yaml
-   # vlaues.yaml
-   enabled: true
-   env: "prod"
-   replicas: 3
-   
-   # templates/deployment.yaml
-   # 与 (and)：当 enabled 为 true 且 env 为 "prod" 才输出
-   {{- if (and .Values.enabled (eq .Values.env "prod")) }}
-   # 开启并且是生产环境
-   replicas: {{ .Values.replicas }}
-   {{- end }}
-   
-   # 或 (or)：env 为 "dev" 或者 "test" 时输出
-   {{- if (or (eq .Values.env "dev") (eq .Values.env "test")) }}
-   # 开发或测试环境
-   replicas: 1
-   {{- end }}
-   
-   # 非 (not)：当 enabled 不为 true 时输出
-   {{- if (not .Values.enabled) }}
-   # 功能被禁用
-   {{- end }}
-   ~~~
 
-   
+你可以通过如下的命令来查看release的状态, 安装日期
 
-7. 直接嵌套yaml结构
+~~~shell
+[root@kysp32303node2 ai-algorithm-initdb]# helm status syslog -n service-software
+NAME: syslog
+LAST DEPLOYED: Fri Dec 12 20:25:33 2025
+NAMESPACE: service-software
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+~~~
 
-   ~~~yaml
-   # values.yaml
-   config:
-     database:
-       host: db.example.com
-       port: 5432
-       user: admin
-       password: secret
-   # templates/configmap.yaml
-   apiVersion: v1
-   kind: ConfigMap
-   metadata:
-     name: myapp-config
-   data:
-     config.yaml:
-   # 获取values.yaml中的config代码块, 然后直接将整个config代码块复制到这里, 并且设置缩进为4
-   {{ .Values.config | toYaml | nindent 4 }}
-   ~~~
 
-8. 使用range进行迭代
 
-   ~~~yaml
-   # values.yaml
-   services:
-     - name: service1
-       port: 8080
-     - name: service2
-       port: 9090
-   # templates/service.yaml
-   apiVersion: v1
-   kind: Service
-   metadata:
-     name: myapp
-   spec:
-     selector:
-       app: myapp
-     ports:
-   # 对values.yaml中的services元素进行迭代
-   {{- range .Values.services }}
-       - name: {{ .name }}
-         port: {{ .port }}
-   {{- end }}
-   ~~~
+你也可以使用如下的命令来查看release安装的时候, 使用的模版的内容
 
+~~~shell
+helm get all -n service-software syslog # 打印安装的时候, 使用的所有文件,包括资源文件, values.yaml, NOTES.txt, _helper.tpl等等的所有文件
+helm get values -n service-software syslog # 只打印values.yaml文件
+helm get notes -n service-software syslog # 只打印NOTES.txt文件
+helm get hooks -n service-software syslog # 只打印所有的hook
+helm get manifest -n service-software syslog # 查看k8s实际创建的资源的yaml文件, 包括deploy, pod,svc, cm, ns等等
+~~~
+
+你也可以通过如下的命令, 来查看某个历史版本的资源文件
+
+~~~shell
+helm get all -n service-software syslog --revision 2
+~~~
+
+#### 卸载
+
+如果你想要卸载某个release, 那么可以使用如下的命令
+
+~~~shell
+helm uninstall my-release -n my-namespace
+~~~
+
+
+
+#### 升级
+
+如果你想要升级一个chart, 那么有两种方式来改动这个chart
+
+1. 直接修改本地文件中的chart
+2. 不修改chart文件, 但是通过`-f, --set`来指定不同的变量
+
+之后你可以先通过如下的命令来查看升级前后release的差异
+
+~~~shell
+helm diff upgrade my-release ./mychart -n my-ns # 这个命令需要helm-diff插件
+~~~
+
+如果你没有这个插件, 你也可以使用如下的命令来进行比较
+
+~~~shell
+helm template myapp ./mychart -n demo > new.yaml
+helm get manifest myapp -n demo > old.yaml
+diff old.yaml new.yaml
+~~~
+
+
+
+知晓差异之后, 你可以通过`--dry-run`这个命令来模拟一次升级
+
+~~~shell
+helm upgrade myapp ./mychart  -n my-ns --dry-run --debug
+~~~
+
+
+
+如果万事顺利, 那么你就可以执行真正的升级了
+
+~~~shell
+# -n指定release的命名空间
+# -f指定values文件
+# --set设置values文件中的属性
+# --isntall 如果没有release升级, 那么就install
+# --wait --timeout 5m 等待资源就绪
+# --atomic 如果升级失败, 自动回滚
+helm upgrade my-release ./mychart \
+-n my-ns \
+-f values1.yaml -f values2.yaml \
+--set k1=v1 --set k2=v2 \
+--install \
+--wait --timeout 5m \
+--atomic
+~~~
+
+在执行上面的命令的时候, helm会
+
+- 读取 **当前 Release 的状态**
+
+- 用新的 Chart + values **重新渲染 YAML**
+
+- 对比新旧 Manifest
+
+- 对 Kubernetes 资源执行：
+  - `PATCH`
+  - 必要时 `DELETE + CREATE`
+
+- 生成一个 **新的 revision**
+
+- 旧 revision 仍然保留（用于 rollback）
+
+
+
+
+
+#### 历史
+
+你升级之后, 不管成功还是失败, release都会增加一个revision, 你可以通过如下的命令来查看release的历史
+
+~~~shell
+[root@kysp32303node2 ai-algorithm-initdb]# helm history -n service-software itoa-aiops-algorithm-service
+REVISION        UPDATED                         STATUS          CHART                                   APP VERSION     DESCRIPTION                                   
+1               Fri Dec 12 20:20:35 2025        deployed        itoa-aiops-algorithm-service-1.6.5      0.16.0          Install complete                              
+2               Tue Dec 23 14:58:32 2025        failed          itoa-aiops-algorithm-service-1.6.5      0.16.0          Upgrade "itoa-aiops-algorithm-service" failed: pre-upgrade hooks failed: timed out waiting for the condition
+~~~
+
+
+
+#### 回滚
+
+回滚相当于一次特殊的设计, 他是将以前的release的chart文件拿出来了, 然后重新upgrade一次, 所以会生成一个新的revision
+
+~~~shell
+helm history myapp -n my-ns
+REVISION  UPDATED                  STATUS     CHART        APP VERSION  DESCRIPTION
+1         2025-01-01 10:00:00      deployed   myapp-1.0.0  1.0.0        Install complete
+2         2025-01-02 11:00:00      deployed   myapp-1.1.0  1.1.0        Upgrade complete
+3         2025-01-03 12:00:00      failed     myapp-1.2.0  1.2.0        Upgrade failed
+
+# 先比较当前revision 和 要回滚的revision 的差异
+helm get manifest myapp -n my-ns > current.yaml
+helm get manifest myapp --revision 2 -n my-ns > target.yaml
+diff current.yaml target.yaml
+
+
+# 先模拟回滚一下
+helm rollback myapp 2 -n my-ns --dry-run  --debug
+
+
+# 将状态回滚到revision=2的manifest, 并生成一个新的revision 4
+helm rollback myapp 2 -n my-ns   --wait --timeout 5m
+
+# 查看回滚后资源的状态
+helm status myapp -n my-ns
+~~~
+
+需要注意的是
+
+- 回滚只能回滚Deployment, Service, ConfigMap, Secret
+
+  CRD, PVC, 外部DB数据是不能回滚的
+
+- 回滚只是把渲染后的manifest文件拿出来重新执行一遍, 所以不能指定values
+
+- 回滚的时候, 各种hooks也会被执行
+
+
+
+#### 打包
+
+最后, 如果万事顺利, 那么你就可以将你的chart打包成tag压缩包了, 之后发送给被人使用了
+
+~~~shell
+helm package mychart # 生成mychart-version.tgz文件
+~~~
+
+他有如下的flag可以使用
+
+| flag                 | 作用                                                |
+| -------------------- | --------------------------------------------------- |
+| --destination ./dist | 指定tgz文件输出的路径                               |
+| --version 1.2.4      | 打包时, 设置chart的版本, 不会覆盖Chart.yaml中的版本 |
+| --app-version 2.0.1  | 设置应用的版本                                      |
+| --dependency-update  | 在打包之前通过`helm dependency update`更新子chart   |
 
 
 
@@ -9620,193 +9783,71 @@ spec:
 
 
 
-## 使用第三方charts
+## 查找chart创建的资源
 
-我们这里以安装nginx为例, 首先访问https://artifacthub.io/, 搜索框中搜索 `nginx`
+有时候你可能会想, 我通过chart来安装release, 那么这个release到底控制了哪些k8s资源呢, 那么你可以使用下面的方式来查看
 
-![image-20250708211107420](img/k8s笔记/image-20250708211107420.png)
+1. 在安装chart的时候, 一般的标准chart都会为他创建的这些k8s资源添加标准的label
 
-点击右侧的install
+   ~~~yaml
+   labels:
+     app.kubernetes.io/instance: my-nginx      # release 名称
+     app.kubernetes.io/managed-by: Helm        # 表示 Helm 管理
+     app.kubernetes.io/name: nginx             # chart 名称
+     app.kubernetes.io/version: 1.29.2         # chart 的 appVersion
+     helm.sh/chart: nginx-22.0.10              # chart 名称+版本
+   ~~~
 
-![image-20250708211227876](img/k8s笔记/image-20250708211227876.png)
+   所以你可以通过如下的命令, 来根据label进行过滤, 查找到这个realease创建的所有k8s资源
 
-首先添加通过`helm repo`添加仓库, 然后通过`helm install` 来安装这个nginx 
+   ~~~shell
+   # kubectl get all -l "app.kubernetes.io/instance=my-nginx"
+   NAME                            READY   STATUS    RESTARTS   AGE
+   pod/my-nginx-54dfd88c85-25hvs   1/1     Running   0          46m
+   
+   NAME               TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)                      AGE
+   service/my-nginx   LoadBalancer   10.97.23.137   <pending>     80:32613/TCP,443:30227/TCP   46m
+   
+   NAME                       READY   UP-TO-DATE   AVAILABLE   AGE
+   deployment.apps/my-nginx   1/1     1            1           46m
+   
+   NAME                                  DESIRED   CURRENT   READY   AGE
+   replicaset.apps/my-nginx-54dfd88c85   1         1         1       46m
+   ~~~
 
-![image-20250708211328021](img/k8s笔记/image-20250708211328021.png)
+2. 如果你碰到的不是特别标准的chart, 他没有给release创建的k8s创建标准的label, 那么你也可以通过如下的命令来查看执行的k8s的yaml文件, 然后根据显示的内容来查看创建了哪些k8s资源
 
-~~~shell
-# 添加nginx的仓库
-helm repo add bitnami https://charts.bitnami.com/bitnami
-
-# 根据仓库中的nginx的chart, 创建一个my-nginx的release
-helm install my-nginx bitnami/nginx --version 21.0.6
-
-# 当然, 你也可以直接下载仓库中的nginx的chart, 这会下载一个nginx-21.0.6.tgz到本地
-helm pull oci://registry-1.docker.io/bitnamicharts/nginx --version 21.0.6
-tar -xzvf tar -zxvf nginx-21.0.6.tgz # 解压出一个nginx目录
-helm install my-nginx nginx # 根据nginx中的chart来创建my-nginx
-
-# 当然, 你也可以指定release安装到你想要的namespace中
-helm install my-nginx nginx --namespace my-ns # 指定安装到my-ns的命名空间中
-
-# 如果你不想要使用nginx/values.yaml来配置chart, 那么也可以自己指定一个文件来替代values.yaml
-helm install my-nginx nginx --namespace my-ns -f my-values.yaml # 不要使用默认的values.yaml而是使用my-values.yaml
-
-# 如果你不想要完全覆盖values.yaml中, 只想覆盖个别的属性, 那么可以使用--set属性来覆盖
-helm install my-nginx nginx --namespace my-ns --set aaa.bbb=xxx
-~~~
+   ```shell
+   helm get manifest <release>
+   ```
 
 
 
 
+## 命令自动补全
 
-在安装chart的时候, 一般的标准chart都会为他创建的这些k8s资源添加标准的label
-
-~~~yaml
-labels:
-  app.kubernetes.io/instance: my-nginx      # release 名称
-  app.kubernetes.io/managed-by: Helm        # 表示 Helm 管理
-  app.kubernetes.io/name: nginx             # chart 名称
-  app.kubernetes.io/version: 1.29.2         # chart 的 appVersion
-  helm.sh/chart: nginx-22.0.10              # chart 名称+版本
-~~~
-
-所以你可以通过如下的命令, 来根据label进行过滤, 查找到这个realease创建的所有k8s资源
+你可以调用如下的命令, 来生成一段自动补全的代码
 
 ~~~shell
-# kubectl get all -l "app.kubernetes.io/instance=my-nginx"
-NAME                            READY   STATUS    RESTARTS   AGE
-pod/my-nginx-54dfd88c85-25hvs   1/1     Running   0          46m
-
-NAME               TYPE           CLUSTER-IP     EXTERNAL-IP   PORT(S)                      AGE
-service/my-nginx   LoadBalancer   10.97.23.137   <pending>     80:32613/TCP,443:30227/TCP   46m
-
-NAME                       READY   UP-TO-DATE   AVAILABLE   AGE
-deployment.apps/my-nginx   1/1     1            1           46m
-
-NAME                                  DESIRED   CURRENT   READY   AGE
-replicaset.apps/my-nginx-54dfd88c85   1         1         1       46m
+helm completion bash  # 生成bash终端的自动补全代码
+helm completion fish 
+helm completion powershell
+helm completion zsh
 ~~~
 
-如果你碰到的不是特别标准的chart, 他没有给release创建的k8s创建标准的label, 那么你也可以通过如下的命令来查看执行的k8s的yaml文件, 然后根据显示的内容来查看创建了哪些k8s资源
-
-```shell
-helm get manifest <release>
-```
-
-
-
-
-
-## 相关shell
-
-
-
-安装chart相关
+之后将这段代码, 放在终端启动时的初始化文件中, 即可生效
 
 ~~~shell
-helm create chart_name # 创建一个chart模板目录
-helm install release_name  charts_name # 根据chart安装release到默认的命名空间中
-helm install release_name --namespace <namespace> charts_name # 根据chart安装release到指定的命名空间中
-
-helm install my-nginx bitnami/nginx # 安装远程仓库中的nginx, 可以通过helm search先搜索
-
-
-helm install release_name charts_name -f <my-values.yaml> # 根据chart安装release, 不要使用chart中的values.yaml变量文件, 而是使用-f指定的yaml文件
-heml install release_name chart_name --set aa.bb=xxx # 根据chart安装release, 并且使用aa.bb来覆盖values.yaml中的变量
-helm install <chart> --generate-name # 安装chart, 并自动生成release的名字
-~~~
-
-chart开发相关
-
-| 命令                                                         | 说明                                                         |
-| ------------------------------------------------------------ | ------------------------------------------------------------ |
-| `helm create <chart_name>`                                   | 创建一个新的 chart 模板                                      |
-| `helm pull bitnami/nginx`<br>`helm pull oci://ghcr.io/telepresenceio/telepresence-oss --version 2.24.1` | 下载一个chart文件到本地                                      |
-| `helm package <chart_dir>`                                   | 打包 chart 为 `.tgz` 文件                                    |
-| `helm dependency update`                                     | 更新当前chart依赖的 chart（根据 `Chart.yaml` 中的依赖项）<br>一个chart可以依赖于另外一个chart |
-| `helm dependency list`                                       | 查看当前chart依赖的 chart（根据 `Chart.yaml` 中的依赖项）    |
-
-
-
-
-
-参数与模板管理
-
-| 命令                       | 说明                                           |
-| -------------------------- | ---------------------------------------------- |
-| `helm show values <chart>` | 查看 chart 的默认 values.yaml, 包括远程的chart |
-| `helm show chart <chart>`  | 查看chart的简要信息                            |
-| `helm show readme <chart>` | 查看chart的readme                              |
-| `helm show all <chart>`    | 查看chart的所有信息                            |
-| `helm template <chart>`    | 本地渲染模板（不会部署）                       |
-| `helm lint <chart>`        | 检查 chart 的语法与结构是否正确                |
-
-
-
-查看release相关
-
-| 命令                                  | 说明                                        |
-| ------------------------------------- | ------------------------------------------- |
-| `helm list`                           | 列出当前 namespace 下的所有 release         |
-| `helm list -A`                        | 列出所有命名空间的 release                  |
-| `helm list -n <name_space>`           | 列出指定命名空间的release                   |
-| `helm status <release_name>`          | 查看 release 当前状态                       |
-| `helm diff upgrade <release> <chart>` | 比较升级前后差异（需安装 `helm diff` 插件） |
-
-| 子命令                        | 说明                                                        |
-| ----------------------------- | ----------------------------------------------------------- |
-| `helm get all <release>`      | 查看该 Release 的所有信息（综合输出）                       |
-| `helm get values <release>`   | 查看部署时的配置参数（values.yaml 合并后的最终值）          |
-| `helm get manifest <release>` | 查看 Helm 渲染后生成的完整 Kubernetes YAML 清单             |
-| `helm get notes <release>`    | 查看 chart 安装后打印的提示信息（一般显示访问方式等）       |
-| `helm get hooks <release>`    | 查看 hooks（在安装/升级/删除过程中触发的任务）              |
-| `helm get metadata <release>` | 查看该 Release 的元数据信息（版本、chart 名称、命名空间等） |
-
-
-
-删除release
-
-~~~shell
-# helm uninstall在helm2中叫做helm delete, 在helm3中改为了uninstall
-# helm2在delete的时候, 会保留版本, 相当于delete也是一个版本
-# helm3在uninstall的时候, 不会保留历史记录/版本, 如果你想要保留版本, 需要使用--keep-history参数
-helm uninstall <release-name> [--namespace <namespace>]
-
-
-# 查看release的版本, 如果删除的时候设置了--keep-history, 那么会查看到删除的版本
-helm history my-nginx
-
-
-# helm2中的命令
-helm del release_name # 逻辑删除一个release
-helm ls --deleted # 查看逻辑删除的release
-helm rollback release_name reversion # 还原一个逻辑删除的release到指定的版本
-heml del --purge release_name  # 完全删除一个release
+helm completion bash > /etc/bash_completion.d/helm
 ~~~
 
 
 
 
 
-~~~yaml
-# release 相关
-helm ls # 查看所有的未被删除的release
-helm status release_name # 查看release的状态
+# helm 模版语法
 
-
-# install和upgrade都可以添加--dry-run来打印最终的yaml文件
-helm install chart_name # 根据chart目录中的配置文件, 创建一个release
-helm upgrade chart_name # 根据chart目录中的配置文件, 升级一个release
-
-
-# 跟新和回滚
-helm history release_name # 查看版本
-helm rollback release_name # 回滚到上一个版本
-heml rollback release_name reversion # 回滚到指定的版本, 也可以回滚已经删除的release
-~~~
-
-# helm template
+## go  template
 
 https://www.cnblogs.com/f-ck-need-u/p/10053124.html
 
@@ -9821,7 +9862,7 @@ https://www.cnblogs.com/f-ck-need-u/p/10035768.html
 
 
 
-## hello world
+### hello world
 
 下面这个案例用于渲染一个html文件
 
@@ -9895,7 +9936,7 @@ Name: longshuai, Age: 23
 
 
 
-## 注释
+### 注释
 
 在template引擎中, 他是完全按照文本的格式进行替换的, 会保留所有空白, 换行. 所以千万不要对解析的内容随意的缩进, 换行
 
@@ -9922,7 +9963,7 @@ template在渲染的时候, 会将注释的内容全部删除掉
 
 
 
-## 访问属性, map, 方法
+### 访问属性, map, 方法
 
 对于结构体中的属性, 你可以直接通过属性名来获取他的值
 
@@ -9961,7 +10002,7 @@ template在渲染的时候, 会将注释的内容全部删除掉
 
 
 
-## 去除空白
+### 去除空白
 
 上面说到, 对于要解析的内容, 不要有随意的缩进和换行, 比如
 
@@ -10019,15 +10060,13 @@ func main() {
 23<4523<4523
 ~~~
 
-
-
-## 管道
+### 管道
 
 
 
 
 
-## 变量
+### 变量
 
 在template中, 还可以定义变量, 规则如下:
 
@@ -10073,11 +10112,11 @@ User Alice is 23 years old.
 
 
 
-### 变量的作用域
+#### 变量的作用域
 
 需要注意的是, 模板中定义的变量是有作用域的. if, range, with都会有自己的作用域
 
-### if的作用域
+##### if的作用域
 
 ~~~go
 {{ $name := .Name }} // name在当前的模板中都可用
@@ -10093,7 +10132,7 @@ Name outside if: {{ $name }}
 
 
 
-### range的作用域
+##### range的作用域
 
 range中的变量
 
@@ -10135,7 +10174,7 @@ Items:
 
 
 
-### with作用域
+##### with作用域
 
 with的作用是开启一个新的作用域, 然后将某个变量赋值给这个作用域中的`.`
 
@@ -10154,7 +10193,7 @@ Age:  {{ $u.Age }}
 
 
 
-### 全局的变量
+##### 全局的变量
 
 有一个特殊的变量`$`,  他代表当前模版的顶层作用域对象, 他在任何的作用范围内都是不变的, 他的主要作用是防止在 `range / with` 中丢失上下文。
 
@@ -10173,9 +10212,9 @@ namespace: {{ $.Release.Namespace }}
 
 
 
-## 结构控制
+### 结构控制
 
-### if
+#### if
 
 在go template中, 有如下几种形式的if
 
@@ -10222,7 +10261,7 @@ Name: {{ .XXX }}
 
 
 
-#### if中的比较
+##### if中的比较
 
 如果你要在if中比较数值的大小, 那么需要使用如下的方式, 而不是直接使用大于号和小于号
 
@@ -10243,7 +10282,7 @@ Adult
 | `lt` | 小于     |
 | `le` | 小于等于 |
 
-#### if中的逻辑判断
+##### if中的逻辑判断
 
 如果你要在if中进行逻辑判断, 那么可以参考如下的形式
 
@@ -10271,7 +10310,7 @@ Active
 {{ end }}
 ~~~
 
-#### if和去除空白
+##### if和去除空白
 
 在使用if-end的时候, 特别要注意的是, if和end行中的换行都会被保留, 比如
 
@@ -10299,13 +10338,13 @@ Active
 
 
 
-### range
+#### range
 
 
 
 
 
-### with
+#### with
 
 
 
