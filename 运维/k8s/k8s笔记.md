@@ -9847,6 +9847,12 @@ helm completion bash > /etc/bash_completion.d/helm
 
 # helm 模版语法
 
+在helm中, 实现模版渲染功能使用的是go中的template库, 并且添加了自己对template库的扩展, 所以要学习模版语法首先要学习的就是go template的语法, 然后学习helm对template库进行了哪些扩展, 一共两个部分
+
+
+
+
+
 ## go  template
 
 https://www.cnblogs.com/f-ck-need-u/p/10053124.html
@@ -10259,6 +10265,8 @@ Name: {{ .XXX }}
 | 空 slice / map | false |
 | 非空           | true  |
 
+> 特别需要注意的是, if不会改变`.`的值
+
 
 
 ##### if中的比较
@@ -10323,7 +10331,6 @@ Active
 在被渲染之后是这个样子
 
 ~~~txt
-
 Active
 
 ~~~
@@ -10336,17 +10343,2116 @@ Active
 {{- end -}}
 ~~~
 
+或者
+
+~~~gotemplate
+{{- if not .Disabled }}
+Active
+{{- end }}
+~~~
+
 
 
 #### range
 
+range用于便利slice和map, 他主要有如下的三种形式
 
+~~~gotemplate
+{{ range .Items }}
+  {{ . }} // .表示当前迭代的元素, 对于slice他是当前迭代的元素, 对于map, 他是value
+{{ end }}
+~~~
+
+~~~gotemplate
+// 对于slice, i是index, v是当前迭代的元素, .也是迭代的元素
+// 对于map, i是key, v是value, .也是value
+{{ range $i, $v := .Items }}
+  {{ $i }} => {{ $v }} 
+{{ end }}
+
+// 你也可以只赋值一个变量, 这样直接获取到对应的元素值
+{{ range $val := . -}}
+  {{ $val }}
+{{ end -}}
+~~~
+
+~~~~gotemplate
+// range-else, 如果Items的length为0, 那么不会进入range循环, 而是直接进去else中, 否则会进行循环
+{{ range .Items }}
+  Item: {{ . }}
+{{ else }}
+  No items
+{{ end }}
+~~~~
+
+需要注意的是
+
+- range支持slice, array, map, channel
+
+  **但是在生产中, 千万不要使用range来迭代chanel, 有卡死的风险**
+
+  ~~~go
+  ch := make(chan int)
+  go func() {
+      ch <- 1
+      ch <- 2
+      ch <- 3
+      close(ch)
+  }()
+  tpl := `{{ range . }}{{ . }} {{ end }}`
+  template.Must(template.New("t").Parse(tpl)).
+      Execute(os.Stdout, ch)
+  ~~~
+
+  比如上面的代码, 如果你忘记了close通道, 那么在渲染的时候, Execute会一直卡着
+
+- **如果range的对象是nil, 那么会直接进入else中, 或者跳过**
+
+- **range在便利map的时候是无需的**
+
+- range会将`.`变为当前迭代的元素, 如果你想要获取到原始的上下文, 那么需要提前变量赋值
+
+  ~~~gotemplate
+  {{ $root := . }}
+  
+  {{ range $k, $v := .Items }}
+  Key: {{ $k }}
+  Value: {{ $v }}
+  Title: {{ $root.Title }}
+  {{ end }}
+  ~~~
+
+- 你不能在range中修改变量, 因为变量是只读的
+
+  ~~~gotemplate
+  {{ $sum := 0 }}
+  {{ range .Nums }}
+    {{ $sum = add $sum . }}   ❌ 不允许
+  {{ end }}
+  ~~~
+
+  
+
+#####  range和去除空白
+
+在使用range的时候, 一定要小心空白, 比如我们有如下的代码
+
+~~~go
+package main
+
+import (
+	"os"
+	"text/template"
+)
+
+func main() {
+	data := map[string]any{
+		"Title": "Fruits",
+		"Items": []string{"apple", "banana", "orange"},
+	}
+
+	tpl := `Items:
+{{ range .Items }}
+----------
+- {{ . }}
+{{ end }}
+End
+`
+	template.Must(template.New("demo").Parse(tpl)).Execute(os.Stdout, data)
+}
+~~~
+
+他在渲染之后会输出如下的代码
+
+~~~txt
+Items:
+
+----------
+- apple
+
+----------
+- banana
+
+----------
+- orange
+
+End
+
+~~~
+
+为什么会输出很多的空行, 你要把这个模版中的换行都加上就明白了
+
+~~~gotemplate
+Items:\n{{ range .Items }}\n----------\n- {{ . }}\n{{ end }}\nEnd\n
+~~~
+
+当模版开始渲染的时候, 首先会输出
+
+~~~txt
+Items:\n
+~~~
+
+然后在range循环中, 一直在循环输出的是如下的内容
+
+~~~gotemplate
+\n----------\n- {{ . }}\n
+~~~
+
+并且在渲染完了之后还会输出
+
+~~~gotemplate
+\nEnd\n
+~~~
+
+所以结果就是
+
+~~~txt
+Items:\n\n----------\n- apple\n\n----------\n- banana\n\n----------\n- orange\n\nEnd\n
+~~~
+
+转换之后就是
+
+~~~txt
+Items:
+
+----------
+- apple
+
+----------
+- banana
+
+----------
+- orange
+
+End
+
+~~~
+
+你需要记住, range循环输出的是代码块, 而不是行
+
+如果你想要消除range中换行带来的麻烦, 推荐使用下面的格式
+
+~~~go
+	tpl := `Items:
+{{- range .Items }}
+- {{ . }}
+{{- end }}
+End
+`
+~~~
+
+渲染之后他会输出如下的内容, 可以成功的消除掉换行带来的麻烦
+
+~~~gotemplate
+Items:
+- apple
+- banana
+- orange
+End
+
+~~~
+
+不推荐使用右消除来消除换行, 因为对于占位符前面的内容, 是可以预测的, 所以使用左消除来消除前面的内容, 但是对于后面的内容是很难进行预测的
+
+
+##### break和continue
+
+在go1.18开始, `text/template`和`html/template`中的range都添加了对`{{ break }}`和`{{ continer }}`的支持
+
+比如我们有如下的案例: 通过range迭代一个字符串列表, 如果碰到了"skip"就跳过, 如果碰到了"stop"就停止循环
+
+~~~gotemplate
+{{ $list := slice "foo" "skip" "bar" "stop" "baz" }}
+{{ range $list }}
+  {{ if eq . "skip" }}
+    {{ continue }}
+  {{ end }}
+  {{ if eq . "stop" }}
+    {{ break }}
+  {{ end }}
+  <p>{{ . }}</p>
+{{ end }}
+~~~
 
 
 
 #### with
 
+with 用来 判断一个值是否“非空/非零”
 
+- 如果是，就 临时把 .（当前上下文）切换成这个值。
+- 如果是空或者零的话, 那么就跳过
+
+可以理解为 `if + 改变 . 的作用域 `
+
+> if不会改变`.`的值
+
+with会将如下的值认为是空或者零
+
+| 类型                | 空值       |
+| ------------------- | ---------- |
+| bool                | `false`    |
+| string              | `""`       |
+| int / float         | `0`        |
+| slice / array       | `len == 0` |
+| map                 | `len == 0` |
+| pointer / interface | `nil`      |
+
+
+
+基本语法:
+
+~~~gotemplate
+{{ with PIPELINE }}
+  ...
+{{ end }}
+
+
+// 如果pipeline为空值("", 0, false, nil, length为0的array, slice, map), 那么执行else中的代码
+{{ with PIPELINE }}
+  ...
+{{ else }}
+  ...
+{{ end }}
+
+// with还可以进行变量绑定, 但是有点多此一举, 比较可以直接实用`.`
+{{ with $u := .User }}
+Name: {{ $u.Name }}
+{{ end }}
+~~~
+
+
+
+with特别适合输出可选的字段, 有就输出, 没有就算了
+
+~~~gotemplate
+// 如果.Annotation不为空值, 那么就输出, 否则就算了
+{{ with .Annotations }}
+annotations:
+{{ toYaml . | indent 2 }}
+{{ end }}
+~~~
+
+with-else的用法
+
+~~~gotemplate
+{{ with .User }}
+Hello {{ .Name }}
+{{ else }}
+No user
+{{ end }}
+~~~
+
+
+
+##### with和空白
+
+在使用with的过程中, 也会产生多余的空白, 如果你想要消除空白, 推荐如下的写法
+
+~~~gotemplate
+{{- with .Annotations }}
+annotations:
+{{ toYaml . | indent 2 }}
+{{- end }}
+~~~
+
+
+
+
+### 管道
+
+gotemplate中的管道与linux中的管道的概念差不多,  **通过`|`将多个命令连接起来,  前一个命令的结果会传递给下一个命令的之后一个参数**
+
+~~~txt
+PIPELINE | COMMAND1 | COMMAND2 | ...
+~~~
+
+比如下面的案例
+
+~~~gotemplate
+{{ .Title | upper }}
+~~~
+
+他实际上就等效于`upper (.Title)`
+
+比如下面的案例
+
+~~~gotemplate
+{{ .Title | trim | upper }}
+~~~
+
+他就等效于`upper ( trim ( .Title ))`
+
+### 函数
+
+template中定义了一些内置函数, 也支持自定义函数
+
+#### 内置函数
+
+go template中的内置函数主要分为如下的几类:
+
+1. 逻辑判断
+2. 比较函数
+3. 获取值类
+4. 输出与调试
+5. 转义和格式化
+6. 索引与属性访问
+7. 类型判断
+
+##### 逻辑判断
+
+and
+
+- 他可以连接任意个参数
+- **从左到右, 只要遇到了第一个空值(false, 0, "", nil, len==0的slice/map), 那么会立刻返回**
+- **如果都不是空值, 那么返回最后一个参数**
+
+~~~gotemplate
+{{ if and .A .B .C }}
+~~~
+
+如下代码会返回ok
+
+```gotemplate
+{{ and true 1 "ok" }}
+```
+
+**and不仅可以做逻辑运算, 还可以做`安全访问器`**
+
+~~~gotemplate
+{{ if and .User .User.Name }}
+Hello {{ .User.Name }}
+{{ end }}
+~~~
+
+**and还可以进行变量赋值**
+
+~~~txt
+{{ $v := and .A .B .C }}
+~~~
+
+
+
+
+
+
+
+or
+
+- 他可以连接任意个参数
+- 重做到右, 只要遇到了第一个非空的值, 那么就会立刻返回
+
+~~~txt
+{{ if or .A .B .C }}
+~~~
+
+or常常用来设置默认值, 比如
+
+~~~gotemplate
+{{ or .Values.name "default-name" }}
+~~~
+
+
+
+
+
+not
+
+not用来取反
+
+~~~gotemplate
+{{ if not .Enabled }}
+~~~
+
+
+##### 比较函数
+
+go template中没有`==, !=, >`这种运算符,  他使用eq, ne, lt, gt, le, ge
+
+~~~gotemplate
+{{ if eq .Env "prod" }}
+{{ if ne .Env "test" }}
+{{ if gt .Replicas 3 }}
+~~~
+
+这些比较不仅可以比较两个值, 还可以进行多值比较
+
+~~~gotemplate
+{{ if eq .Env "prod" "staging" }}
+~~~
+
+上面等效于`.Env == "prod" || .Env == "staging"`
+
+##### 获取长度
+
+###### len
+
+len函数主要用于获取string, slice, array, map中元素的个数
+
+~~~shell
+.Env == "prod" || .Env == "staging"
+~~~
+
+> len如果接收到的是nil, 那么会panic
+
+
+
+##### 索引和属性访问
+
+###### index
+
+index主要用于获取array, slice, map中的value的
+
+~~~gotemplate
+{{ index .Map "key" }}
+{{ index .List 0 }}
+~~~
+
+
+
+###### slice
+
+这个函数主要用于对slice进行切片
+
+~~~gotemplate
+{{ slice .List 1 3 }}  // 等效于.List[1:3]
+~~~
+
+
+
+##### 输出与调试
+
+print/ printf/println他们分别等效于fmt中的Sprint, Sprintf, Sprintln
+
+
+
+print可以接受任意个参数, 并将他们全部打印出来
+
+~~~gotemplate
+{{ print "a" "b" }}
+{{ printf "%s-%d" .Name .Age }}
+~~~
+
+**如果你不知道`.`中到底与什么结构, 那么你可以通过如下的代码将`.`的结构完全的打印出来**
+
+~~~shell
+{{ printf "%#v" . }}
+~~~
+
+
+
+**printf还常常和管道一起使用**, 比如
+
+~~~gotemplate
+{{ .Name | printf "%s" }}
+{{ .Name | printf "user=%s" }}
+{{ .Age | printf "%s is %d years old" .Name }}
+{{ .Name | upper | printf "USER=%s" }}
+~~~
+
+**printf还可以进行变量赋值**
+
+~~~gotemplate
+{{- $msg := .Name | printf "hello %s" }}
+{{- $msg }}
+~~~
+
+
+
+printf还可以查看某个变量的类型
+
+~~~shell
+{{ printf "%T" .Value }}
+~~~
+
+
+##### 转义相关
+
+这些函数主要存在于`text/template`中, 但是主要是给`html/template`使用的, 他们在yaml/heml中几乎不用
+
+- html
+- js
+- urlquery
+
+~~~txt
+{{ .Value | html }}
+~~~
+
+
+
+##### 函数调用
+
+如果你知道某个变量是一个函数, 那么你可以通过call函数对他进行调用
+
+~~~shell
+// 如果.Func是一个函数
+{{ call .Func "arg" }}
+~~~
+
+
+
+#### 自定义函数
+
+在实际开发中，仅仅是这些函数是很难满足我们的需求。此时，我们希望能够传入自定义函数，在我们编写模板的时候可以使用自定义的函数。
+
+我们引入一个需求: 希望将传入的str可以转为小写。
+
+~~~go
+var md = `
+result: {{ . | lower }}
+`
+
+func Lower(str string) string {
+	return strings.ToLower(str)
+}
+
+func main() {
+	tpl := template.Must(template.New("demo").Funcs(map[string]any{
+		"lower": Lower,
+	}).Parse(md))
+	tpl.Execute(os.Stdout, "HELLO FOSHAN")
+}
+~~~
+
+上面代码会输出
+
+~~~txt
+
+result: hello foshan
+~~~
+
+我们通过调用Funcs，传入functionName : function的map。
+
+执行模板时，函数从两个函数map中查找：首先是模板函数map，然后是全局函数map。
+
+**方法必须有一到两个返回值，如果是两个，那么第二个一定是error接口类型**
+
+> Funcs必须在解析parse前调用。如果模板已经调用Parse了，再调用Funcs，template并不知道该函数应该如何映射。
+
+
+
+
+
+#### 函数和控制结构一起使用
+
+1. if+内置函数
+
+   ~~~gotemplate
+   {{ if and (gt (len .Items) 0) .Enabled }}
+   ~~~
+
+   ~~~gotemplate
+   {{- if and .Values.enabled (eq .Values.env "prod") }}
+   replicas: {{ or .Values.replicas 3 }}
+   {{- end }}
+   ~~~
+
+   
+
+2. with + index
+
+   ~~~gotemplate
+   {{ with index .Config "db" }}
+   Host: {{ .host }}
+   {{ end }}
+   ~~~
+
+3. range + len
+
+   ~~~gotemplate
+   {{ if gt (len .Items) 0 }}
+   {{ range .Items }}
+   - {{ . }}
+   {{ end }}
+   {{ end }}
+   ~~~
+
+
+### 嵌套模版
+
+在 Go 的 `text/template` / `html/template` 里，define 和 template 是一对配合使用的关键字，主要用于 模板拆分、复用和组合，非常常见于 Helm、Kubernetes YAML、配置生成 等场景。
+
+- define用于定义一个命名的子模版, 类似于定义一个函数
+- template用于在当前的模版中, 执行某个已经定义的模版, 类似于调用函数
+
+> 强烈推荐你将define定义的模版, 放在文件的头部, 虽然不是必须的
+
+~~~gotemplate
+{{ define "header" }}
+<h1>{{ .Title }}</h1>
+{{ end }}
+<body>
+  {{ template "header" . }}
+</body>
+~~~
+
+上面的代码中, 定义了一个header模版, 在定义他的时候, 他什么都不会输出, 然后再body的内部调用了他, 并传入当前的上下文对象`.`
+
+上面的模版会输出如下的内容
+
+~~~gotemplate
+
+<body>
+  
+<h1>Fruits</h1>
+
+</body>
+
+~~~
+
+
+
+> 实际上我们在执行template.New("111").Parse(`xxx`)的时候, 就是创建了一个名为111的内嵌模版, 然后传入这个模版对应的内容
+
+
+
+
+
+#### 嵌套模版的上下文
+
+需要注意的是, 嵌套模版并不会使用当前整个模版中的上下文, 而是需要你显示的传入一个字, 然后他会将这个值作为上下文对象
+
+~~~txt
+{{ define "user" }}
+Name: {{ .Name }}
+Age: {{ .Age }}
+{{ end }}
+
+{{ template "user" .User }}
+~~~
+
+上面的内容中, 传入了一个User对象给user模版,  作为他的上下文对象`.`
+
+
+
+当然如果你的模版不需要上下文中的内容的话, 那么也可以不传递东西给他, 相当于nil
+
+~~~gotemplate
+{{ define "user" }}
+Name: zhangsan
+Age: 18
+{{ end }}
+
+// 这里相当于传入了 nil
+{{ template "user" }}
+~~~
+
+
+
+
+#### 嵌套模版与去除空白
+
+在使用嵌套模版的时候, 特别要注意换行, 比如如下的代码
+
+~~~go
+func main() {
+	data := map[string]any{
+		"Title": "Fruits",
+		"Items": []string{"apple", "banana", "orange"},
+	}
+
+	tpl := `{{ define "header" }}
+<h1>{{ index . "Title" }}</h1>
+{{ end }}
+----------------
+<body>
+  {{ template "header" . }}
+</body>
+`
+	template.Must(template.New("demo").Parse(tpl)).Execute(os.Stdout, data)
+}
+~~~
+
+他的输出内容是
+
+~~~txt
+
+----------------
+<body>
+  
+<h1>Fruits</h1>
+
+</body>
+
+~~~
+
+这是因为
+
+- end后面有一个换行, 所有第一行是空行
+- header在被渲染之后, 实际上输出的是`\n<h1>Fruits</h1>\n`
+- 在`{{ template "header" . }}`后面还有一个换行
+- \</body>后面还有一个换行
+
+所以实际的输出内容是
+
+~~~txt
+\n----------------\n<body>\n  \n<h1>Fruits</h1>\n\n</body>\n
+~~~
+
+解析之后就是
+
+~~~txt
+
+----------------
+<body>
+  
+<h1>Fruits</h1>
+
+</body>
+
+~~~
+
+
+
+如果你想要消除换行, 推荐的做法是如下
+
+~~~gotemplate
+func main() {
+	data := map[string]any{
+		"Title": "Fruits",
+		"Items": []string{"apple", "banana", "orange"},
+	}
+
+	tpl := `{{- define "header" -}}
+<h1>{{ index . "Title" }}</h1>
+{{- end -}}
+----------------
+<body>
+  {{ template "header" . }}
+</body>
+`
+	template.Must(template.New("demo").Parse(tpl)).Execute(os.Stdout, data)
+}
+~~~
+
+他的输出内容是
+
+~~~txt
+----------------
+<body>
+  <h1>Fruits</h1>
+</body>
+
+~~~
+
+另外一种做法是如下, 在template标签中添加横杆, 消除渲染之后模版前后的空格和空行
+
+~~~gotemplate
+{{ define "header" }}
+<h1>{{ index . "Title" }}</h1>
+{{ end -}}
+----------------
+<body>
+  {{- template "header" . -}}
+</body>
+~~~
+
+
+#### 嵌套模版与多文件
+
+除了在一个模版的内部定义嵌套模版,  你也可以将模版放在另外一个文件里面, 比如下面有如下的文件
+
+t1.html
+
+~~~html
+<div style="background-color: yellow;">
+	This is t2.html<br/>
+	This is the value of the dot in t2.html - [{{ . }}]
+</div>
+~~~
+
+t2.html
+
+~~~xml
+{{ define "t2-1" }}
+<h3>t2-1</h3>
+{{end}}
+{{ define "t2-2" }}
+<h2>t2-2</h2>
+{{end}}
+~~~
+
+t3.html
+
+~~~html
+<div>
+--------<br>
+{{ template "t1.html" }}
+--------
+{{ template "t2-1" }}
+--------
+{{ template "t2-2" }}
+--------<br>
+</div>
+~~~
+
+你可以通过如下的代码来进行渲染
+
+~~~go
+package main
+
+import (
+	"os"
+	"text/template"
+)
+
+func main() {
+	tmpl := template.Must(template.ParseFiles("t3.html", "t2.html", "t1.html"))
+	tmpl.Execute(os.Stdout, "hello world")
+}
+~~~
+
+上面的ParseFiles会
+
+- 返回第一个文件的模版对象,  也就是说tmpl代表的是t3.html文件, Execute的时候也是渲染t3.html
+
+- 其他的文件会根据文件名转换为对应的template, 放在一个TemplateSet中, 
+
+  你可以在这些文件的其他地方调用这个模版
+
+- 如果其他的文件中还有内嵌的template, 也会提取出来, 放在这个TemplateSet中
+- 后面传入的文件可以定义同名的模版, 进行覆盖
+- 文件解析的顺序很重要,  ParseFiles按照顺序来解析文件, 先解析的文件会先注册模版, 后解析的文件同名模版会覆盖之前的
+
+
+#### block块
+
+在上面的代码中,  如果你使用了一个没有定义的template, 那么在执行Execute的时候, 会报错
+
+比如上面的代码中, 如果你删除掉t2中的t2-1模版, 那么在执行Execute方法的时候, 会返回一个panic 如下
+
+~~~txt
+panic: template: t3.html:5:12: executing "t3.html" at <{{template "t2-1" .}}>: template "t2-1" not defined
+
+goroutine 1 [running]:
+main.main()
+	C:/Users/sys49482/Desktop/temalate/main.go:12 +0xc5
+~~~
+
+
+
+block块的作用就是提供了一个安全的**可选的**内嵌模版
+
+比如如下的代码
+
+~~~go
+// base.tmpl
+<html>
+<body>
+
+{{ block "content" . }}
+默认内容
+{{ end }}
+
+</body>
+</html>
+
+// page.tmpl
+{{ define "content" }}
+<h1>Hello World</h1>
+{{ end }}
+
+// main.go
+t := template.Must(template.ParseFiles("base.tmpl", "page.tmpl"))
+t.Execute(os.Stdout, nil)
+~~~
+
+对于`{{ block "content" . }}`来说
+
+- 如果content模版存在, 那么他就等效于`{{ template "content" . }}`
+- 如果content模版不存在, 那么他就会输出`\n默认内容\n`, 而不是报错
+
+还有几点需要注意的是:
+
+- block中指定的模版名最好唯一
+
+- 如果重名, 那么后解析的模版会覆盖block中的内容
+
+  ~~~go
+  ParseFiles("base.tmpl", "override.tmpl")
+  ~~~
+
+  `override.tmpl` 中 `define "x"` 会覆盖 base 中的 `block "x"`,  所以block中的顺序很重要
+
+
+
+### html/template的上下文感知
+
+对于html/template包，有一个很好用的功能：上下文感知。text/template没有该功能。
+
+上下文感知具体指的是根据所处环境css、js、html、url的path、url的query，自动进行不同格式的转义。
+
+例如，一个handler函数的代码如下：
+
+````go
+func process(w http.ResponseWriter, r *http.Request) {
+	t, _ := template.ParseFiles("test.html")
+	content := `I asked: <i>"What's up?"</i>`
+	t.Execute(w, content)
+}
+````
+
+上面content是Execute的第二个参数，它的内容是包含了特殊符号的字符串。
+
+下面是test.html文件的内容：
+
+````html
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>Go Web Programming</title>
+	</head>
+	<body>
+		<div>{{ . }}</div>
+		<div>Path</div>
+		<div>Query</div>
+		<div><a onclick="f('{{ . }}')">Onclick</a></div>
+	</body>
+</html>
+````
+
+上面test.html中有4个不同的环境，分别是html环境、url的path环境、url的query环境以及js环境。虽然对象都是{{.}}，但解析执行后的值是不一样的。如果使用curl获取源代码，结果将如下：
+
+````html
+<html>
+
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+	<title>Go Web Programming</title>
+</head>
+
+
+<body>
+	<div>I asked: &lt;i&gt;&#34;What&#39;s up?&#34;&lt;/i&gt;</div>
+	<div>
+		<a href="/I%20asked:%20%3ci%3e%22What%27s%20up?%22%3c/i%3e">
+			Path
+		</a>
+	</div>
+	<div>
+		<a href="/?q=I%20asked%3a%20%3ci%3e%22What%27s%20up%3f%22%3c%2fi%3e">
+			Query
+		</a>
+	</div>
+	<div>
+		<a onclick="f('I asked: \x3ci\x3e\x22What\x27s up?\x22\x3c\/i\x3e')">
+			Onclick
+		</a>
+	</div>
+</body>
+
+</html>
+````
+
+
+##### 不转义
+上下文感知的自动转义能让程序更加安全，比如防止XSS攻击(例如在表单中输入带有<script>...</script>的内容并提交，会使得用户提交的这部分script被执行)。
+
+如果确实不想转义，可以进行类型转换。
+
+````txt
+type CSS
+type HTML
+type JS
+type URL
+````
+
+转换成指定个时候，字符都将是字面意义。例如：
+
+````go
+func process(w http.ResponseWriter, r *http.Request) {
+	t, _ := template.ParseFiles("tmpl.html")
+	t.Execute(w, template.HTML(r.FormValue("comment")))
+}
+````
+
+
+
+
+
+## Template模块中的常用函数
+
+1. ParseFiles
+
+   这个函数用于解析多个文件, 并返回第一个文件对应的Template对象
+
+   ~~~go
+   func ParseFiles(filenames ...string) (*Template, error)
+   ~~~
+
+   比如如下的代码
+
+   ~~~go
+   tpl := template.ParseFiles("base.tmpl", "page.tmpl", "footer.tmpl")
+   ~~~
+
+   上面代码会按照从左到右解析所有的模版文件, 并创建一个TemplateSet
+
+   这个方法也是Template对象的实例方法,  用于在当前的TemplateSet中重新添加多个解析文件
+
+   ~~~go
+   tpl := template.New("base.tmpl")
+   tpl = template.Must(tpl.ParseFiles("templates/base.tmpl"))
+   tpl = template.Must(tpl.ParseGlob("templates/*.tmpl"))
+   ~~~
+
+2. ParseGlob
+
+   按 glob 模式一次性解析一批模板文件，组成一个模板集合（Template Set）, <font color=red>**默认按照文件名的字典序从小到大来排序的**</font>
+
+   <font color=red>**如果你有某个文件一定要在所有的文件之前解析的话, 那么推荐使用`_`开头, 比如helm中的`_helper.tpl`**</font>
+
+   ~~~go
+   func ParseGlob(pattern string) (*Template, error)
+   ~~~
+
+   同时强烈推荐`ParseGlob`这个函数与`ExecuteTemplate`一起使用, 这样你就可以直接指定需要渲染的模版了
+
+   ~~~go
+   tpl := template.Must(
+   	template.ParseGlob("templates/*.tmpl"),
+   )
+   // 指定需要渲染base.tmpl文件
+   tpl.ExecuteTemplate(os.Stdout, "base.tmpl", data)
+   ~~~
+
+   或者你也可以使用如下的方法, 先指定要渲染的文件, 然后再解析文件
+
+   ~~~go
+   tpl := template.New("base.tmpl")
+   tpl = template.Must(tpl.ParseFiles("templates/base.tmpl"))
+   tpl = template.Must(tpl.ParseGlob("templates/*.tmpl"))
+   ~~~
+
+3. Parse
+
+   Parse用于解析一个字符串, 并返回一个Template对象
+
+   ~~~go
+   func (t *Template) Parse(text string) (*Template, error)
+   ~~~
+
+   下面是他的使用案例:
+
+   ~~~go
+   tpl := template.New("hello")
+   
+   tpl, err := tpl.Parse("Hello, {{ .Name }}!")
+   if err != nil {
+       panic(err)
+   }
+   
+   tpl.Execute(os.Stdout, map[string]string{
+       "Name": "Go",
+   })
+   ~~~
+
+4. ParseFS
+
+   这个函数主要用于解析那些已经打包在二进制中的文件
+
+   ~~~go
+   import (
+   	"embed"
+   	"log"
+   	"os"
+   	"text/template"
+   )
+   
+   // 1️⃣ 声明 embed.FS
+   //go:embed templates/*.tmpl
+   var tmplFS embed.FS
+   
+   func main() {
+   	// 2️⃣ 创建模板对象
+   	tpl := template.New("all")
+   
+   	// 3️⃣ 从 embed.FS 解析所有模板
+   	tpl, err := tpl.ParseFS(tmplFS, "templates/*.tmpl")
+   	if err != nil {
+   		log.Fatalf("ParseFS error: %v", err)
+   	}
+   }
+   ~~~
+
+5. Must函数
+
+   这个函数是一个helper函数, 他的代码如下
+
+   ~~~go
+   func Must(t *Template, err error) *Template {
+   	if err != nil {
+   		panic(err)
+   	}
+   	return t
+   }
+   ~~~
+
+   如果第二个参数不是nil, 那么就panic, 用法如下面的代码
+
+   ~~~go
+   func main() {
+   	tmpl := template.Must(template.ParseFiles("t3.html", "t2.html", "t1.html"))
+   	err := tmpl.Execute(os.Stdout, "hello world")
+   	if err != nil {
+   		panic(err)
+   	}
+   }
+   ~~~
+
+6. Execute方法
+
+   用于执行模版的渲染
+
+   ~~~go
+   func (t *Template) Execute(wr io.Writer, data any) error
+   ~~~
+
+7. ExecuteTemplate方法
+
+   用于执行模版的渲染, 并指定要渲染的文件
+
+   ~~~go
+   func (t *Template) Execute(wr io.Writer, data any) error
+   ~~~
+
+   > 特别需要注意Execute和ExecuteTemplate方法,  这两个方法是一边渲染一边输出的, 而不是渲染完毕才输出, 所以你如果渲染到一半, 发现使用了一个不存在的template内嵌模版,  那么渲染会停止, 并返回一个error, **但是已经有一部分内容写入到了Write中**
+   >
+   > 同时如果多个Execute方法共享一个Writer的话, 那么并发执行会导致输出交错, 混乱
+
+6. Delims
+
+   默认情况下, template模块使用`{{ }}`来作为包裹变量,  但是你也可以使用这个方法来指定, 他会返回同一个Template对象, 所以你可以进行链式调用
+
+   这个方法常常用于规避与其他的模版的语法冲突, 比如vue里面也是通过`{{ message }}`进行双向绑定的
+
+   ~~~go
+   func (t *Template) Delims(left, right string) *Template
+   ~~~
+
+   使用案例如下
+
+   ~~~go
+   tpl := template.New("t").
+   	Delims("[[", "]]")
+   
+   tpl, _ = tpl.Parse(`
+   Hello [[ .Name ]]
+   Today is [[ .Day ]]
+   `)
+   
+   tpl.Execute(os.Stdout, map[string]string{
+   	"Name": "Go",
+   	"Day":  "Monday",
+   })
+   ~~~
+
+7. Clone方法
+
+   clone方法会返回模版的副本, 包括所有关联的模版, 在clone的副本上添加模板是不会影响原始模板的。**所以我们可以将其用于公共模板，通过clone获取不同的副本。**
+
+   ```go
+   func (t *Template) Clone() (*Template, error) 
+   ```
+
+   下面是他的使用案例
+
+   ~~~~go
+   base := loadBaseTemplates() // 基础的模版
+   
+   admin, _ := base.Clone() // 生成后续不同的变种
+   admin.ParseFiles("admin.tmpl")
+   
+   user, _ := base.Clone()
+   user.ParseFiles("user.tmpl")
+   ~~~~
+
+8. New方法
+
+   New方法是创建一个新的`*Template`对象, 作为模版集合(Template Set)的起点
+
+   - 此时模版没有任何内容, 只有一个名字
+   - 后续所有的Parse, ParseFiles, ParseGlob都是在这个集合上追加模版
+
+   ~~~go
+   func New(name string) *template.Template
+   ~~~
+
+   使用案例如下
+
+   ~~~go
+   tpl := template.New("hello")
+   
+   tpl.Parse("Hello {{ .Name }}")
+   
+   tpl.Execute(os.Stdout, map[string]string{
+   	"Name": "Go",
+   })
+   ~~~
+
+   New的核心作用是: **如果你要解析多个文件的话, 那么你可以先通过New方法来指定你最终需要渲染的文件, 然后再渲染的时候, 直接调用Execute方法, 而不是ExecuteTemplate**
+
+   ~~~go
+   tpl := template.New("base.tmpl")
+   
+   tpl.ParseFiles("base.tmpl")
+   tpl.ParseGlob("partials/*.tmpl")
+   tpl.ParseGlob("pages/*.tmpl")
+   ~~~
+
+   New方法也可以直接在Template对象上面调用
+
+   ~~~go
+   tmpl, _ := template.New("page").Parse(`{{ template "header" .Header }}{{ template "footer" .Footer }}`)
+   tmplHeader, _ := tmpl.New("header").Parse("页头内容:{{ . }}")
+   tmplFooter, _ := tmpl.New("footer").Parse("页脚内容:{{ . }}")
+   
+   tmpl.Execute(os.Stdout, Params{Header: "header", Footer: "footer"}) // => 页头内容:header页脚内容:footer
+   ~~~
+
+   
+
+9. Name方法
+
+   Name方法输出当前Template中的主模版的名字是什么, 也就是调用Execute的时候, 输出的模版的名字
+
+   ~~~go
+   tpl := template.New("base.tmpl")
+   tpl.ParseFiles("base.tmpl", "page.tmpl")
+   
+   fmt.Println(tpl.Name())
+   tpl.Execute(w, data)
+   ~~~
+
+10. DefinedTemplates方法
+
+    这个方法返回Template对象中已经解析了哪些模版了, 包括block定义的, define定义的
+
+    主要用于debug使用, 排除是不是少了模版
+
+    ~~~go
+    func (t *Template) DefinedTemplates() string
+    ~~~
+
+    案例如下
+
+    ~~~go
+    tpl := template.New("base.tmpl")
+    tpl.ParseFiles("base.tmpl", "page.tmpl", "footer.tmpl")
+    
+    // ; defined templates are: "base.tmpl", "page.tmpl", "footer.tmpl"
+    fmt.Println(tpl.DefinedTemplates())
+    ~~~
+
+11. Templates函数
+
+    这个函数主要用于获取所有已经解析出来的Template对象, 相较于`DefinedTemplates`更偏向于编程使用
+
+    ~~~go
+    func (t *Template) Templates() []*Template
+    ~~~
+
+    他的使用案例如下:
+
+    ~~~go
+    for _, t := range tpl.Templates() {
+    	fmt.Println(t.Name())
+    }
+    ~~~
+
+12. Lookup函数
+
+    这个方法用于查找指定名字的模版, 并返回对应的Template对象
+
+    ~~~go
+    func (t *Template) Lookup(name string) *Template
+    ~~~
+
+    使用案例如下:
+
+    ~~~go
+    if t := tpl.Lookup("footer"); t != nil {
+    	t.Execute(w, data)
+    }
+    ~~~
+
+    
+
+13. Funcs 方法
+
+    这个方法用于注册自定义的函数
+
+    - **自定义函数对于参数个数和类型没有要求, 但是返回值只能有1/2个, 如果是两个, 那么第一个返回值的类型随意, 模版会自动格式化, 但是最后一个只能是error类型**
+    - **必须在Parse方法之前调用**
+    - 这个方法可以多次调用, 多次注册函数
+    - 如果注册了重名的函数, 那么后注册的会覆盖前面注册的
+    - 如果你要Clone模版, 那么注册完自定义函数之后Clone
+    - 如果你有一批函数需要注册,  推荐将他们分类, 每一类调用一个Funcs方法
+
+    ~~~go
+    func (t *Template) Funcs(FuncMap) *Template
+    ~~~
+
+    下面是使用案例
+
+    ~~~go
+    package main
+    
+    import (
+    	"os"
+    	"strings"
+    	"text/template"
+    	"time"
+    )
+    
+    func main() {
+    	// 1️⃣ 创建模板（此时是空模板）
+    	tpl := template.New("base.tmpl")
+    
+    	// 2️⃣ 第一次 Funcs：基础字符串函数
+    	tpl.Funcs(template.FuncMap{
+    		"upper": strings.ToUpper,
+    		"lower": strings.ToLower,
+    	})
+    
+    	// 3️⃣ 第二次 Funcs：时间相关函数
+    	tpl.Funcs(template.FuncMap{
+    		"now": func() string {
+    			return time.Now().Format("2006-01-02 15:04:05")
+    		},
+    	})
+    
+    	// 4️⃣ 第三次 Funcs：业务函数（覆盖 upper）
+    	tpl.Funcs(template.FuncMap{
+    		"upper": func(s string) string {
+    			return ">> " + strings.ToUpper(s) + " <<"
+    		},
+    	})
+    
+    	// ⚠ 所有 Funcs 必须在 Parse 之前
+    	template.Must(tpl.Parse(`
+    Name: {{ upper .Name }}
+    Lower: {{ lower .Name }}
+    Time: {{ now }}
+    `))
+    
+    	// 5️⃣ 执行模板
+    	tpl.Execute(os.Stdout, map[string]string{
+    		"Name": "Go Template",
+    	})
+    }
+    ~~~
+
+14. Option
+
+    这个用于改变使用模版的时候的行为
+
+    ~~~go
+    func (t *Template) Option(opt ...string) *Template
+    ~~~
+
+    - 可以传入多个字符串作为Option
+    - 也可以多次调用来传入Option
+    - 返回的还是原来的Template对象, 所有可以进行链式调用
+    - 必须在Parse之间调用
+
+    **实际上你只要掌握`missingKey`这个Option就够了, 这个用于指定如果map中指定的value的时候, 会怎么样(只能针对map, 不能针对struct )**
+
+    **helm中使用的是error这个值**
+
+    ~~~go
+    // 可选的有
+    //   default: 如果没有指定的key, 那么输出一个 <no value>
+    //   zero: 返回对应类型的零("", 0, nil)
+    //   error: 直接渲染失败
+    tpl := template.New("t").Option("missingkey=default")
+    ~~~
+
+    比如下面的案例
+
+    ~~~go
+    data := map[string]string{
+        "User": "Tom",
+    }
+    
+    tplText := `Hello {{ .Name }}`
+    
+    // Hello 
+    // tpl := template.New("t").Option("missingkey=zero")
+    
+    // Hello panic: template: t:1:9: executing "t" at <.Name>: map has no entry for key "Name"
+    // tpl := template.New("t").Option("missingkey=error")
+    
+    // Hello <no value>
+    tpl := template.New("t")
+    tpl.Parse(tplText)
+    tpl.Execute(os.Stdout, data)
+    ~~~
+
+15. AndParseTree
+
+    这个函数是一个比较底层的函数,  也使用的比较少, 用于将一个TemplateSet中的模版, 添加到另外一个TemplateSet中, 可以实现模版的动态组合
+
+    ~~~go
+    func (t *Template) AddParseTree(name string, tree *parse.Tree) (*Template, error)
+    ~~~
+
+    案例如下
+
+    ~~~go
+    tpl1 := template.Must(template.New("base").Parse(`{{ define "header" }}<h1>{{ .Title }}</h1>{{ end }}`))
+    tpl2 := template.Must(template.New("page").Parse(`{{ define "page" }}{{ template "header" . }}Body{{ end }}`))
+    
+    // 把 tpl1 的 "header" 加到 tpl2
+    tpl2.AddParseTree("header", tpl1.Lookup("header").Tree)
+    
+    tpl2.ExecuteTemplate(os.Stdout, "page", map[string]string{"Title": "Hello"})
+    ~~~
+
+
+
+
+## Helm 扩展
+
+### 内置对象
+
+在helm的template文件中, 你可以在当前上下文对象`.`中获取到如下的内置对象
+
+~~~go
+.Values
+.Release
+.Chart
+.Capabilities
+.Files
+.Template
+~~~
+
+
+
+#### .Values
+
+这个对象中保存的是`values.yaml` + `-f  xx_values.yaml` + `--set aa=bb`合并的后的最终结果
+
+这些内容的优先级如下:
+
+~~~txt
+values.yaml
+charts/*/values.yaml
+-f custom.yaml
+--set key=value
+~~~
+
+他的使用案例如下:
+
+~~~yaml
+# values.yaml
+replicaCount: 3
+image:
+  repository: nginx
+  tag: "1.25"
+  
+# template/a.yaml
+replicas: {{ .Values.replicaCount }}
+image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+~~~
+
+强烈在使用values.yaml中的值的时候, 设置默认值, 要么报错
+
+~~~gotemplate
+{{ default 1 .Values.replicaCount }}
+{{ required "image.repository must be set" .Values.image.repository }}
+~~~
+
+
+
+
+
+
+
+#### .Release
+
+这个变量里面可以获取到当前release的一些相关信息
+
+- Name: 这个表示当前release的名字
+
+  ~~~gotemplate
+  {{ .Release.Name }}
+  ~~~
+
+- Namespace: 这个表示当前release安装的namespace
+
+  ~~~gotemplate
+  {{ .Release.Namespace }}
+  ~~~
+
+- Revision: 表示当前安装的release的版本号,  每次upgrade的时候+1,  每次回滚的时候也会+1
+
+  ~~~gotemplate
+  {{ .Release.Revision }}
+  ~~~
+
+- IsUpgrade, IsInstall:  表示当前release是首次安装, 还是在升级
+
+  ~~~gotemplate
+  # 判断当前release在安装的时候, 是升级还是安装
+  {{- if .Release.IsInstall }}
+  # only on install
+  {{- end }}
+  ~~~
+
+- Labels: 这是一个map, 表示当前文件中的label有哪些
+
+  ~~~shell
+  helm upgrade myapp ./mychart \
+    --labels env=prod,team=platform
+  ~~~
+
+  ~~~yaml
+  {{ .Release.Labels.env }}
+  ~~~
+
+- Service: 表示当前的Release是哪个service在进行安装, 在helm2的时候通常是"Tiller", 在Helm3的时候固定为了"Helm"
+
+  这个属性几乎用不到, 除了要同时兼容Helm2和Helm3的场景
+
+  ~~~yaml
+  {{ .Release.Service }}   # Helm
+  ~~~
+
+  
+
+#### .Chart
+
+这个变量里面可以获取到当前chart的一些信息, 其中的信息来自于`Chart.yaml`这个文件中
+
+~~~yaml
+# Chart.yaml
+apiVersion: v2
+name: my-app
+description: A Helm chart for Kubernetes
+type: application
+version: 1.2.3
+appVersion: "2.0.1"
+kubeVersion: ">=1.23.0" # 声明当前chart需要kubernetes的版本>=1.23.0
+keywords:
+  - web
+  - backend
+home: https://example.com
+sources:
+  - https://github.com/example/my-app
+maintainers:
+  - name: alice
+    email: alice@example.com
+
+
+# template/aa.yaml  
+{{ .Chart.Name }} # 输出: my-app
+{{ .Chart.Version }} #  输出: 1.2.3
+{{ .Chart.AppVersion }} #  输出: 2.0.1
+{{ .Chart.KubeVersion }} #  输出: >=1.23.0
+{{ .Chart.Keywords }} # 输出: [web backend]
+{{ .Chart.Type }} # 输出: application
+~~~
+
+
+
+#### .Capabilities
+
+这个变量是Helm 模板里用于“感知集群能力”的核心内置对象。写 跨 Kubernetes 版本、跨集群可用的 Helm Chart，几乎离不开它。
+
+.Capabilities 描述“当前 Helm 连接到的 Kubernetes 集群支持什么”
+
+他有如下的顺序
+
+~~~text
+.Capabilities
+├── KubeVersion
+│   ├── Version
+│   ├── Major
+│   ├── Minor
+│   └── GitVersion
+├── APIVersions
+│   └── Has
+└── HelmVersion
+    ├── Version
+    ├── Major
+    ├── Minor
+    └── GitVersion
+~~~
+
+
+
+`.Capabilities.KubeVersion`主要用来表示当前k8s的集群版本
+
+~~~gotemplate
+{{ .Capabilities.KubeVersion.Version }}     // "1.28"
+{{ .Capabilities.KubeVersion.Major }}       // "1"
+{{ .Capabilities.KubeVersion.Minor }}       // "28"
+{{ .Capabilities.KubeVersion.GitVersion }}  // "v1.28.2"
+~~~
+
+**对于版本号的判断, 千万不要使用ge来比较, 而是需要使用函数**
+
+~~~gotemplate
+# 使用semverCompare 来判断版本号
+{{- if semverCompare ">=1.19-0" .Capabilities.KubeVersion.GitVersion }}
+apiVersion: networking.k8s.io/v1
+{{- else }}
+apiVersion: networking.k8s.io/v1beta1
+{{- end }}
+~~~
+
+
+
+`.Capabilities`主要用于判断当前的k8s集群是否支持某个api
+
+~~~gotemplate
+{{- if .Capabilities.APIVersions.Has "policy/v1/PodDisruptionBudget" }}
+apiVersion: policy/v1
+{{- else }}
+apiVersion: policy/v1beta1
+{{- end }}
+~~~
+
+
+
+`.Capabilities.HelmVersion`表示当前helm的版本号
+
+~~~gotemplate
+{{ .Capabilities.HelmVersion.Version }}    // "3.14.1"
+{{ .Capabilities.HelmVersion.GitVersion }} // "v3.14.1"
+~~~
+
+
+
+#### .Files
+
+这个变量可以读取Chart中的文件, 除了`template下的模版文件, Chart目录以外的文件`
+
+假如有如下的chart目录结构
+
+~~~text
+mychart/
+├── Chart.yaml
+├── values.yaml
+├── templates/
+│   └── configmap.yaml
+├── files/
+│   ├── app.conf
+│   └── init.sql
+└── scripts/
+    └── start.sh
+~~~
+
+1. `.Files.Get` 用来获取指定路径的文件, 并转换为字符串, 常常用来将文件放到模版中
+
+   ~~~gotemplate
+   data:
+     app.conf: |
+   {{ .Files.Get "files/app.conf" | indent 4 }}
+   ~~~
+
+2. `.Files.GetBytes`用于读取指定的文件, 并转换为自己数组, 常常用于Secret的场景, 并配合`b64enc`一起使用
+
+   ~~~gotemplate
+   data:
+     cert.pem: {{ .Files.GetBytes "files/cert.pem" | b64enc }}
+   ~~~
+
+3. `.Files.Glob`用于按照glob模式匹配多个文件, 并返回一个map, key是文件的path, value是对应内容的数组, 常常用在range循环中遍历多个文件
+
+   ~~~gotemplate
+   data:
+   {{- range $path, $bytes := .Files.Glob "files/*.conf" }}
+     {{ base $path }}: |
+   {{ $bytes | toString | indent 4 }}
+   {{- end }}
+   ~~~
+
+4. `.Files.Lines`用于按行读取文本, 并返回对应的slice
+
+   ~~~gotemplate
+   {{ range .Files.Lines "files/app.conf" }}
+   - {{ . }}
+   {{ end }}
+   ~~~
+
+5. `.Files.AsConfig`用于就按多个文件自动转换为Configmap data结构
+
+   ~~~gotemplate
+   data:
+   {{ .Files.Glob "files/*.conf" | .AsConfig | indent 2 }}
+   ~~~
+
+6. `.Files.AsSecrets`用于将多个文件转换为Secret date结构(自动base64)
+
+   ~~~gotemplate
+   data:
+   {{ .Files.Glob "secrets/*" | .AsSecrets | indent 2 }}
+   ~~~
+
+   
+
+#### .Template
+
+可以使用他来获取到当前模版自身的一些信息, 在调试的时候有用
+
+1. `.Template.Name`是当前模版在helm内部的完整名字
+
+   ```gotemplate
+   {{ .Template.Name }} # mychart/templates/deployment.yaml
+   ```
+
+2. `.Template.BasePath`是当前模版在chart中的路径
+
+   ~~~gotemplate
+   {{ .Template.BasePath }} # mychart/templates
+   ~~~
+
+
+### Sprig函数库
+
+Sprig 函数库是 一个为 Go 模板（Go text/template 和 html/template）提供丰富辅助函数的库，主要用来弥补 Go 模板自带函数的不足。
+
+Go 自带的模板函数非常有限，比如只有 len、print、index、eq、and、or 等基础函数，而实际开发中，经常需要更复杂的字符串处理、日期格式化、数学运算、列表操作等，这时候 Sprig 就非常有用。
+
+在helm中集成了Sprig函数库, 所以如果你在编写helm的chart, 那么可以直接使用其中的函数
+
+1. 字符串函数
+
+   ~~~gotemplate
+   # 转大写
+   {{ "hello world" | upper }}          // 输出 "HELLO WORLD"
+   
+   # 转小写
+   {{ "HELLO WORLD" | lower }}          // 输出 "hello world"
+   
+   # 首字母大写
+   {{ "hello world" | title }}          // 输出 "Hello World"
+   
+   # 移除前后空格
+   {{ "  hello  " | trim }}             // 输出 "hello"
+   
+   # 移除前缀
+   {{ "foobar" | trimPrefix "foo" }}    // 输出 "bar"
+   
+   # 移除后缀
+   {{ "foobar" | trimSuffix "bar" }}    // 输出 "foo"
+   
+   # 替换字符串
+   {{ "foo bar foo" | replace "foo" "baz" -1 }} // 输出 "baz bar baz"
+   
+   # 判断子串
+   {{ "foobar" | contains "foo" }}      // 输出 true
+   
+   # 判断前缀
+   {{ "foobar" | hasPrefix "foo" }}     // 输出 true
+   
+   # 判断后缀
+   {{ "foobar" | hasSuffix "bar" }}     // 输出 true
+   
+   # 添加双引号
+   {{ "hello" | quote }}          // 输出: "hello"
+   
+   # 字符串拼接
+   {{ cat "hello" " " "world" }}    // 输出: hello world
+   
+   # 按照指定的分隔符连接list
+   {{ list "a" "b" "c" | join "," }}   // 输出: a,b,c
+   ~~~
+
+   
+
+2. 日期/时间函数
+
+   ~~~gotemplate
+   {{ now }}                            // 输出当前时间，例如 2025-12-17 18:00:00 +0800 CST
+   {{ now | date "2006-01-02" }}        // 输出当前日期，格式 YYYY-MM-DD，例如 2025-12-17
+   {{ now | date "2006-01-02 15:04:05" }} // 输出当前时间和日期
+   {{ now | dateModify "+1d" | date "2006-01-02" }} // 当前日期加一天
+   ~~~
+
+   
+
+3. 数学函数
+
+   ~~~gotemplate
+   {{ add 3 5 }}                        // 输出 8
+   {{ sub 10 4 }}                        // 输出 6
+   {{ mul 2 3 }}                         // 输出 6
+   {{ div 10 2 }}                        // 输出 5
+   {{ ceil 3.14 }}                        // 输出 4
+   {{ floor 3.99 }}                       // 输出 3
+   {{ round 3.14159 2 }}                  // 输出 3.14
+   {{ min 10 3 5 }}                        // 输出 3
+   {{ max 10 3 5 }}                        // 输出 10
+   ~~~
+
+4. 列表/集合函数
+
+   ~~~gotemplate
+   {{ $arr := list 1 2 3 2 }} # 创建一个slice
+   {{ first $arr }}                      // 输出 1
+   {{ last $arr }}                       // 输出 2
+   {{ sort $arr }}                       // 排序, 输出 [1 2 2 3]
+   {{ uniq $arr }}                        // 去重, 输出 [1 2 3]
+   {{ append $arr 4 5 }}                  // 输出 [1 2 3 2 4 5]
+   {{ concat $arr (list 6 7) }}           // 输出 [1 2 3 2 6 7]
+   {{ has $arr 2 }}                        // 输出 true
+   
+   {{ list 1 "" 2 nil 3 | compact }} // 删除零值的元素,  输出: [1 2 3]
+   {{ list "b" "c" "a" | sortAlpha }} // 按照字母顺序对字符串slice进行排序
+   ~~~
+
+   
+
+5. 字典/对象函数
+
+   ~~~gotemplate
+   {{ $m := dict "a" 1 "b" 2 }}         // 构造map
+   {{ hasKey $m "a" }}                  // 输出: true
+   
+   {{ $m.a }}                            // 输出 1
+   {{ $m.b }}                            // 输出 2
+   
+   {{ $n := dict "b" 3 "c" 4 }}
+   {{ merge $m $n }}                     // 输出 map[a:1 b:3 c:4]
+   
+   
+   {{ $m1 := dict "name" "a" "port" 80 }}
+   {{ $m2 := dict "name" "b" "port" 81 }}
+   {{ pluck "port" (list $m1 $m2) }}        // 从map/对象中,按 key 抽取同一个字段，组成一个列表, 如果某个map中没有这个key, 那么会输出<no value>  输出: [80 81]
+   
+   
+   {{ $m := dict "a" 1 "b" 2 }}
+   {{ set $m "c" 3 }} // put一个key value到map中
+   
+   {{ unset $m "c" }} // 删除map中的key
+   
+   {{ merge $a $b }} // 合并两个map
+   ~~~
+
+   
+
+6. 条件/逻辑辅助函数
+
+   ~~~gotemplate
+   {{ "" | default "Anonymous" }}         // 三元运算符, 输出 "Anonymous"
+   {{ coalesce "" nil "first non-empty" }} // 返回第一个非零值, 输出 "first non-empty"
+   {{ empty "" }}                          // 判断是否为空, 输出 true
+   {{ empty $arr }}                        // 判断是否length = 0, 输出 false
+   ~~~
+
+   
+
+7. 安全/HTML 函数
+
+   ~~~~gotemplate
+   {{ "<div>Hello</div>" | htmlEscape }}   // 输出 "&lt;div&gt;Hello&lt;/div&gt;"
+   {{ "alert('xss')" | jsEscape }}         // 输出 "alert(\'xss\')"
+   ~~~~
+
+   
+
+### 模版加载/组合
+
+#### include
+
+虽然在go template中也提供了define和template两个关键字来实现模版的拆分和服用, 但是在helm中并不推荐使用这两个关键字来实现模版的拆分和复用
+
+比如下面的模版
+
+~~~gotemplate
+# _helpers.tpl
+{{- define "mychart.labels" -}}
+app: {{ .Chart.Name }}
+release: {{ .Release.Name }}
+{{- end -}}
+
+# templates/aa.yaml
+{{ template "mychart.labels" . }}
+~~~
+
+如果你使用上面的模版那么会面临如下的问题:
+
+1. 模版直接渲染在当前的问题,  如果是yaml的话没有办法进行代码块的缩进
+2. 没有办法进行管道处理
+3. 必须显示的传一个上下文参数
+
+
+
+所以在helm中实现了`include`关键字, 他会渲染模版并返回对应的字符串, 这样你就可以进行二次处理了(indent, nindent)
+
+比如如下的模版
+
+~~~gotemplate
+{{- define "mychart.name" -}}
+{{ .name }}-{{ .suffix }}
+{{- end -}}
+
+{{ include "mychart.name" (dict "name" "app" "suffix" "v1") | indent 4 }}
+~~~
+
+
+#### tpl
+
+tpl这个关键字可以将字符串当做模版, 然后再用当前的上下文进行渲染一次
+
+~~~yaml
+# values.yaml
+message: "hello {{ .Release.Name }}"
+
+# templates/a.yaml
+{{ tpl .Values.message . }} # 获取到hello {{ .Release.Name }}字符串, 然后作为模版再次渲染
+~~~
+
+
+
+常常用在你通过`.File.Get`获取到了一个文件的内容,  然后想讲这个文件作为模版再次渲染
+
+~~~gotemplate
+data:
+  config.yaml: |
+{{ tpl (.Files.Get "config/config.yaml") . | nindent 4 }}
+~~~
+
+
+
+
+
+
+
+### Kubernetes/Helm语义相关的辅助函数
+
+
+
+#### lookup
+
+这个函数主要用于调用k8s的接口, 来查询已经存在的kubernetes资源
+
+只有在helm3中才有这个函数, 他的使用方法如下
+
+~~~gotemplate
+lookup apiVersion kind namespace name
+~~~
+
+下面查询一个configmap
+
+~~~gotemplate
+# 查询my-config这个cm是否存在, 如果存在返回一个map, 如果不存在返回nil
+{{- $cm := lookup "v1" "ConfigMap" .Release.Namespace "my-config" }}
+{{- if $cm }}
+data:
+  existing: "true"
+{{- end }}
+~~~
+
+查询整个namesapce中的cm
+
+~~~gotemplate
+{{- $cms := lookup "v1" "ConfigMap" .Release.Namespace "" }}
+{{- range $cms.items }}
+- {{ .metadata.name }}
+{{- end }}
+~~~
+
+在使用这个函数的时候, 一定要注意以下几点:
+
+- 如果没有RBAC权限, 那么永远返回nil
+- lookup命令是在安装阶段中执行的, **只能查看已经存在的资源, 不能用来读取"本次安装中刚刚创建的资源"**
+- 如果执行的是`helm  template`命令, 那么永远返回nil
+
+
+
+#### required, default, fail
+
+requried和fail是helm提供的,  而default函数是在sprig中提供的
+
+
+
+required主要用来校验对象中的属性, map中的key是否存在, 如果不存在那么就报错出去
+
+default主要用来设置默认
+
+fail主要用来主动失败
+
+~~~gotemplate
+{{ default 1 .Values.replicaCount }} // 默认值
+{{ required "image.repository must be set" .Values.image.repository }} // 校验值是否被设置
+
+
+{{- if not (semverCompare .Chart.KubeVersion .Capabilities.KubeVersion.GitVersion) }}
+{{- fail "Kubernetes version not supported" }} // fail这个函数直接导致模版渲染失败
+{{- end }}
+~~~
+
+
+
+#### toYaml和fromYaml
+
+`toYaml` 这个函数将go对象(map / slice / struct) 序列号并转换为yaml结构
+
+简单用法:
+
+~~~gotempalate
+{{ dict "a" 1 "b" 2 | toYaml }}
+a: 1
+b: 2
+
+{{ list "a" "b" "c" | toYaml }}
+- a
+- b
+- c
+~~~
+
+常见用法
+
+~~~yaml
+# values.yaml
+resources:
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# templates/aa.yaml
+resources:
+{{ toYaml .Values.resources | nindent 2 }}
+~~~
+
+
+
+fromYaml主要用于将yaml结构的字符串转换为map
+
+~~~gotemplate
+# 获取config.yaml, 并转换为map结构
+{{- $obj := fromYaml (.Files.Get "config.yaml") }}
+
+# 获取map结构中的值
+{{ $obj.metadata.name }}
+~~~
+
+
+
+
+
+#### nindent和indent
+
+nindent和indent主要用来给yaml换行使用的
+
+~~~gotemplate
+# 给多行文本的每一行前面添加固定数量的空格
+{{ list "a" "b" "c" | indent 4}} 
+    a
+    b
+    c
+
+# 和上面的indent一样, 给每一行都添加一个指定的空格, 但是区别在于会在第一行添加一个换行
+{{ list "a" "b" "c" | indent 4}} 
+
+    a
+    b
+    c
+~~~
 
 
 
