@@ -3004,7 +3004,31 @@ done
 
 
 
+### du和df
 
+du意思是disk usage, 这个命令主要用于查看目录占用了多少存储
+
+~~~shell
+du # 递归显示当前目录下的目录, 显示占用的字节数
+
+du /data -sh # -h表示human-readable, 将占用字节转换为m, g, -s表示summary, 只显示指定的目录, 不要递归
+
+du /data -h --max-depth 1 # --max-depth 1指定只递归一个层级
+
+du -h --max-depth=1 /var | sort -hr # 按照占用倒序排序
+~~~
+
+df意思是disk free, 用于查看磁盘还有多少存储
+
+> 这个命令不能查看目录还有多少存储, 因为目录没有存储限制, 他查看的是目录所在的磁盘还有多少存储
+
+~~~shell
+du -h  # 查看当前目录所在的磁盘使用情况
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1        50G   40G   10G  80% /
+
+df -h /var/log # 查看/var/log所在的磁盘使用情况
+~~~
 
 
 

@@ -6181,7 +6181,43 @@ PersistentVolumeClaim(PVC)是对PV的申请, 通过在Pod中指定PVC, 之后PVC
 
 
 
-### 创建pv
+
+
+pv的实现是多种多样的, 你可以指定多种存储实现
+
+- hostPath
+
+  直接使用集群中某个节点的宿主机路径, 使用这种类型的pv, 相当于hostPath类型的Volume
+
+  pod与节点强绑定, 如果Pod换了节点, 数据就没有了
+
+  常常用在单节点集群, 测试环境, 不推荐生产使用
+
+- local
+
+  使用集群中的某个节点的某个磁盘/SSD/NVMe来作为存储, **需要配合亲和性一起使用**
+
+  同样的pod不能迁移
+
+  性能相较于其他的存储较好, 因为pod和pv都在一个节点上, 常常用在数据库, 日志, 缓存的场景
+
+- nfs
+
+  使用nsf网络文件系统, 多pod可以共享nfs, 部署简单, 性能一般
+
+其他的一些存储类型还有
+
+`Ceph文件系统, ceph-rbd块存储, iSCSI网络块设备, azureDisk, azureFile, alicloudDisk, csi.cbs.tencent.com`等等
+
+
+
+> pv的yaml中没有namespace这个字段, 因为pv资源属于整个集群
+
+
+
+### 创建PV
+
+#### nfs类型的pv
 
 下面是通过nfs创建一个PersistentVolume的yaml案例
 
@@ -6204,9 +6240,13 @@ spec:
   # Block: 块设备, 支持的类型有AWSElasticBlockStore、AzureDisk、FC、GCEPersistentDisk、iSCSI、Local volume、RBD（Ceph Block Device）、VsphereVolume（alpha）
   volumeMode: Filesystem 
   # 访问模式
-  # ReadWriteOnce: 该pv只能被单个几点以读写模式挂载
+  # ReadWriteOnce: 该pv只能被单个节点以读写模式挂载
   # ReadOnlyMany: 该pv可以被多个节点以只读模型挂载
   # ReadWriteMany: 该pv可以被多个节点以读写模型挂载
+  # !!! 这里非常重要的是, 多个还是单个节点, 而不是单个还是多个pod
+  # 因为真正pv真正是amoute到节点上的, 有些类型的pv只能amount到一个节点上, 比如hostPathl, local类型的
+  # 如果你要使用ReadWriteMany和ReadOnlyMany的话, 那么pv的实现必须是分布式文件系统, 有一致性协议等功能, 比如NFS, CephFs等
+  # 只要amoute上去了, 那么同一个节点的多个pod就可以同时使用这个pv
   accessModes:
     - ReadWriteOnce
   # 回收策略, 用于指定当与之关联的pvc被删除后, pv如何处理
@@ -6219,7 +6259,7 @@ spec:
   # 具有特定storageClassName的PV只能与相同storageClassName的PVC进行绑定。
   # 没有storageClassName的PV只能与没有storageClassName的PVC进行绑定。
   storageClassName: slow 
-  # 挂载参数
+  # 挂载参数, 依据不同的实现类型不同而不同
   mountOptions:
     - hard
     - nfsvers=4.1
@@ -6228,6 +6268,125 @@ spec:
     path: /nfs/data
     server: cdh107
 ~~~
+
+
+
+#### hostPath类型的pv
+
+~~~yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: hostpath-pv-demo
+  labels:
+    type: local
+    env: dev
+spec:
+  capacity:
+    # 逻辑容量, k8s不会真正限制hostPath磁盘的使用, 这个只用于PVC的匹配
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    # hostpath类型的只能使用这个, 因为物理层面就不可能挂载到多个节点
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  # 用于匹配指定storageClassName的pv
+  storageClassName: hostpath-sc
+  mountOptions:
+    - noatime 
+  hostPath:
+    path: /data/k8s/hostpath-pv
+    # 可选的值有
+    # Directory: 目录不行存在
+    # Directory: 不存在就创建
+    # File: path指定的必须是文件
+    # FileOrCreate: path指定的文件, 不存在就创建
+    # Socket: path指定的是Unix Socket
+    # CharDevice: path指定的是字符设备
+    # BlockDevice: path指定的是块设备
+    type: DirectoryOrCreate
+~~~
+
+#### local类型的pv
+
+local类型的pv和hostPath类型的pv的不同在于, hostPath挂载的是一个本地目录, 而local类型的挂载的是一个本地磁盘
+
+~~~yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: openobserve-local-pv
+  labels:
+    app: openobserve
+spec:
+  capacity:
+    storage: 200Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  # 这个名字可以随便起
+  storageClassName: local-storage
+
+  # 指定磁盘挂载的目录
+  local:
+    path: /data/openobserve
+
+  # 必须有 nodeAffinity, 因为本地磁盘只有在特定的节点上有
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node-157   # 指定挂载磁盘的节点
+~~~
+
+
+
+
+
+### pv的亲和性
+
+PV在创建的时候, 也可以指定PV的亲和性, 主要用于限制PV调度到的节点
+
+> pv没有反亲和性
+
+~~~yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: openobserve-local-pv
+  labels:
+    app: openobserve
+spec:
+  capacity:
+    storage: 200Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /data/openobserve
+  nodeAffinity:
+    # 必须要满足的条件
+    required:
+      nodeSelectorTerms:
+      # 通过lable来匹配node的label
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node-157   # 指定挂载磁盘的节点
+~~~
+
+
+
+
+
+
 
 查看pv以及他的描述信息
 
@@ -6251,6 +6410,14 @@ kubectl delete pv -n namespace_name pv0003 # 删除pv
 
 下面是一个PersistentVolumeClaims的案例, 通过下面yaml创建pvc后, 他会找到一个符合条件的pv进行绑定
 
+匹配条件如下:
+
+- pv和pvc的storageClassName必须相等
+- pv和pvc的accessModes必须相等
+- pv和pvc的volumeMode必须相等
+- pv的capacity必须大于pvc的capacity
+- pvc的selector必须包含pv
+
 ~~~yaml
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -6264,7 +6431,8 @@ spec:
   resources:
     requests:
       storage: 4Gi # 该pvc只会寻找大于等于storage的pv进行绑定
-  storageClassName: slow # 该pvc只会寻找相同storageClassName的pv进行绑定
+  # 该pvc只会寻找相同storageClassName的pv进行绑定, 如果没有指定storageClassName, 那么也只会找没有storageClassName的pv进行绑定
+  storageClassName: slow 
   selector:
     matchLabels: # 定义绑定的pv需要对应的label
       pv-type: example-label
@@ -6285,13 +6453,13 @@ kubectl describe pvc -n namespace_name pvc_name # 查看指定命名空间中的
 kubectl delete pvc -n namespcae_name pvc_name # 删除指定命名空间中的pvc
 ~~~
 
-
-
-
-
 ![image-20231024195827068](img/k8s笔记/image-20231024195827068.png)
 
 如上图所示, pvc以及绑定到了pv0003上面
+
+
+
+
 
 ### 使用pvc
 
@@ -6318,6 +6486,212 @@ spec:
 <img src="img/k8s笔记/image-20231024200104408.png" alt="image-20231024200104408" style="zoom: 33%;" />
 
 <img src="img/k8s笔记/image-20231024200232138.png" alt="image-20231024200232138" style="zoom:50%;" />
+
+
+
+
+
+### 自动创建的pvc
+
+当然你也可以直接在创建Controller的时候, 直接创建要使用的pvc来
+
+~~~shell
+# 创建headless service
+apiVersion: v1
+kind: Service
+metadata:
+  name: headless-svc-nginx
+  labels:
+    app: nginx
+spec:
+  ports:
+    - port: 80
+      name: web
+  clusterIP: None # 指定ClusterIp为None, 创建无头服务
+  selector:
+    app: nginx
+---
+# 创建StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  serviceName: headless-svc-nginx # 使用上面创建的service来创建statefulset
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx1
+          image: nginx:1.24
+          ports:
+            - containerPort: 80
+              name: web
+          volumeMounts:
+            - name: www
+              mountPath: /usr/share/nginx/html
+  # 直接创建pvc, 并绑定到pod中, 因为有3个副本, 所以会创建3个pvc
+  # 并且pvc的名字的格式会按照如下的格式: $name-${podname}
+  # 创建的pvc名字是 data-web-0, data-web-1, data-web-2
+  volumeClaimTemplates: 
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ] 
+        # 指定匹配的pv的storageClassName
+        storageClassName: "nfs"
+        resources:
+          requests:
+            storage: 1Gi
+~~~
+
+
+
+### StorageClass
+
+这里说的StorageClass并不是在pv和pvc中指定的storageClassName这个东西,  而是一种k8s资源, 和pv, controller, pvc一样,  你可以使用如下的命令来查看k8s中的StorageClass
+
+> StorageClass 和 PV一样是集群资源, 所有没有命名空间
+
+~~~shell
+[admin@kygfb sys49482]$ kubectl get sc -A
+NAME                                PROVISIONER                    RECLAIMPOLICY   VOLUMEBINDINGMODE      ALLOWVOLUMEEXPANSION   AGE
+local-path                          rancher.io/local-path          Delete          WaitForFirstConsumer   false                  33h
+seasql-base-local-storage           kubernetes.io/no-provisioner   Delete          Immediate              false                  33h
+
+[admin@kygfb sys49482]$ kubectl describe sc seasql-base-local-storage
+Name:                  seasql-base-local-storage
+IsDefaultClass:        No
+Annotations:           meta.helm.sh/release-name=seasql-base,meta.helm.sh/release-namespace=service-software
+Provisioner:           kubernetes.io/no-provisioner
+Parameters:            <none>
+AllowVolumeExpansion:  <unset>
+MountOptions:          <none>
+ReclaimPolicy:         Delete
+VolumeBindingMode:     Immediate
+Events:                <none>
+~~~
+
+
+
+StorageClass使用的场景是云服务器, 在云服务器中, 你可以通过云服务提供的k8s插件, 动态的创建pv, 而无需提前创建出pv, 因为云的资源是无限的, 你想要多少就有多少(你有钱的话)
+
+所以在这样的场景中, 你只需要创建对应的pvc, 就可以动态的创建pv
+
+
+
+比如我有一个statefulset类型的controller, 他控制了3个pod, 每个pod都需要一个pv
+
+~~~yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx1
+          image: nginx:1.24
+          ports:
+            - containerPort: 80
+              name: web
+          volumeMounts:
+            - name: www
+              mountPath: /usr/share/nginx/html
+  # 直接创建pvc, 并绑定到pod中, 因为有3个副本, 所以会创建3个pvc
+  # 并且pvc的名字的格式会按照如下的格式: $name-${podname}
+  # 创建的pvc名字是 data-web-0, data-web-1, data-web-2
+  volumeClaimTemplates: 
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ] 
+        # 指定匹配的pv的storageClassName
+        storageClassName: "nfs"
+        resources:
+          requests:
+            storage: 1Gi
+~~~
+
+按照上面的配置, 会创建出三个pvc, 分别是data-web-0, data-web-1, data-web-2, 那么按照k8s的匹配规则
+
+1. 首先查找有一个存在的pv, 满足如下的条件
+   - PV.spec.storageClassName == PVC.spec.storageClassName (如果pv和pvc都没有指定storageClassName的话, 也算匹配)
+   2. PV.accessModes 能满足 PVC.accessModes
+   3. PV容量 >= PVC请求的容量
+   4. PV未被绑定
+
+2. 如果匹配现有的PV失败的话, 会查找pvc的storageClassName的字段
+
+   - 如果指定了, 那么就使用指定的值
+   - 如果pvc没有指定storageClassName的话, 并且**系统有默认的storageClassName**的话, 那么就使用默认的storageClassName
+
+   之后使用storageClassName字段的值, 去查找有没有相同名字的StorageClass资源, 如果有的话, 那么查找这个StorageClass的`provisioner`属性
+
+3. 在获取到`provisioner`属性之后, 如果不是`kubernetes.io/no-provisioner`的话, 那么就使用对应的插件去创建出需要的pv, 然后和pvc进行绑定
+
+   这样你就无需提前创建pv了, 只要创建了pvc, 然后storageClassName匹配上了StorageClass, 就会自动的创建出对应的pv
+
+> 总结的话就是
+>
+> 当你创建 PVC 时，如果匹配现有的pv失败, Kubernetes 会根据 PVC 的 `storageClassName` 找到对应 StorageClass，然后调用 `provisioner` 来 **动态创建 PV（Dynamic Provisioning）** 。
+
+> 一定要将pvc和pv的storageClassName和StorageName分开,  如果你不是云场景的话, 没有动态创建pv的能力, 那么storageClassName只是一个标签, 用来匹配pv和pvc的
+>
+> storageClassName是可以随便指定的,  不一定要和现有的StorageName重名
+
+你可以通过如下的yaml来创建一个sc
+
+~~~yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  # 指定StorageClass的名字
+  name: local-storage
+# 指定动态创建pv的插件, 可选的值有:
+# kubernetes.io/no-provisioner: 不动态创建PV, 必须使用已经创建好的pv
+# kubernetes.io/aws-ebs: aws云盘
+# kubernetes.io/gce-pd: google云盘
+# kubernetes.io/cinder: OpenStack Cinder
+provisioner: kubernetes.io/no-provisioner
+
+# 插件的参数
+parameters:
+  aa: bb
+  cc: dd
+  
+# PV绑定的时机, 可选地值有:
+# Immediate: pvc创建就绑定
+# WaitForFirstConsumer: pod调度后再绑定
+volumeBindingMode: WaitForFirstConsumer
+# 卷删除后的行为, 可选择有:
+# Delete: 
+# Retain: 
+reclaimPolicy: Retain
+# 是否允许卷扩容, true/false
+allowVolumeExpansion: true
+# 卷挂载的选项
+mountOptions:
+ - noatime
+ - aaa
+~~~
+
+
+
 
 
 ## 特殊的变量

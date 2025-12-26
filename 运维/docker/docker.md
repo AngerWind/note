@@ -1,3 +1,17 @@
+## 腾讯云docker安装
+
+首先访问如下的地址, 进行docker安装, 地址里面centos, ubuntu, debian 的安装教程都有, 并且使用了腾讯云作为软件源
+
+https://cloud.tencent.com/document/product/213/46000#azYB6haoacR0zO9ry1cHx
+
+
+
+安装成功之后, 使用如下的网址进行镜像加速配置
+
+> 只能内网使用, 外网无法加速
+
+https://cloud.tencent.com/document/product/1207/45596
+
 
 
 ##  Ubuntu 安装 Docker CE
