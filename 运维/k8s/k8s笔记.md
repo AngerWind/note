@@ -4335,12 +4335,55 @@ Events:  <none>
 
 在k8s的宿主机上,  你可以直接通过如下的地址来范围pod
 
-- pod的ip
-- svc的ip
-- 
+- pod的ip, 可以ping通
+- svc的ip, 不能ping通, 但是可以直接调用
+
+你不能通过如下的内容来访问pod
+
+- svc的域名, 这个是coreDNS虚拟出来的, 只能在内部使用
+
+下面的是实践
+
+~~~shell
+[root@node-157 tmp]# kubectl get svc -A | grep framework
+service-software   k-framework-svc                  ClusterIP   10.96.133.120   <none>        8088/TCP   24d
+
+# 无法通过域名调用
+[root@node-157 tmp]# curl -X POST  -g --header 'Content-Type: application/json' --header 'Accept: application/json' -d '{"userName": "admin"}' "http://k-framework-svc.service-software.svc.cluster.local:8088/token/auth/generate"
+curl: (6) Could not resolve host: k-framework-svc.service-software.svc.cluster.local
+
+# 无法ping通svc的ip
+[root@node-157 tmp]# ping 10.96.133.120
+PING 10.96.133.120 (10.96.133.120) 56(84) 字节的数据。
+^C
+--- 10.96.133.120 ping 统计 ---
+已发送 3 个包， 已接收 0 个包, 100% packet loss, time 2039ms
+
+# 可以通过svc的ip来调用
+[root@node-157 tmp]# curl -X POST  -g --header 'Content-Type: application/json' --header 'Accept: application/json' -d '{"userName": "admin"}' "http://10.96.133.120:8088/token/auth/generate"
+{
+  "token" : "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJXazNleUoxYzJWeVRtRnRaU0k2SW1Ga2JXbHVJaXdpYVdRaU9pSXhJaXdpY21WbmFXOXVTV1FpT2lJd0lpd2lhWEJCWkdSeVpYTnpJam9pTVRBdU1UUTBMakU0TXk0eE5UY2lmUT09c2d6eSIsImp0aSI6IjU0MDMwNyIsImlhdCI6MTc2NzAxMDIxOH0.C50K8oFXIemMBzNsyf0DKYUFsQ7CMXHWfNkYwO7kxDdWW70UgtiImkK3a_5FbyBNph-w_ti0x9N6eWx43-Nayw",
+  "createTime" : "2025-12-29T12:10:18.318+00:00",
+  "expire" : null,
+  "userName" : "admin",
+  "password" : null,
+  "effectiveTime" : 7200,
+  "effectiveUrl" : null,
+  "ipAddress" : null,
+  "ucTargetUrl" : null,
+  "proxySubToken" : null,
+  "msg" : "Succeed!"
+}
 
 
+[root@node-157 tmp]# kubectl get pod -A -o wide | grep base-rs
+service-software   base-rs-pod-5fd8766cb6-sncbz                1/1     Running     1          24d    177.177.153.92    node-157   <none>           <none>
 
+# 可以ping通pod的ip
+[root@node-157 tmp]# ping 177.177.153.92
+PING 177.177.153.92 (177.177.153.92) 56(84) 字节的数据。
+64 字节，来自 177.177.153.92
+~~~
 
 
 
@@ -4367,6 +4410,7 @@ ipFamilyPolicy有如下的可选值
     ipFamilies: 
       - IPv4 # 使用ipv4
   ~~~
+~~~
 
 - PreferDualStack: 双栈优先, 在你的集群支持双栈的时候分配双栈, 如果你的k8s集群不支持双栈, 那么会分配单栈, 到底是ipv4还是ipv6取决于你的k8s集群哪个协议可用
 
@@ -4384,7 +4428,7 @@ ipFamilyPolicy有如下的可选值
     ipFamilies:
       - IPv4 # ipv4作为主地址
       - IPv6 # ipv6为次地址
-  ~~~
+~~~
 
 - RequireDualStack: 强制双栈, 如果集群不支持双栈，那么svc创建失败
 
