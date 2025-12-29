@@ -5364,7 +5364,7 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
 
 ### 使用configmap
 
-1. 将configmap中的配置加载到环境变量中
+1. 将configmap中的单个key挂载到环境变量中
 
    ~~~yaml
    apiVersion: v1
@@ -5394,7 +5394,7 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
          command: ["/bin/sh", "-c", "env | grep color"]
          env:
            - name: color.good 
-             valueFrom: # 将configmap中的keyvalue挂载到env中
+             valueFrom: # 将configmap中的key-value挂载到env中
                configMapKeyRef:
                  name: env-config # configmap的名字
                  key: color.good # configmap中key的名字
@@ -5405,7 +5405,7 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
                  key: color.bad
          envFrom:
            - configMapRef:
-               name: env-config1 # configmap的名字, 将整个configmap中的key-value都加载进env
+               name: env-config1 # configmap的名字, 将整个configmap中的key-value挂载到环境变量中
      restartPolicy: Never
    ~~~
 
@@ -5419,7 +5419,7 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
    color.forbidden=black
    ~~~
 
-2. 将configmap作为卷挂载进容器中, 作为配置文件
+2. 将configmap中的data, 作为配置文件的内容, 挂载到容器中
 
    **默认configmap中的每一个key都作为作为文件名, value作为文件内容**
 
@@ -5444,12 +5444,12 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
          image: bash
          command: ["/bin/sh", "-c", "ls /etc/config & cat /etc/config/* & sleep 600s"]
          volumeMounts:
-          - name: v1
-            mountPath: /etc/config # 将configmap env-config中的所有配置都挂载到/etc/config下
-     volumes: # 将名为env-config的configmap, 声明为v1的存储卷
-       - name: v1
+          - name: v1 # 要使用的存储卷的名字
+            mountPath: /etc/config # 将configmap env-config中的所有kv都挂载到/etc/config下, 每个key一个文件
+     volumes: 
+       - name: v1 # 存储卷的名字
          configMap:
-           name: env-config
+           name: env-config # configmap的名字
      restartPolicy: Never
    ~~~
 
@@ -5463,6 +5463,52 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
    # cat *
    redblackgreenyellow
    ~~~
+
+3. 当然, 你也可以将configmap中指定的key, 作为文件, 挂载到容器中
+
+   ~~~yaml
+   apiVersion: v1
+   kind: ConfigMap
+   metadata:
+     name: env-config
+   data: 
+     application.properties: |
+       server.port=8080
+       aaa=bbb
+     application-dev.properties: |
+       server.port=8081
+       cc=dd
+   
+   ---
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: test
+   spec:
+     containers:
+       - name: test-container1
+         image: bash
+         command: ["/bin/sh", "-c", "ls /etc/config & cat /etc/config/* & sleep 600s"]
+         volumeMounts:
+          - name: v1 # 要使用的存储卷的名字
+            mountPath: /etc/config # 要挂载的目录
+     volumes: 
+       - name: v1 # 存储卷的名字
+         configMap:
+           name: env-config # configmap的名字
+           items:
+           - key: application.properties # 要挂载的key
+             path: application.properties # 挂载后的文件的名称
+           - key: application-dev.propertie
+             path: application-dev.propertie
+     restartPolicy: Never
+   ~~~
+
+   之后就会在容器中的`/etc/config`目录下生成两个文件`application.properties`和`application-dev.propertie`
+
+
+
+
 
 ## Secret
 
