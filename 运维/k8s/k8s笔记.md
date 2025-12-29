@@ -4153,8 +4153,9 @@ spring:
 
 
 
-
 ## 实践
+
+### svc转发的pod
 
 如果你创建了一个ClusterIp, 或者NodePort类型的Service, 如果你想要知道这个Service会将请求转发到哪些Pod中, 你可以通过如下命令查看
 
@@ -4330,9 +4331,21 @@ Events:  <none>
 
 
 
+### 能够在k8s宿主机上直接访问的节点
+
+在k8s的宿主机上,  你可以直接通过如下的地址来范围pod
+
+- pod的ip
+- svc的ip
+- 
 
 
-## 关于SVC的网络栈说明
+
+
+
+
+
+### 关于SVC的网络栈说明
 
 在svc的yaml文件中, 你可以通过`ipFamilyPolicy`来指定svc双栈还是单栈, 并且他也决定了`ipFamilies`和`clusterIPs`这两个属性的行为
 
