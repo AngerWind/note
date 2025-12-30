@@ -4583,25 +4583,58 @@ kubectl patch svc my-simple-service --type=merge -p '{
 
 # Ingress
 
-文档: https://kubernetes.github.io/ingress-nginx/deploy/#quick-start
-
-Ingress的主要作用是:  Service只能进行四层代理, 即只有访问service的ip地址才能够进行转发
-
-而Ingress能够进行七层代理, 也就是通过域名访问service
-
-(是在是不理解为啥要这样)
-
-原理: 
-
-1. ingress有很多中实现方案, 其中一种就是ingress-nginx, 他的原理就是在pod中创建了一个nginx pod(ingress-nginx-controller), 然后在创建一个NodePort类型的svc(ingress-nginx-controller)
-2. 然后所有的请求通过域名发送到svc中
-3. svc转发给nginx,  然后通过nginx中的规则转发到后端pod的service中. 而转发的配置文件不用我们自己手写, ingress会通过yaml进行自动配置好
+在上面的场景中, 我们介绍了如何创建pod, 如何将请求通过svc转发给其他的pod, 但是上面的内容中, pod都是在处理k8s内部的请求, 如果我们要访问pod的端口, 那么需要在宿主机上面调用svc的ip, 将请求发送到svc上, 然后转发给pod
 
 
 
-安装:
+但是真实情况是,  我们的pod必须处理来自外网的请求, 同时我们也不可能将每个服务都映射到NodePort的端口上, 因为我们不能暴露k8s的ip到外网上面
+
+用户通过域名+端口+路径来调用我们的服务, 域名经过dns解析成k8s的集群, 然后发送到我们的k8s集群上面, 我们必须有一个统一的入口, 用它来管理所有从集群外部访问到集群内部的Pod的请求
+
+这就是Ingress的作用, 他是**"从集群外部访问集群内部 Service 的统一入口规则"**, 我们可以通过他来描述哪些请求需要转发到哪个Service上面, 然后又Service再进行转发到pod上面
+
+>  Service只能进行四层代理, 即只有访问service的ip地址才能够进行转发
+>
+> 而Ingress能够进行七层代理, 也就是通过域名访问service
+
+
+
+Ingress有多重多样的实现方案, 只要能够实现统一管理外部请求到k8s内部的svc的方案都可以
 
 ~~~shell
+Ingress 实现方案
+├─ 通用 Ingress Controller
+│  ├─ NGINX
+│  ├─ Traefik
+│  ├─ HAProxy
+│  └─ Apache APISIX
+│
+├─ Envoy 系
+│  ├─ Contour
+│  ├─ Istio IngressGateway
+│  └─ Ambassador / Emissary
+│
+├─ 云厂商托管
+│  ├─ AWS ALB / NLB
+│  ├─ GCP GCE Ingress
+│  └─ 阿里云 / 腾讯云
+│
+└─ 新一代 Gateway API
+   ├─ NGINX Gateway
+   ├─ Contour Gateway
+   └─ Istio Gateway
+~~~
+
+下面使用的是github中的一个开源项目ingress-nginx来实现的, 他也是k8s官方在维护的一个项目
+
+https://kubernetes.github.io/ingress-nginx/deploy/#quick-start
+
+
+
+要使用上面这个项目, 我们首先要在k8s集群中部署ingress-nginx的相关pod和svc
+
+~~~shell
+# 如果你的集群有helm, 那么也可以使用helm来按照, 这里使用yaml来安装
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
 
 # 等待安装完成
@@ -4609,76 +4642,60 @@ kubectl wait --namespace ingress-nginx \
   --for=condition=ready pod \
   --selector=app.kubernetes.io/component=controller \
   --timeout=120s
+  
 # 查看pod状态
 kubectl get pods --namespace=ingress-nginx
 ~~~
 
-![image-20231023223731466](img/k8s笔记/image-20231023223731466.png)
+![image-20231023223731466](D:\my_code\note\运维\k8s\img\image-20231023223731466.png)
 
-![image-20231023224551164](img/k8s笔记/image-20231023224551164.png)
+![image-20231023224551164](D:\my_code\note\运维\k8s\img\image-20231023224551164.png)
+
+上面的两个svc和一个pod, 我们主要关注ingress-nginx-controlle这个pod和ingress-nginx-controller这个NodePort的svc
 
 
 
-使用: 
+外部请求的转发过程如下:
+
+1. 用户通过域名请求我们的服务, 然后经过dns域名解析, 解析到我们的k8s集群上的80端口
+2. 之后请求就会被ingress-nginx-controller这个svc接受到, 并转发给ingress-nginx-controller这个pod
+3. ingress-nginx-controller这个pod再接受到svc转发过来的请求之后,  你可以理解他就是一个nginx, 他会按照你定义的规则, 将不同域名, 不同端口的, 不同路径的请求, 转发给特定服务的svc
+4. 之后就是不同服务的svc接受到请求之后, 将请求负载均衡到各自的pod上面, 并返回请求了
+
+
+
+上面我们通过ingress-nginx创建了对应的controller, 和对应的svc, 那么就要通过yaml文件来定义外部请求到内部svc的转发规则了
 
 ~~~yaml
-apiVersion: apps/v1   
-kind: Deployment
-metadata:
-  name: nginx-dm
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      name: nginx
-  template:
-    metadata:
-      labels:
-        name: nginx
-    spec:
-      containers:
-        - name: nginx
-          image: nginx:1.24
-          imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: 80
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: nginx-svc
-spec:
-  ports:
-    - port: 80
-      targetPort: 80 # 转发到后端的80端口
-      protocol: TCP
-  selector:
-    name: nginx
----
 apiVersion: networking.k8s.io/v1 # 配置nginx的转发规则
 kind: Ingress
 metadata:
   name: nginx-test
 spec:
-  ingressClassName: nginx # 需要添加这个,否则ingress不会添加到nginx.config中. 参考https://www.cnblogs.com/dudu/p/15548461.html
+  # # 需要添加这个,否则ingress不会添加到nginx.config中. 参考https://www.cnblogs.com/dudu/p/15548461.html
+  # 这个字段主要用于k8s集群中, 可能会部署多个ingress实现, 那么会有多个ingress controller
+  # 这个字段用于指定当前的ingress规则到底归属于哪个ingress controller的
+  ingressClassName: nginx 
   rules:
     - host: www1.atguigu.com # 指定访问的域名
       http:
         paths:
-          - path: /
+          - path: / # 指定路径前缀
             pathType: Prefix
             backend:
               service:
-                name: nginx-svc # 转发到的svc
+                name: demo-svc # 转发到的svc
                 port: 
                   number: 80
 ~~~
 
 ![image-20231023225634418](img/k8s笔记/image-20231023225634418.png)
 
-经过上面的配置, 我们只需要访问`www1.atguigu.com:31864`就会访问到ingress的nodeport端口, 然后转发给nginx, 然后nginx再经过规则转发给后端的service
+经过上面的配置, 我们只需要访问`www1.atguigu.com:31864`就会访问到ingress的nodeport端口, 然后转发给ingress controller, 然后ingress controller转发给对应的svc , 然后svc转发给特定的pod
 
 
+
+## ingress-nginx镜像加速
 
 > Note: 使用上面网站的yml安装ingress-nginx经常会失败, 因为镜像下载不下来, 可以使用下面这个文件
 >
