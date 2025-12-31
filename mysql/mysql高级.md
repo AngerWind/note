@@ -4367,3 +4367,464 @@ update tbl_syslog_data_agg set amount = amount - #{cnt} where agg = #{agg}
 
 
 
+## PG的TimescaleDB扩展
+
+pg的**TimescaleDB扩展不是一个新的数据库模型, 而是一个pg扩展, 所有数据仍然是标准 PG 表**，SQL 也是标准 SQL。
+
+所以
+
+- 他没有学习成本, sql还是原来的sql
+- 他可以和普通的pg表进行join
+- 支持事务
+
+
+
+### 使用场景
+
+普通 PostgreSQL 在下面这些场景会开始吃力：
+
+| 场景                   | 问题                         |
+| ---------------------- | ---------------------------- |
+| 高频写入（日志、指标） | 单表不断膨胀，索引维护成本高 |
+| 按时间范围查询         | 全表扫描 / 索引效率下降      |
+| 历史数据量巨大         | VACUUM、ANALYZE 成本高       |
+| 需要冷热数据分离       | 原生 PG 不好做               |
+
+TimescaleDB 专门针对 **时间序列数据（time-series）** 做了结构级优化。他适合一下的场景
+
+- 日志
+
+- 事件流
+
+- APM / Trace
+
+- IoT 数据
+
+- Kafka Sink 到 PG
+
+
+
+### 核心概念
+
+在TimescaleDB中, 有一个Hypertable(超表)的概念,  他实际上是一个逻辑表,  但是你还是可以将他当做一个普通的表进行操作
+
+Hypertable下面有很多的普通的pg表进行构成, 这些普通的pg表被称为Hypertable的Chunk
+
+~~~shell
+metrics
+ ├── _timescaledb_internal._hyper_1_1_chunk
+ ├── _timescaledb_internal._hyper_1_2_chunk
+ ├── _timescaledb_internal._hyper_1_3_chunk
+~~~
+
+ 在创建Hypertable的时候, 你必须指定一个时间序列字段,  并且还可以指定每个Chunk的时间范围
+
+然后pg会将你插入的数据, 根据时间序列字段, 自动路由到特定的Chunk中
+
+~~~shell
+Chunk 1: 2025-01-01 ~ 2025-01-02
+Chunk 2: 2025-01-02 ~ 2025-01-03
+Chunk 3: 2025-01-03 ~ 2025-01-04
+~~~
+
+因为Chunk就是一个普通的pg表, 所以
+
+- 有自己的索引
+
+- 有自己的统计信息
+
+- VACUUM 成本小
+
+
+
+**如果按照时间范围进行分Chunk还不够的话,  那么你还可以按照其他的列进行分区, 这样可以将并发写入的热点打散, 类似于hive中的分区分桶**
+
+
+
+### 为什么快
+
+对于普通的pg表, 你在插入数据的时候, 随着数据库的越来越大
+
+- 单表索引越来越大
+
+- B-Tree 高度增加
+
+- Page split 频繁
+
+- WAL 放大
+
+
+
+而对于TimescaleDB的写入模型 和时间序列的数据
+
+~~~shell
+INSERT
+  ↓
+路由器（根据时间戳）
+  ↓
+写入某一个 Chunk（小表）
+~~~
+
+- 时间序列99%的情况下都是递增的, 所以写入总是落在最新的那个Chunk中
+- Page几乎是append-only
+- WAL更友好
+
+
+
+并且在进行时间范围查询的时候,  TimescaleDB只会扫描特定的几个Chunk, 而不用全表扫描
+
+#### 需要注意的点
+
+1. 如果你的数据是乱序的, 性能会明显下降（Chunk 路由 + 索引命中差）
+
+2. Chunk的事件范围及其重要
+
+   - 如果事件范围太大, 那么索引也会很大, 在扫描Chunk的时候要扫描很多数据
+   - 事件范围太小, 那么Chunk的数量会很多, planner的成功很高
+
+   经验值:
+
+   | 写入量       | 推荐 Chunk |
+   | ------------ | ---------- |
+   | 每秒 < 1 万  | 1 天       |
+   | 每秒 5–10 万 | 1 小时     |
+   | 超高频       | 10–30 分钟 |
+
+3. 建立索引的时候, 一定要添加时间序列, 如果没有时间序列, 那么就没有办法进行Chunk裁剪, 比如下面的sql
+
+   ~~~sql
+   CREATE INDEX ON metrics (device_id);
+   ~~~
+
+   查询需要扫描所有的chunk, 没有办法进行Chunk裁剪, 推荐使用如下的sql
+
+   ~~~sql
+   CREATE INDEX ON metrics (ts DESC);
+   CREATE INDEX ON metrics (ts);
+   ~~~
+
+   或者复合索引
+
+   ~~~sql
+   CREATE INDEX ON metrics (device_id, ts DESC);
+   
+   
+   -- 适用的sql查询
+   WHERE device_id = 'd1'
+     AND ts >= now() - interval '10 minutes';
+   ~~~
+
+   **并且推荐时间列放在后面, 因为TimescaleDB会先根据要查询的时间字段进行chunk裁剪, 然后再每个chunk上根据索引进行数据的定位, 而在每个Chunk上的索引定位, 就和普通的表是一样的, 所以越有区分度的字段越要放在前面, 时间的话区分度通常会不够**
+
+4. TimescaleDB不会绕过pg的wal, 所以极致的性能还是受fsync, 磁盘, wal限
+
+
+
+
+
+### 使用
+
+要使用TimescaleDB, 有如下的步骤
+
+1. 查看pg在启动的时候, 有没有加载timescaladb这个c扩展库
+
+   ~~~sql
+   SHOW shared_preload_libraries;
+   pg_stat_statements,pgextwlist,set_user,timescaledb,pg_cron,pg_stat_kcache
+   ~~~
+
+   如果没有timescaledb的话, 那么可以使用如下的命令设置
+
+   ~~~sql
+   -- 这会将配置写入到postgresql.auto.conf配置文件中
+   ALTER SYSTEM SET shared_preload_libraries = 'timescaledb';
+   ~~~
+
+   或者在`/var/lib/pgsql/data`中添加如下配置
+
+   ~~~sql
+   shared_preload_libraries = 'timescaledb,pg_stat_statements'
+   ~~~
+
+   > 配置完毕之后一定要重启
+
+2. 针对当前的数据库启用TimescaleDB扩展
+
+   ~~~sql
+   -- 启用TimescaleDB扩展
+   -- 启用了扩展之后, 会在当前的数据库下面, 创建timescaledb_experimental和timescaledb_information以及一些其他的schema
+   CREATE EXTENSION IF NOT EXISTS timescaledb;
+   
+   -- 查看timescaledb的信息
+   SELECT * FROM pg_extension WHERE extname = 'timescaledb';
+   
+   -- 查看当前启用的timescaledb的版本
+   SELECT name, default_version, installed_version
+   FROM pg_available_extensions
+   WHERE name = 'timescaledb';
+   ~~~
+
+3. 建立Hypertable
+
+   ~~~sql
+   -- Hypertable不支持直接建立, 必须要建立一个普通的表, 然后转换为Hypertable
+   -- 建立普通的pg表
+   CREATE TABLE operation_log (
+       -- 时间序列必须要, 必须not null
+       "time" timestamptz DEFAULT now() NOT NULL,
+       log_account VARCHAR(255),
+       -- 分区字段, 可选
+       log_account_id VARCHAR(255),
+       operate_account VARCHAR(255),
+       operate_account_id VARCHAR(255),
+       operate_platform VARCHAR(255),
+       service_name VARCHAR(255),
+       service_name_alias VARCHAR(255),
+       operate_type VARCHAR(255),
+       operate_object VARCHAR(255),
+       operate_time VARCHAR(255),
+       log_ip VARCHAR(255),
+       operate_result VARCHAR(255),
+       error_reason TEXT,
+       log_level VARCHAR(255),
+       operate_desc TEXT,
+       module_name VARCHAR(255),
+       trace_id VARCHAR(255),
+       parent_id VARCHAR(255),
+       parent_name VARCHAR(255),
+       param TEXT,
+       request_id VARCHAR(255),
+       product_type VARCHAR(255),
+       result TEXT,
+       region_id VARCHAR(255)
+   );
+   
+   SELECT create_hypertable(
+       'operation_log',      -- 表名
+       'time'            -- 时间列
+       'log_account_id',    -- 分区字段, 如果不指定的话就是不分区
+       -- 对log_account_id分4个区, 这样在大数据量写的时候可以将并发热点打散
+       -- 默认只有一个分区, 和没有分区是一样的
+       number_partitions => 4, 
+       chunk_time_interval => INTERVAL '1 hour' -- chunk的大小, 如果不指定的话默认是7天一个chunk
+   );
+   ~~~
+
+   当然你也可以针对已经创建的超表, 设置他们的空间分区
+
+   ~~~sql
+   SELECT set_chunk_time_interval('表名', interval '24 hours');
+   SELECT set_chunk_time_interval('表名', 86400000000);
+   ~~~
+
+4. 建立索引
+
+   ~~~sql
+   -- 根据你常用的业务查询sql来建立索引
+   CREATE INDEX idx_operation_log_account_time
+   ON operation_log (log_account_id, time DESC);
+   ~~~
+
+   
+
+
+
+### 特性
+
+#### Continuous Aggregate（持续聚合）
+
+这个特性在flink中被称为持续查询
+
+比如我想要查询当前数据集中每天的最高值, 最低值, 第一个值, 最后一个值
+
+~~~sql
+SELECT
+  time_bucket('1 day', "time") AS day,
+  symbol,
+  max(price) AS high,
+  first(price, time) AS open,
+  last(price, time) AS close,
+  min(price) AS low
+FROM stocks_real_time srt
+GROUP BY day, symbol
+ORDER BY day DESC, symbol;
+~~~
+
+这个查询你可以将他转换为持续聚合, 也就是持续查询
+
+```sql
+CREATE MATERIALIZED VIEW stock_candlestick_daily
+WITH (timescaledb.continuous) AS
+SELECT
+  time_bucket('1 day', "time") AS day,
+  symbol,
+  max(price) AS high,
+  first(price, time) AS open,
+  last(price, time) AS close,
+  min(price) AS low
+FROM stocks_real_time srt
+GROUP BY day, symbol;
+```
+
+`create materialized view` 命令数据库创建一个具有特定名称的物化视图, `with (timescaledb.continuous)`指示TimescaleDB创建一个连续的聚合, 而不是仅仅是一个普通的物化视图, 最后在`as`后面加上之前的查询即可
+
+查询数据的话只需要查询当前视图数据即可
+
+```sql
+SELECT * FROM stock_candlestick_daily
+  ORDER BY day DESC, symbol;
+```
+
+
+
+实际在TimescaleDB内部, 持续查询并不是实时的,  他总是会落后你实际插入的数据的一点点, 总有一部分数据还没有来得及进行聚合, 所以为了保证实时性, 你在查询的时候, TimescalaDB会从物化视图中查询出历史的聚合结果, 然后把还没有来得及进行聚合的最新的原始数据拿出来, 实时计算一下, 然后再和历史的聚合结果进行聚合, 然后返回出去, 所以对于用户来说, 获取到的结果永远都是最新的
+
+你可以通过如下的sql来设置聚合的频率
+
+~~~sql
+--此策略每天运行一次，由 设置schedule_interval。当它运行时，
+--它会具体化 3 天前到 1 小时前的数据，由 start_offset和设置end_offset。
+--偏移时间是相对于查询执行时间计算的。
+--执行的查询是在连续聚合中定义的查询stock_candlestick_daily。
+SELECT add_continuous_aggregate_policy('stock_candlestick_daily',
+  start_offset => INTERVAL '3 days',
+  end_offset => INTERVAL '1 hour',
+  schedule_interval => INTERVAL '1 days');
+~~~
+
+
+
+当然你也可以手动的调用函数来进行手动聚合, 这在插入或修改超出刷新策略start_offset和end_offset间隔的数据时最有用。这在边缘物联网系统中很常见，其中设备长时间失去互联网连接，并在重新连接后最终发送历史读数。
+
+~~~sql
+--此手动刷新仅更新您的连续聚合一次。它不会自动使聚合保持最新。
+--要设置自动刷新策略，请参阅前面关于连续聚合刷新策略的部分。
+--当前语句是刷新1周前到当前的数据到连续聚合中
+CALL refresh_continuous_aggregate(
+  'stock_candlestick_daily',
+  now() - INTERVAL '1 week',
+  now()
+);
+~~~
+
+
+
+
+
+#### 数据保留策略
+
+相当于任务，定时清除历史数据
+
+```sql
+--清除6个月以前的历史数据
+SELECT add_retention_policy('表名', INTERVAL '6 months');
+--删除现有表的策略
+SELECT remove_retention_policy('表名');
+```
+
+手动删除旧的数据块
+
+```sql
+--要删除超过三周的所有数
+SELECT drop_chunks('stocks_real_time', INTERVAL '3 weeks');
+--删除超过两周但新于三周的所有数据：
+SELECT drop_chunks(
+  'stocks_real_time',
+  older_than => INTERVAL '2 weeks',
+  newer_than => INTERVAL '3 weeks'
+)
+```
+
+
+
+
+
+#### 压缩
+
+https://www.cnblogs.com/luomuwuh/p/16642172.html
+
+压缩表主要用来进行冷热数据的区分, 或者列式查询上
+
+
+
+你可以在一个超表上面启用压缩, 然后设置定时压缩, 或者手动压缩, 同时也可以设置segement字段
+
+到了压缩的时候,  首先会将需要压缩的chunk按照segement字段进行分段, 分成好几段, 然后每一段都转换为列式存储, 每一列按照字段的类型, 自动的选择合适的压缩算法进行压缩
+
+之后将压缩好的chunk, 作为压缩表的超表的chunk, 原始的chunk不会被丢弃,但是会被标记为只读, 如果后续还有数据落在这个chunk的时间范围内, 那么timescaledb会新建另外一个chunk, 用来保持还没有被压缩的数据
+
+
+
+你在查询的时候, 只需要查询原始的超表就好了, pg会根据你的查询条件自动帮你路由到原始表还是压缩表进行列式查询
+
+
+
+
+
+你可以通过如下的代码来创建一个压缩表
+
+```sql
+-- 设置压缩字段, 压缩算法会根据字段的类型自动进行设置
+alter table operation_log 
+set (
+    timescaledb.compress, 
+    -- 指定压缩的时候, segemen字段
+    timescaledb.compress_segmentby='log_account_id'
+    -- 可选, 在压缩的时候, 按照时间字段排序
+    timescaledb.compress_orderby = 'time DESC'
+); 
+
+-- 添加一个压缩策略
+SELECT add_compression_policy('operation_log', INTERVAL '7 days');
+
+-- 查看压缩策略
+SELECT * FROM timescaledb_information.jobs
+  WHERE proc_name='policy_compression';
+  
+-- 暂停压缩策略
+SELECT * FROM timescaledb_information.jobs where proc_name = 'policy_compression' AND relname = 'operation_log'
+SELECT alter_job(<job_id>, scheduled => false);
+
+-- 删除压缩策
+SELECT remove_compression_policy('operation_log');
+```
+
+当然你也可以进行手动触发压缩
+
+~~~sql
+-- 如果您手动压缩超表块，请考虑添加 if_not_compressed=>true（设置为true跳过已压缩的块）到compress_chunk()函数中。
+-- 否则，TimescaleDB 在尝试压缩已压缩的块时会显示错误
+SELECT compress_chunk(i, if_not_compressed=>true)
+  FROM show_chunks('stocks_real_time', older_than => INTERVAL ' 2 weeks') i;
+~~~
+
+你可以通过如下的sql来检查超表的整体压缩率，以查看应用压缩前后压缩块的大小
+
+```sql
+SELECT pg_size_pretty(before_compression_total_bytes) as "before compression",
+  pg_size_pretty(after_compression_total_bytes) as "after compression"
+  FROM hypertable_compression_stats('stocks_real_time');
+```
+
+
+
+
+
+
+
+### todo
+
+time_bucket('1 minute', ts) date_trunc('minute', ts)
+
+怎么建索引
+
+空间分区 **只影响写入并发**
+
+使用explain(analyze)查看chunk裁剪
+
+-- See info about compression
+
+
+SELECT * FROM timescaledb_information.compression_settings;
+
+SELECT * FROM timescaledb_information.compressed_chunk_stats;
