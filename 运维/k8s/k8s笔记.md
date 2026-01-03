@@ -7399,6 +7399,40 @@ kubectl taint nodes Node-Name node-role.kubernetes.io/master=:PreferNoSchedule
 
 
 
+
+
+# Operator
+
+## CRD
+
+Kubernetes 内置资源有很多，比如Pod, Deployment, Service等等, 但这些资源**不可能覆盖所有业务场景**。
+于是 Kubernetes 提供了一套**扩展 API 的能力** —— **Custom Resource Definition（CRD）**。
+
+
+
+如果没有CRD的情况下, 如果我们要搭建一个flink集群的话就写一堆的yaml文件, 这些yaml文件就是告诉k8s一步一步怎么去创建对应的集群, 这是一种声明式的管理
+
+但是在使用了自定义资源之后
+
+
+
+自定义资源中有如下的核心概念
+
+| 名称    | 含义                                             |
+| ------- | ------------------------------------------------ |
+| **CRD** | CustomResourceDefinition，**定义一种新资源类型** |
+| **CR**  | Custom Resource，**该类型的具体实例**            |
+
+CRD ≈ Java 里的 `class`, CR ≈ Java 里的 `new 对象()`
+
+
+
+
+
+
+
+
+
 # 称加密, 非对称加密, 电子签名, CA证书, HTTPS
 
 ## 对称加密
