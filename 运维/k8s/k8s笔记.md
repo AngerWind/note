@@ -3752,15 +3752,259 @@ kubectl delete job <job-name> -n <namespace> # 删除cronjob, 不会删除job和
 
 
 
+## HPA
+
+**HPA** 是 **Horizontal Pod Autoscaler（水平 Pod 自动伸缩）** 的缩写。他也是controller的一种, HPA 用来根据负载情况，自动增减 Pod 的副本数量（replicas）
 
 
 
+HPA解决了什么问题?
+
+在没有 HPA 的情况下：
+
+- Deployment / StatefulSet 的 `replicas` 是固定的
+- 流量高峰时：Pod 不够用 → **响应慢 / 超时**
+- 流量低谷时：Pod 过多 → **资源浪费**
+
+**HPA 的作用**：根据实时指标（如 CPU、内存、QPS 等）**自动扩容或缩容 Pod 数量**。
 
 
 
-## Horizontal Pod Autoscaling
+HPA 本身是一个 **控制器（controller）**，主要流程是：
 
-Horizontal Pod Autoscaling 仅适用于Deployment 和 ReplicaSet, 在v1版本中仅支持根据cpu的利用率扩容, 在vlapha版本中, 支持根据内存和用户自定义的metric扩缩容
+1. **定期采集指标**
+
+   - 默认：CPU 使用率
+   - 可选：内存、自定义指标、外部指标
+
+2. **计算期望副本数**
+
+3. **调整目标资源的 replicas**
+
+   > HPA 只改 **副本数**，不会改 Pod 资源（CPU / Memory request）
+
+
+
+需要的是, HPA并不能直接作用于Pod, 而是作用于Deployment, StatefulSet, ReplicaSet
+
+HPA主要支持如下的指标类型的监控
+
+1. 来自`metric-server`的指标, 比如cpu使用率和内存使用率
+
+   这要求你的k8s集群中必须安装了`metric-server`
+
+   ~~~shell
+   kubectl get deployment -n kube-system metrics-server
+   ~~~
+
+   下面是监控`metric-server`的指标的yaml文件示例
+
+   ~~~yaml
+   apiVersion: autoscaling/v2
+   kind: HorizontalPodAutoscaler
+   metadata:
+     name: demo-app-hpa-resource # hpa的名字
+     namespace: default # 所在的ns
+   spec:
+     scaleTargetRef:
+       apiVersion: apps/v1 # 监控的资源的group
+       kind: Deployment # 监控的资源的类型
+       name: demo-app # 监控资源的名称
+     # 能够扩缩容的最大和最小极限
+     minReplicas: 2
+     maxReplicas: 10
+   
+     metrics:
+     # 1️⃣ CPU 使用率
+     - type: Resource
+       resource:
+         name: cpu
+         target:
+           type: Utilization
+           averageUtilization: 70
+   
+     # 2️⃣ Memory 使用率
+     - type: Resource
+       resource:
+         name: memory
+         target:
+           # 可选的值有
+           # Utilization: 每个replicas的资源的使用率
+           # Value: 每个replicas的资源的使用总量
+           # AverageValue: 每个replicas的资源的使用平均值
+           type: Utilization
+           # 如果type是Utilization, 那么下面必须是averageUtilization, 表示每个replicas的资源的使用率到了75%就扩容
+           # 如果是Value, 那么下面必须是value, 表示replicas的资源使用总量达到了多少就扩容
+           # 如果是AverageValue, 那么下面必须是averageValue, 表示replicas的资源使用平均值到了多少就扩容
+           averageUtilization: 75
+   ~~~
+
+2. Pod的指标(需要自定义指标)
+
+   ~~~yaml
+   apiVersion: autoscaling/v2
+   kind: HorizontalPodAutoscaler
+   metadata:
+     name: demo-app-hpa-pods
+     namespace: default
+   spec:
+     scaleTargetRef:
+       apiVersion: apps/v1
+       kind: Deployment
+       name: demo-app
+     minReplicas: 2
+     maxReplicas: 20
+   
+     metrics:
+     # 1️⃣ 每 Pod 的 QPS
+     - type: Pods
+       pods:
+         metric:
+           name: http_requests_per_second
+         target:
+           type: AverageValue
+           averageValue: "100"
+   
+     # 2️⃣ 每 Pod 活跃连接数
+     - type: Pods
+       pods:
+         metric:
+           name: active_connections
+         target:
+           type: AverageValue
+           averageValue: "200"
+   ~~~
+
+   
+
+3. 对象指标, 主要用于监控k8s中某个资源对象的一些指标
+
+   ~~~yaml
+   apiVersion: autoscaling/v2
+   kind: HorizontalPodAutoscaler
+   metadata:
+     name: demo-app-hpa-object
+     namespace: default
+   spec:
+     scaleTargetRef:
+       apiVersion: apps/v1
+       kind: Deployment
+       name: demo-app
+     minReplicas: 2
+     maxReplicas: 15
+   
+     metrics:
+     # 1️⃣ Service 总 QPS
+     - type: Object
+       object:
+         describedObject:
+           apiVersion: v1
+           kind: Service
+           name: demo-app
+         metric:
+           name: requests_per_second
+         target:
+           type: Value
+           value: "1000"
+   
+     # 2️⃣ Ingress 当前并发请求数
+     - type: Object
+       object:
+         describedObject:
+           apiVersion: networking.k8s.io/v1
+           kind: Ingress
+           name: demo-app-ingress
+         metric:
+           name: ingress_active_requests
+         target:
+           type: Value
+           value: "500"
+   ~~~
+
+4. 外部指标(External Metrics), 即和k8s无关的一些指标
+
+   ~~~yaml
+   apiVersion: autoscaling/v2
+   kind: HorizontalPodAutoscaler
+   metadata:
+     name: demo-app-hpa-external
+     namespace: default
+   spec:
+     scaleTargetRef:
+       apiVersion: apps/v1
+       kind: Deployment
+       name: demo-app
+     minReplicas: 1
+     maxReplicas: 30
+   
+     metrics:
+     # 1️⃣ Kafka 消费堆积
+     - type: External
+       external:
+         metric:
+           name: kafka_consumer_lag
+           selector:
+             matchLabels:
+               topic: demo-topic
+               group: demo-consumer-group
+         target:
+           type: AverageValue
+           averageValue: "500"
+   
+     # 2️⃣ 外部队列长度
+     - type: External
+       external:
+         metric:
+           name: queue_depth
+         target:
+           type: AverageValue
+           averageValue: "100"
+   ~~~
+
+当然你也可以在一个hpa中混合多种指标, 比如下面中的这样
+
+~~~yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: demo-app-hpa-mixed
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: demo-app
+  minReplicas: 2
+  maxReplicas: 20
+
+  metrics:
+  # CPU
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+  # 每 Pod QPS
+  - type: Pods
+    pods:
+      metric:
+        name: http_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "120"
+
+  # Kafka Lag
+  - type: External
+    external:
+      metric:
+        name: kafka_consumer_lag
+      target:
+        type: AverageValue
+        averageValue: "300"
+~~~
+
+
 
 # Service
 
