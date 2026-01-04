@@ -7427,6 +7427,78 @@ CRD ≈ Java 里的 `class`, CR ≈ Java 里的 `new 对象()`
 
 
 
+### 定义CRD
+
+一个CRD本质上也是一个Kubernetes资源, 你可以使用如下的yaml文件来定义一个CRD
+
+~~~yaml
+apiVersion: apiextensions.k8s.io/v1 # 固定
+kind: CustomResourceDefinition # 固定
+metadata:
+  # 他必须是<plural>.<group>, 否则会报错
+  name: widgets.example.com 
+spec:
+  # api分组, 避免命名冲突, 类似包名, 和上面的apiextensions.k8s.io一样
+  # 之后你在创建这个crd的时候, apiVersion要指定group/version, 即apiextensions.k8s.io/v1
+  group: example.com 
+  # 指定资源的范围,可选的有
+  #    Namespaced, 是ns范围的, 类似pod
+  #    Cluster: 类似node, pv, 是整个集群范围的
+  scope: Namespaced 
+  names:
+    # kubectl使用的资源名称, 之后你就可以通过kubectl get widgets来获取到这个资源有哪些实例了
+    plural: widgets
+    # 可选, 一般不用, 在cli自动补全的时候有用
+    singular: widget
+    # kind, 类似上面的CustomResourceDefinitio, 要创建widget自定义资源, 就必须指定这个kind
+    kind: Widget 
+    # kind的缩写, 类似在kubectl get deployment的时候, 你也可以通过kubectl get deploy来获取一样
+    shortNames:
+      - wd
+      - widg
+  # 自定义资源的版本, 一个yaml中可以定义多个版本
+  versions:
+    - name: v1 # 当前版本的名字
+      # 是否对外提供该版本的api, false会导致不能kubectl create/get这种资源
+      # 主要用于老版本的api灰度下线
+      served: true 
+      # etcd中实际存储的版本, 多个版本中只能有一个设置为true
+      storage: true
+      
+      # 定义这个api中能够写什么属性
+      schema:
+        openAPIV3Schema: # 固定, 相当于根属性
+        
+  
+~~~
+
+#### schema
+
+
+
+
+
+
+
+
+
+
+
+
+
+之后你可以通过如下的命令来创建对应的自定义资源
+
+~~~shell
+kubectl create -f demo.yaml
+
+kubectl get widgets # 获取自定义资源
+kubectl api-resources | grep widget
+~~~
+
+
+
+
+
 
 
 
