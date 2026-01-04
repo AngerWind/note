@@ -7474,6 +7474,83 @@ spec:
 
 #### schema
 
+schema这个字段主要定义了你的cr能够有哪些属性, 他们的类型, 必填项, 嵌套对象
+
+这些属性用于表示你的cr有哪些状态, 你可以按照如下的yaml来进行定义
+
+~~~yaml
+versions:
+  - name: v1
+    served: true
+    storage: true
+    schema:
+      # 这里定义cr文件中的顶层属性, 就是直接写在yaml开头的属性的属性, 类似apiVersion这种属性
+      openAPIV3Schema: 
+        type: object # 固定写object就好了
+        properties:
+          # 这里定义了一个spec属性, 就是yaml文件中顶层的那个spec属性, 表示期望的状态, 固定写就好了
+          # 一般我们都将期待的状态写在spec中, 所以这里是按照约定定义了一个spec字段
+          spec: 
+            type: object # 定义spce字段的类型, 为object, 固定写就好了
+            required: ["replicas", "image"] # 必选字段
+            # 对于object, 用于描述有哪些子属性, 这才是我们真正定义期望的状态的地方
+            properties:
+              replicas: # 子属性的名字
+                # 对象的类型, 可选的字段有object、array、string、integer、number、boolean
+                type: integer # 子属性的类型
+                minimum: 1 # 最小值
+                maximum: 10 # 最大值
+                description: "Number of desired replicas" # 字段的描述
+              cluster:
+                type: string
+                enum:
+                - small
+                - medium
+                - large
+                default: small
+                description: "cluster status" # 描述
+              email:
+                type: string
+                pattern: "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+              name:
+                type: string
+                minLength: 3 # 长度限制
+                maxLength: 32
+              containers:
+                type: array # 数组类型
+                items:
+                  type: object # 数组元素的类型
+                  required: ["name","image"]   # 数组元素必填
+                  # 数组的元素有两个字段, name和image
+                  properties:
+                    name:
+                      type: string
+                    image:
+                      type: string
+~~~
+
+之后你就可以按照如下的yaml来创建对应的cr了
+
+~~~yaml
+apiVersion: example.com/v1
+kind: Widget
+metadata:
+  name: my-widget
+spec:
+  replicas: 3
+  image: nginx:1.25
+  cluster: medium
+  email: testuser1
+  name: widget1
+  containers:
+    - name: container1
+      image: nginx:1.25
+    - name: container2
+      image: busybox:1.36
+~~~
+
+
+
 
 
 
