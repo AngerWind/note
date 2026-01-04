@@ -7674,7 +7674,11 @@ https://www.bilibili.com/video/BV15P4y1S7Jw/?spm_id_from=333.337.search-card.all
 
 如下图可以查看b站的ca证书
 
-<img src="img/k8s笔记/image-20231019151018367.png" alt="image-20231019151018367" style="zoom: 50%;" />![image-20231019151053296](img/k8s笔记/image-20231019151053296.png)
+<img src="img/k8s笔记/image-20231019151018367.png" alt="image-20231019151018367" style="zoom: 50%;" />
+
+![image-20231019151053296](img/k8s笔记/image-20231019151053296.png)
+
+
 
 <img src="img/k8s笔记/image-20231019151106302.png" alt="image-20231019151106302" style="zoom:50%;" />
 
