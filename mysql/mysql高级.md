@@ -4601,7 +4601,7 @@ INSERT
    
    SELECT create_hypertable(
        'operation_log',      -- 表名
-       'time'            -- 时间列
+       'time',            -- 时间列
        'log_account_id',    -- 分区字段, 如果不指定的话就是不分区
        -- 对log_account_id分4个区, 这样在大数据量写的时候可以将并发热点打散
        -- 默认只有一个分区, 和没有分区是一样的
