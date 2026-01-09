@@ -1525,7 +1525,7 @@ mkdir -p /etc/containerd
 containerd config default | tee /etc/containerd/config.toml
 ```
 
-7.在每台机器上执行以下命令将`Containerd`的`Cgroup`改为`Systemd`,找到**containerd.runtimes.runc.options**，添加**SystemdCgroup = true（如果已存在直接修改，否则会报错）**
+7.在每台机器上执行以下命令将`Containerd`的`Cgroup`改为`Systemd`,找到**plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.option**这一栏，然后添加**SystemdCgroup = true（如果已存在直接修改，否则会报错）**
 
 ```shell
 $ vim /etc/containerd/config.toml
@@ -1629,6 +1629,53 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl restart docker
 ~~~
+
+
+
+13.除此以外,你还需要配置containerd的镜像加速, 默认的情况下, 你在 使用kubectl安装pod的时候, 底层containerd默认会从`docekr.io/library`中去拉取镜像, 如果你不配置的话,有可能会出现如下的问题
+
+~~~txt
+Warning  Failed            13s                  kubelet            Failed to pull image "nginx": rpc error: code = DeadlineExceeded desc = failed to pull and unpack image "docker.io/library/nginx:latest": failed to resolve reference "docker.io/library/nginx:latest": failed to do request: Head "https://registry-1.docker.io/v2/library/nginx/manifests/latest": dial tcp 104.244.43.35:443: i/o timeout
+~~~
+
+因为我们这次安装的k8s使用的容器运行时是containerd, 所以配置docker的镜像加速是没有用的, 配置的docker容器只是为了在docker方便的时候使用
+
+- 如果你使用的服务器是云服务器的话, 那么你可以使用云服务器的镜像加速
+- 如果你的不是云服务器, 那么可以配置一些公共的containerd镜像加速服务
+
+比如在使用腾讯云的时候, 就可以使用https://cloud.tencent.com/document/product/457/51237中的内容, 来配置containerd的加速服务
+
+~~~toml
+vim /etc/containerd/config.toml
+
+在[plugins]的栏目下添加如下的内容
+
+# 这是配置quay.io的镜像加速
+[plugins."io.containerd.grpc.v1.cri".registry.mirrors."quay.io"]
+  endpoint = ["https://quay.tencentcloudcr.com"]
+
+# 这是配置docker.io网站的镜像加速
+[plugins."io.containerd.grpc.v1.cri".registry.mirrors."docker.io"]
+  endpoint = ["https://mirror.ccs.tencentyun.com"]
+~~~
+
+然后重启containerd
+
+~~~shell
+systemctl restart containerd
+~~~
+
+之后通过如下的命令来尝试拉取镜像, 看看有没有生效
+
+~~~shell
+# 需要在安装了k8s之后才可以使用crictl
+crictl pull quay.io/k8scsi/csi-resizer:v0.5.0
+crictl pull nginx
+~~~
+
+
+
+
 
 ## 搭建集群
 
@@ -1738,12 +1785,56 @@ cgroupDriver: systemd
 
 ### Master节点初始化
 
+先通过如下的命令, 查看当前服务器配置的子网
+
+~~~shell
+# ip addr show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP group default qlen 1000
+    link/ether 52:54:00:49:8a:92 brd ff:ff:ff:ff:ff:ff
+    inet 10.0.0.9/22 brd 10.0.3.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::5054:ff:fe49:8a92/64 scope link 
+       valid_lft forever preferred_lft forever
+3: tunl0@NONE: <NOARP> mtu 1480 qdisc noop state DOWN group default qlen 1000
+    link/ipip 0.0.0.0 brd 0.0.0.0
+4: docker0: <NO-CARRIER,BROADCAST,MULTICAST,UP> mtu 1500 qdisc noqueue state DOWN group default 
+    link/ether 02:42:46:54:80:ac brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+~~~
+
+可以看到我们的eth0的子网在`10.0.0.9/22`, 那么你在初始化master的时候, 应该使用如下的选项
+
+~~~shell
+--apiserver-advertise-address=10.0.0.9 # 而不是随意的192.168
+~~~
+
+如果没有的话, 那么你也可以通过如下的命令来设置, 没有试过, 问问ai
+
+~~~shell
+nmcli con show           # 查看连接名称
+nmcli con mod <conn> ipv4.addresses 192.168.1.105/24
+nmcli con mod <conn> ipv4.method manual
+nmcli con up <conn
+~~~
+
+
+
+
+
 <font color=red>(如果按照以下步骤初始化master节点, 会报错, could not find node cdh105, 猜测应该是哪里的ip地址配错了, 因为这里作者搭建的高可用的master, 而我们这里只搭建了一个master), 可以使用尚硅谷的初始化命令来初始化master </font>
 
 ~~~shell
 # 提前拉取镜像, 即使这里不拉取, 下面这个命令也会拉取的
 # 需要在多个节点上执行!!!!!
 kubeadm config images pull
+kubeadm config images pull --image-repository registry.aliyuncs.com/google_containers
 
 # 初始化master, 只需要在一个master节点上执行, 即使你需要多个master
 # worker上不需要执行
@@ -1855,9 +1946,57 @@ cdh106   Ready    <none>                 23m   v1.23.17
    cdh107   Ready    <none>                 22m   v1.23.17
    ~~~
    
+5. **针对单节点的集群, 一定要执行如下的命令**, 因为master节点上面是一般是禁止调度pod到这个节点上的, 但是你又是一个单节点集群, 这会导致你的pod没有节点可以调度, 所以一定要执行如下的命令
+
+   ~~~shell
+   # 让普通的pod也可以在master节点上面运行
+   kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+   ~~~
+
    
 
 ### 初始化失败, 重置
+
+如果你在初始化的时候卡在了这一步
+
+~~~shell
+[control-plane-check] Checking kube-apiserver at https://192.168.1.105:6443/livez
+[control-plane-check] Checking kube-controller-manager at https://127.0.0.1:10257/healthz
+[control-plane-check] Checking kube-scheduler at https://127.0.0.1:10259/livez
+~~~
+
+那么说明你的容器的镜像是拉取成功的, 但是在启动k8s的相关容器的时候失败了, 那么你可以通过了如下的命令来排查
+
+~~~shell
+[root@cdh ~]# crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock ps -a | grep kube 
+d294eedfcb827       aa27095f56193       47 seconds ago      Exited              kube-apiserver            18                  6c13e97012aa7       kube-apiserver-cdh            kube-system
+532e4e3aee0b5       a3e246e9556e9       2 minutes ago       Exited              etcd                      19                  0beb5e5e76de4       etcd-cdh                      kube-system
+1ccddf05e8d58       5826b25d990d7       About an hour ago   Running             kube-controller-manager   0                   d8a2212d3cbd7       kube-controller-manager-cdh   kube-system
+e44a3ed4bdd01       aec12dadf56dd       About an hour ago   Running             kube-scheduler            0                   ab759b73e4e06       kube-scheduler-cdh            kube-system
+~~~
+
+可以看到, 上面我的服务应该是etcd启动失败了, 所以导致kube-apiserver-cdh没有启动起来, 那么我们可以通过如下的命令来看etcd的日志, 看看他为什么没有启动起来
+
+~~~shell
+[root@cdh ~]# crictl --runtime-endpoint unix:///var/run/containerd/containerd.sock logs 532e4e3aee0b5 
+{"level":"warn","ts":"2026-01-06T05:39:07.014314Z","caller":"embed/config.go:1209","msg":"Running http and grpc server on single port. This is not recommended for production."}
+{"level":"warn","ts":"2026-01-06T05:39:07.014558Z","caller":"etcdmain/config.go:270","msg":"--snapshot-count is deprecated in 3.6 and will be decommissioned in 3.7."}
+{"level":"info","ts":"2026-01-06T05:39:07.014573Z","caller":"etcdmain/etcd.go:64","msg":"Running: ","args":["etcd","--advertise-client-urls=https://192.168.1.105:2379","--cert-file=/etc/kubernetes/pki/etcd/server.crt","--client-cert-auth=true","--data-dir=/var/lib/etcd","--feature-gates=InitialCorruptCheck=true","--initial-advertise-peer-urls=https://192.168.1.105:2380","--initial-cluster=cdh=https://192.168.1.105:2380","--key-file=/etc/kubernetes/pki/etcd/server.key","--listen-client-urls=https://127.0.0.1:2379,https://192.168.1.105:2379","--listen-metrics-urls=http://127.0.0.1:2381","--listen-peer-urls=https://192.168.1.105:2380","--name=cdh","--peer-cert-file=/etc/kubernetes/pki/etcd/peer.crt","--peer-client-cert-auth=true","--peer-key-file=/etc/kubernetes/pki/etcd/peer.key","--peer-trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt","--snapshot-count=10000","--trusted-ca-file=/etc/kubernetes/pki/etcd/ca.crt","--watch-progress-notify-interval=5s"]}
+{"level":"info","ts":"2026-01-06T05:39:07.014638Z","caller":"etcdmain/etcd.go:124","msg":"Initialize and start etcd server","data-dir":"/var/lib/etcd","dir-type":"empty"}
+{"level":"warn","ts":"2026-01-06T05:39:07.014658Z","caller":"embed/config.go:1209","msg":"Running http and grpc server on single port. This is not recommended for production."}
+{"level":"info","ts":"2026-01-06T05:39:07.014669Z","caller":"embed/etcd.go:138","msg":"configuring peer listeners","listen-peer-urls":["https://192.168.1.105:2380"]}
+{"level":"info","ts":"2026-01-06T05:39:07.014693Z","caller":"embed/etcd.go:544","msg":"starting with peer TLS","tls-info":"cert = /etc/kubernetes/pki/etcd/peer.crt, key = /etc/kubernetes/pki/etcd/peer.key, client-cert=, client-key=, trusted-ca = /etc/kubernetes/pki/etcd/ca.crt, client-cert-auth = true, crl-file = ","cipher-suites":[]}
+{"level":"error","ts":"2026-01-06T05:39:07.014832Z","caller":"embed/etcd.go:586","msg":"creating peer listener failed","error":"listen tcp 192.168.1.105:2380: bind: cannot assign requested address","stacktrace":"go.etcd.io/etcd/server/v3/embed.configurePeerListeners\n\tgo.etcd.io/etcd/server/v3/embed/etcd.go:586\ngo.etcd.io/etcd/server/v3/embed.StartEtcd\n\tgo.etcd.io/etcd/server/v3/embed/etcd.go:142\ngo.etcd.io/etcd/server/v3/etcdmain.startEtcd\n\tgo.etcd.io/etcd/server/v3/etcdmain/etcd.go:207\ngo.etcd.io/etcd/server/v3/etcdmain.startEtcdOrProxyV2\n\tgo.etcd.io/etcd/server/v3/etcdmain/etcd.go:129\ngo.etcd.io/etcd/server/v3/etcdmain.Main\n\tgo.etcd.io/etcd/server/v3/etcdmain/main.go:40\nmain.main\n\tgo.etcd.io/etcd/server/v3/main.go:31\nruntime.main\n\truntime/proc.go:283"}
+{"level":"info","ts":"2026-01-06T05:39:07.014872Z","caller":"embed/etcd.go:426","msg":"closing etcd server","name":"cdh","data-dir":"/var/lib/etcd","advertise-peer-urls":["https://192.168.1.105:2380"],"advertise-client-urls":["https://192.168.1.105:2379"]}
+{"level":"info","ts":"2026-01-06T05:39:07.014883Z","caller":"embed/etcd.go:428","msg":"closed etcd server","name":"cdh","data-dir":"/var/lib/etcd","advertise-peer-urls":["https://192.168.1.105:2380"],"advertise-client-urls":["https://192.168.1.105:2379"]}
+{"level":"fatal","ts":"2026-01-06T05:39:07.014900Z","caller":"etcdmain/etcd.go:183","msg":"discovery failed","error":"listen tcp 192.168.1.105:2380: bind: cannot assign requested address","stacktrace":"go.etcd.io/etcd/server/v3/etcdmain.startEtcdOrProxyV2\n\tgo.etcd.io/etcd/server/v3/etcdmain/etcd.go:183\ngo.etcd.io/etcd/server/v3/etcdmain.Main\n\tgo.etcd.io/etcd/server/v3/etcdmain/main.go:40\nmain.main\n\tgo.etcd.io/etcd/server/v3/main.go:31\nruntime.main\n\truntime/proc.go:283"}
+~~~
+
+可以看到etcd在监听服务端口的时候, 192.168.1.105这个ip在主机上是不可用的, 所以导致etcd启动失败了, 那么你就可以把上面的日志信息提交给ai, 让他帮你解决
+
+
+
+
 
 如果你在初始化的时候, 失败了, 或者中断了, 那么可以使用如下命令来重置（没有失败不要执行）
 
