@@ -7436,6 +7436,10 @@ Predicate 有一系列的算法可以使用：
 
 ## 亲和性和反亲和性
 
+亲和性和反亲和性的意思是,  将pod强制/优先,   调度/不调度某些节点上
+
+
+
 ### 节点亲和性
 
 硬亲和性: **pod必须调度到label满足特定条件的node上**
@@ -14782,5 +14786,94 @@ cat /var/log/messages
 
 
 
+## 驱逐与保留
 
 
+
+### 驱逐
+
+当你的集群上的机器在资源占用上面不均衡的时候,  比如有某个pod疯狂运行, 内存和cpu消耗都特别的大, 其他pod没有资源可用, 但是其他的机器内存占用又特别小的时候, 那么你可以使用驱逐命令, 将这些没有资源可用的pod迁移到其他的节点上
+
+~~~shell
+kubectl evict pod -n my-ns nginx-web
+~~~
+
+上面的这个命令会驱逐`nginx-web`这个pod,  即把他删除掉
+
+
+
+当然如果想要将k8s集群中的某个节点下线, 升级,  那么你首先需要驱逐掉这个机器上面的所有pod, 那么你可以使用如下的命令, 来驱逐一整个节点的pod
+
+~~~shell
+kubectl drain node-1
+~~~
+
+**kubectl evict/drain和kubectl delete pod 最大的不同就是evict和drain会遵守pdb原则, 而delete不管你那么多直接删除**
+
+
+
+同时drain和evict对于不同类型的pod还有不同的效果
+
+| Pod 类型                            | 默认行为 |
+| ----------------------------------- | -------- |
+| Deployment / ReplicaSet Pod         | ✅ evict  |
+| StatefulSet Pod                     | ✅ evict  |
+| DaemonSet Pod                       | ❌ 忽略   |
+| static Pod（k8s之间内部必须得组件） | ❌ 忽略   |
+| mirror Pod                          | ❌ 忽略   |
+
+
+
+下面是注意的点:
+
+1. 你可以通过`--dry-run=client`来尝试执行, 看看效果
+
+2. 对于不受controller控制的pod, 必须添加-`--force`选项
+
+3. 如果是受Deployment, ReplicaSet, StatefulSet控制的pod,  如果你evict一个pod之后, 那么Controller检测到实际副本数和期望副本数不符, 那么会重新创建一个pod
+
+   这个pod会按照k8s的调度规则重新调度,  所以有可能又调度回原来的那个pod上面
+
+
+
+
+
+### 保留
+
+当然, 在某些时候, evict和drain两个命令可能会带来一些副作用, 比如你有三个nginx的pod, 如果你突然evict一个pod, 或者drain一个node, 那么生下来的两个pod有可能扛不住流量而挂掉, 所以这个时候我们就要设置一个底线, 比如这个nginx的pod, 最少给我保留3个副本, 如果低于三个副本了, 那么就不能驱逐了, evict和drain都应该失败
+
+而k8s就提供了这样的暴露, 名为PodDisruptionBuget, 你可以通过如下的yaml来创建一个PDB
+
+~~~yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: we
+~~~
+
+在spec中你可以指定如下的类型
+
+- minAvailable: 2 表示在evict和drain的时候, 必须保留两个副本, 否则驱逐失败
+- minAvailable: 50% 假如10个pod, 那么最少保留5个pod, 否则驱逐失败
+- maxUnavailable: 25% 假如10个pod, 那么最多2个pod不可用 (向下取整)
+- minAvailable: 2 最多两个pod不可用
+
+> minAvailable和maxUnavailable只能二选一, 不能同时使用
+
+
+
+ 使用如下的命令来查看pdb
+
+~~~shell
+kubectl get pdb
+
+NAME      MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS
+web-pdb   2               N/A               1
+~~~
+
+`ALLOWED DISRUPTIONS`表示还有1个副本能够驱逐
