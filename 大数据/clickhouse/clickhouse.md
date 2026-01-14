@@ -152,7 +152,7 @@
 SHOW CREATE DATABASE demo;
 ~~~
 
-
+他会显示建表语句中的数据库引擎的类型
 
 
 
@@ -196,7 +196,7 @@ atomic就是原子的意思, 表示他可以原子性的修改表的元数据, �
      └─────────────┴────────┴──────────────────────────────────────┘
   ~~~
 
-- 对于drop table, 不会立刻删除数据, 只是将表的元数据移动到了`/clickhouse_path/metadata_dropped`, 并将这个表标记为删除, 之后再对表数据进行删除
+- 对于drop table, 不会立刻删除数据, 只是将表的元数据移动到了``/var/lib/clickhouse/metadata_dropped`, 并将这个表标记为删除, 之后再对表数据进行删除
 
 - 你可以直接在建表语句的settings字段中指定disk, 表示存储表元数据目录
 
@@ -226,7 +226,25 @@ atomic就是原子的意思, 表示他可以原子性的修改表的元数据, �
 
 ## Shared
 
-Shared和Atomic类似, 
+Shared和Atomic类似, 能够支持元数据的原子更新, 每个表都有uuid, 数据都保在在`/var/lib/clickhouse/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/`中
+
+但是不同的点在于Shared数据库的元数据都保存在keeper中, 而不会保存在本地的`/var/lib/metadata/`中, 所以这种数据库引擎一般都是在clickhouse集群中使用, 多个实例共享元数据, 但是需要注意的是, 数据还是保存在本地的
+
+要想使用Shared数据库引擎, 你必须:
+
+- 运行Clickhouse Keeper 或者zookeeper
+- 在`/etc/clickhouse-server/config.xml`中配置了keeper的地址
+- 所有clickhouse的实力连接的同一个keeper
+
+之后你就可以使用如下的sql来建立一个Shared数据库
+
+~~~sql
+CREATE DATABASE demo_shared
+ENGINE = Shared;
+
+-- 验证数据库类型
+SHOW CREATE DATABASE demo_shared;
+~~~
 
 
 
@@ -234,9 +252,487 @@ Shared和Atomic类似,
 
 
 
+## Lazy
+
+这种数据库引擎很少用, 他的核心目标只有一个: 减少内存占用
+
+当你第一次使用这个表的时候,  clickhouse会磁盘中加载表结构和表的数据, 所以在第一次访问的时候会特别的慢
+
+如果你在指定的时间之后不再访问这个表, 那么他又会将内存中的元数据和表数据卸载掉, 下次使用的时候重新加载
+
+同时Lazy数据库引擎也没有DDL的原子性, 并且他只能和*Log模型的表一起使用
+
+你在绝大部分场景中都不应该使用这种数据库引擎, 而是应该使用Atomic数据库引擎, 他只适合那些好久才使用一次的表
+
+~~~sql
+CREATE DATABASE testlazy 
+ENGINE = Lazy(expiration_time_in_seconds); -- 指定多久之后卸载表
+~~~
 
 
-# 表引擎
+
+
+
+## Replicated
+
+// todo
+
+
+
+## PostgreSQL
+
+用于将一整个Postgres数据库映射到ck中。**支持在ck中对pg进行select, insert(不支持update, delete)**，以便在 ClickHouse 和 PostgreSQL 之间交换数据。
+
+
+
+他的使用场景是:
+
+1. 维度表
+2. 配置表
+3. Lookup
+4. 查询范围小, 条件过滤强的sql
+
+千万不要在ck中进行大数据量的查询pg
+
+
+
+你可以通过如下的sql来创建一个PostgresSQL
+
+~~~sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL(
+    'host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+~~~
+
+- use_table_cache表示是否缓存pg的表结构到ck中, 默认值为0, 表示实时查询pg的表结构, 如果设置为1, 那么将会缓存pg的表结构, 在使用的时候不再实时查询
+
+- 如果pg中的表结构变更了, 那么你也可以使用`detach`和`attach`查询进行更新
+
+你可以通过 `SHOW TABLES` 和 `DESCRIBE TABLE` 实时访问远程 PostgreSQL 中的表列表和表结构。
+
+
+
+使用这种数据库引擎的时候, 会将pg表中的字段类型映射为ck的字段类型
+
+| PostgreSQL       | ClickHouse                                                   |
+| ---------------- | ------------------------------------------------------------ |
+| DATE             | [Date](https://clickhouse.com/docs/sql-reference/data-types/date) |
+| TIMESTAMP        | [DateTime](https://clickhouse.com/docs/sql-reference/data-types/datetime) |
+| REAL             | [Float32](https://clickhouse.com/docs/sql-reference/data-types/float) |
+| DOUBLE           | [Float64](https://clickhouse.com/docs/sql-reference/data-types/float) |
+| DECIMAL, NUMERIC | [Decimal](https://clickhouse.com/docs/sql-reference/data-types/decimal) |
+| SMALLINT         | [Int16](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| INTEGER          | [Int32](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| BIGINT           | [Int64](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| SERIAL           | [UInt32](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| BIGSERIAL        | [UInt64](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| TEXT, CHAR       | [String](https://clickhouse.com/docs/sql-reference/data-types/string) |
+| INTEGER          | Nullable([Int32](https://clickhouse.com/docs/sql-reference/data-types/int-uint)) |
+| ARRAY            | [Array](https://clickhouse.com/docs/sql-reference/data-types/array) |
+
+
+
+### 使用案例
+
+1. 在ck中映射pg数据库
+
+   ~~~sql
+   CREATE DATABASE test_database
+   ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+   
+   SHOW DATABASES;
+   ┌─name──────────┐
+   │ default       │
+   │ test_database │
+   │ system        │
+   └───────────────┘
+   ~~~
+
+2. 在ck中查询表结构和数据
+
+   ~~~sql
+   SHOW TABLES FROM test_database;
+   ┌─name───────┐
+   │ test_table │
+   └────────────┘
+   
+   DESCRIBE TABLE test_database.test_table;
+   ┌─name───┬─type──────────────┐
+   │ id     │ Nullable(Integer) │
+   │ value  │ Nullable(Integer) │
+   └────────┴───────────────────┘
+   
+   SELECT * FROM test_database.test_table;
+   ┌─id─┬─value─┐
+   │  1 │     2 │
+   └────┴───────┘
+   ~~~
+
+3. 通过ck插入数据到pg中
+
+   ~~~sql
+   INSERT INTO test_database.test_table VALUES (3,4);
+   SELECT * FROM test_database.test_table;
+   ┌─int_id─┬─value─┐
+   │      1 │     2 │
+   │      3 │     4 │
+   └────────┴───────┘
+   ~~~
+
+4. 通过pg修改表结构, 因为`use_table_cache`设置为了1, 所以会缓存元数据, 如果元数据变更了, 需要手动同步
+
+   ~~~sql
+   -- 修改pg中的表结构
+   postgre> ALTER TABLE test_table ADD COLUMN data Text
+   
+   -- ck中查看表结构, 未发生变化
+   ┌─name───┬─type──────────────┐
+   │ id     │ Nullable(Integer) │
+   │ value  │ Nullable(Integer) │
+   └────────┴───────────────────┘
+   
+   -- 手动同步表结构, 二选一即可
+   DETACH TABLE test_database.test_table;
+   ATTACH TABLE test_database.test_table;
+   
+   -- 重新查询
+   DESCRIBE TABLE test_database.test_table;
+   ┌─name───┬─type──────────────┐
+   │ id     │ Nullable(Integer) │
+   │ value  │ Nullable(Integer) │
+   │ data   │ Nullable(String)  │
+   └────────┴───────────────────┘
+   ~~~
+
+
+
+## MySQL
+
+和Postgres数据库引擎一样, 用于将mysql中的整个数据库映射到ck中, **支持在ck中对mysql进行select, insert(不支持update, delete)**
+
+~~~sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', 'database' , 'user', 'password')
+~~~
+
+
+
+
+
+
+
+ck会将mysql中的数据类型转换为对应的ck数据类型, 如下是映射关系
+
+| MySQL                            | ClickHouse                                                   |
+| -------------------------------- | ------------------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| TINYINT                          | [Int8](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| UNSIGNED SMALLINT                | [UInt16](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| SMALLINT                         | [Int16](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| INT, MEDIUMINT                   | [Int32](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| UNSIGNED BIGINT                  | [UInt64](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| BIGINT                           | [Int64](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| FLOAT                            | [Float32](https://clickhouse.com/docs/sql-reference/data-types/float) |
+| DOUBLE                           | [Float64](https://clickhouse.com/docs/sql-reference/data-types/float) |
+| DATE                             | [Date](https://clickhouse.com/docs/sql-reference/data-types/date) |
+| DATETIME, TIMESTAMP              | [DateTime](https://clickhouse.com/docs/sql-reference/data-types/datetime) |
+| BINARY                           | [FixedString](https://clickhouse.com/docs/sql-reference/data-types/fixedstring) |
+
+其他所有类型的字段, 都映射为ck中的String类型
+
+
+
+### 使用案例
+
+1. 在mysql中建表
+
+   ~~~sql
+   mysql> USE test;
+   Database changed
+   
+   mysql> CREATE TABLE `mysql_table` (
+       ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+       ->   `float` FLOAT NOT NULL,
+       ->   PRIMARY KEY (`int_id`));
+   Query OK, 0 rows affected (0,09 sec)
+   
+   mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+   Query OK, 1 row affected (0,00 sec)
+   
+   mysql> select * from mysql_table;
+   +------+-----+
+   | int_id | value |
+   +------+-----+
+   |      1 |     2 |
+   +------+-----+
+   1 row in set (0,00 sec)
+   ~~~
+
+2. 在ck中操作mysql
+
+   ~~~sql
+   CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
+   
+   SHOW DATABASES
+   ┌─name─────┐
+   │ default  │
+   │ mysql_db │
+   │ system   │
+   └──────────┘
+   
+   SHOW TABLES FROM mysql_db
+   ┌─name─────────┐
+   │  mysql_table │
+   └──────────────┘
+   
+   SELECT * FROM mysql_db.mysql_table
+   ┌─int_id─┬─value─┐
+   │      1 │     2 │
+   └────────┴───────┘
+   
+   INSERT INTO mysql_db.mysql_table VALUES (3,4)
+   SELECT * FROM mysql_db.mysql_table
+   ┌─int_id─┬─value─┐
+   │      1 │     2 │
+   │      3 │     4 │
+   └────────┴───────┘
+   ~~~
+
+   
+
+## SQLite
+
+和PostgreSQL一样, 用于将一整个sqlite数据库映射到ck中
+
+~~~sql
+    CREATE DATABASE sqlite_database
+    ENGINE = SQLite('db_path') -- 指定sqlite的文件路径
+~~~
+
+ck会将sqlite中的数据类型映射为ck中的数据类型, 映射关系如下
+
+| SQLite  | ClickHouse                                                   |
+| ------- | ------------------------------------------------------------ |
+| INTEGER | [Int32](https://clickhouse.com/docs/sql-reference/data-types/int-uint) |
+| REAL    | [Float32](https://clickhouse.com/docs/sql-reference/data-types/float) |
+| TEXT    | [String](https://clickhouse.com/docs/sql-reference/data-types/string) |
+| BLOB    | [String](https://clickhouse.com/docs/sql-reference/data-types/string) |
+
+
+
+### 使用案例
+
+1. 在ck中创建sqlite的映射
+
+   ~~~sql
+   CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
+   ~~~
+
+2. 查询数据
+
+   ~~~sql
+   SHOW TABLES FROM sqlite_db;
+   ┌──name───┐
+   │ table1  │
+   │ table2  │
+   └─────────┘
+   
+   SELECT * FROM sqlite_db.table1;
+   ┌─col1──┬─col2─┐
+   │ line1 │    1 │
+   │ line2 │    2 │
+   │ line3 │    3 │
+   └───────┴──────┘
+   ~~~
+
+3. 将ck中的数据插入到sqlite中
+
+   ~~~sql
+   CREATE TABLE clickhouse_table(
+       `col1` String,
+       `col2` Int16
+   ) ENGINE = MergeTree() ORDER BY col2;
+   
+   INSERT INTO clickhouse_table VALUES ('text',10);
+   
+   INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
+   
+   SELECT * FROM sqlite_db.table1;
+   ┌─col1──┬─col2─┐
+   │ line1 │    1 │
+   │ line2 │    2 │
+   │ line3 │    3 │
+   │ text  │   10 │
+   └───────┴──────┘
+   ~~~
+
+   
+
+## Backup
+
+在ck中, 运行你通过backup和restore命令来备份恢复数据库和表, backup会为数据库创建一个备份
+
+当然你可以将这个备份创建为一个数据库, 然后对这个数据库进行查询
+
+想要具体了解可以查看
+
+https://clickhouse.com/docs/engines/database-engines/backup
+
+https://clickhouse.com/docs/operations/backup/disk
+
+
+
+
+
+## MaterializedPostgreSQL
+
+使用这种数据库引擎, 在创建数据库的时候必须指定要同步的pg的表, 之后ck会开始全量同步这些表中的数据到ck中, 之后从pg 的wal中拉取后续的更新到ck中, 进行增量同步
+
+
+
+你可以通过如下的sql来创建数据库
+
+~~~sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MaterializedPostgreSQL(
+    'host:port', 'database', 'user', 'password'
+) 
+[SETTINGS ...]
+~~~
+
+根据settings他有三种模式
+
+1. 一个 `MaterializedPostgreSQL` 引擎数据库, 同步pg中的一整个schema中的所有的表
+
+   ~~~sql
+   CREATE DATABASE postgres_database
+   ENGINE = MaterializedPostgreSQL(
+       'postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+   )
+   SETTINGS 
+   -- 指定同步的schema, 会自动同步所有的表
+   materialized_postgresql_schema = 'postgres_schema';
+   
+   SELECT * FROM postgres_database.table1;
+   ~~~
+
+   之后你可以使用pg中表名在ck中进行查询
+
+   ~~~sql
+   SELECT * FROM postgres_database.table1;
+   ~~~
+
+2. 一个 `MaterializedPostgreSQL` 引擎数据库, 同步多个schema下的多个表
+
+   ~~~sql
+   CREATE DATABASE database1
+   ENGINE = MaterializedPostgreSQL(
+       'postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+   )
+   SETTINGS 
+   -- 指定需要同步的表
+   materialized_postgresql_tables_list = 'schema1.table1,schema2.table2,schema1.table3',
+   materialized_postgresql_tables_list_with_schema = 1;
+   ~~~
+
+   之后你需要通过`schema_name.table_name`来访问表
+
+   ~~~sql
+   SELECT * FROM database1.`schema1.table1`;
+   SELECT * FROM database1.`schema2.table2`;
+   ~~~
+
+3. 一个 `MaterializedPostgreSQL` 引擎数据库, 同步pg中的多个schema的所有的表
+
+   ~~~sql
+   CREATE DATABASE database1
+   ENGINE = MaterializedPostgreSQL(
+       'postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+   )
+   SETTINGS 
+   -- 指定要同步的schema
+   materialized_postgresql_schema_list = 'schema1,schema2,schema3';
+   ~~~
+
+   之后你可以通过如下的sql来访问这些表
+
+   ~~~sql
+   SELECT * FROM database1.`schema1.table1`;
+   SELECT * FROM database1.`schema1.table2`;
+   SELECT * FROM database1.`schema2.table2`;
+   ~~~
+
+
+
+在同步的时候, 你也可以同步表中指定的列
+
+~~~sql
+REATE DATABASE database1
+ENGINE = MaterializedPostgreSQL(
+    'postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password'
+)
+SETTINGS 
+materialized_postgresql_tables_list = 'schema1.table1(co1, col2),schema1.table2,schema1.table3(co3, col5, col7)
+~~~
+
+
+
+
+
+需要注意的是:
+
+1. 这种数据库引擎是实验性质的, 要使用他需要再配置文件中将`allow_experimental_database_materialized_postgresql` 设置为 1，或使用 `SET` 命令：
+
+   ~~~sql
+   SET allow_experimental_database_materialized_postgresql=1
+   ~~~
+
+2. 如果pg中后续增加了新表, 那么不会自动同步, 需要你手动
+
+   ~~~sql
+   -- 手动指定需要同步的新表, 然后ck会开始同步数据到ck中
+   ATTACH TABLE postgres_database.new_table;
+   ~~~
+
+3. PostgreSQL的复制协议不允许复制表结构的变更, 但是表结构的变更可以被检测到, 所以一到pg中的表结构发生了变更, 比如添加/删除了字段, 那么ck就会停止同步这个表, 你需要使用 `ATTACH` / `DETACH PERMANENTLY` 查询来完全重新加载表。如果 DDL 语句没有破坏复制（例如，重命名列），则表仍会接收更新（插入操作按位置执行）。
+
+
+
+使用这种数据库对pg有如下的要求
+
+1. 在 PostgreSQL 配置文件中， [wal_level](https://www.postgresql.org/docs/current/runtime-config-wal.html) 设置的值必须为 `logical` ， `max_replication_slots` 参数的值必须至少为 `2` 。
+
+2. 每个复制的表都必须要下面二者之一
+
+   - 主键
+
+   - 唯一索引, 并且将唯一索引设置为replica Identity
+
+     ~~~sql
+     postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
+     postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
+     postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
+     ~~~
+
+
+
+## DataLakeCatalog
+
+`DataLakeCatalog` 数据库引擎使您能够将 ClickHouse 连接到外部的catalog，并进行数据查询，而无需重复数据。这使 ClickHouse 转变为一个强大的查询引擎，可与您现有的数据湖基础架构无缝协作。
+
+`DataLakeCatalog` 引擎支持以下catalog：
+
+- **AWS Glue Catalog** -  AWS 环境中的 Iceberg 表
+- **Databricks Unity Catalog** - 适用于 Delta Lake 和 Iceberg 表
+- **Hive Metastore** - 适用于hive的catalog
+- **REST Catalogs** - 任何支持 Iceberg REST 规范的目录
+
+
+
+更多细节和使用案例查看https://clickhouse.com/docs/engines/database-engines/datalakecatalog
+
+
 
 # 数据类型
 
@@ -302,4 +798,7 @@ Enum8和Enum16
 
 ~~~
 
+
+
+# 表引擎
 
