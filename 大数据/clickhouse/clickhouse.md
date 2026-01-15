@@ -736,43 +736,139 @@ materialized_postgresql_tables_list = 'schema1.table1(co1, col2),schema1.table2,
 
 # 数据类型
 
-#### 整型
+## 整型
 
-有符号整型: Int8, Int16, Int32, Int64,  范围是(-2^n-1  ~ -2^(n-1) - 1)
+有符号整型: Int8, Int16, Int32, Int64, Int128, Int256
 
-无符号整型: UInt8, UInt16, UInt32, UInt64, 范围是(0 ~ 2^n - 1)
+无符号整型: UInt8, UInt16, UInt32, UInt64, UInt128, UInt256
+
+他们是范围和Java中的范围类型
+
+
+
+上述的类型也有他们的别名, 如下面的表格
+
+| Type    | Alias                                                        |
+| ------- | ------------------------------------------------------------ |
+| `Int8`  | `TINYINT`, `INT1`, `BYTE`, `TINYINT SIGNED`, `INT1 SIGNED`   |
+| `Int16` | `SMALLINT`, `SMALLINT SIGNED`                                |
+| `Int32` | `INT`, `INTEGER`, `MEDIUMINT`, `MEDIUMINT SIGNED`, `INT SIGNED`, `INTEGER SIGNED` |
+| `Int64` | `BIGINT`, `SIGNED`, `BIGINT SIGNED`, `TIME`                  |
+| `UInt8`  | `TINYINT UNSIGNED`, `INT1 UNSIGNED`                      |
+| `UInt16` | `SMALLINT UNSIGNED`                                      |
+| `UInt32` | `MEDIUMINT UNSIGNED`, `INT UNSIGNED`, `INTEGER UNSIGNED` |
+| `UInt64` | `UNSIGNED`, `BIGINT UNSIGNED`, `BIT`, `SET`              |
 
 > 使用场景: 个数, 数量, id
 
-#### 浮点型
+
+
+
+
+## 浮点型
 
 Float32, Float64, 需要注意浮点数在计算的时候有误差
+
+他们的别名如下
+
+| Type      | Alias                        |
+| --------- | ---------------------------- |
+| `Float32` | `FLOAT`, `REAL`, `SINGLE`    |
+| `Float64` | `DOUBLE`, `DOUBLE PRECISION` |
+
+
 
 > 使用场景: 一般数据值比较小, 不涉及大量的统计计算, 精度要求不高, 比如商品的重量
 
 
 
-#### 布尔类型
+## 布尔类型
 
-clickhouse中没有单独的boolean类型, 可以使用UInt8来代替, 取值限制为0或者1
+`bool` 类型在内部存储为 UInt8。可能的值为 `true`(内部存储1) ， `false` (内部存储0)
+
+~~~sql
+SELECT true AS col, toTypeName(col);
+┌─col──┬─toTypeName(true)─┐
+│ true │ Bool             │
+└──────┴──────────────────┘
+
+select true == 1 as col, toTypeName(col);
+┌─col─┬─toTypeName(equals(true, 1))─┐
+│   1 │ UInt8                       │
+└─────┴─────────────────────────────┘
+
+-- 在插入的时候, 你也可以直接通过1/0来表示true/false
+CREATE TABLE test_bool( `A` Int64, `B` Bool )
+ENGINE = Memory;
+
+INSERT INTO test_bool VALUES (1, true),(2,0);
+SELECT * FROM test_bool;
+┌─A─┬─B─────┐
+│ 1 │ true  │
+│ 2 │ false │
+└───┴───────┘
+~~~
 
 
 
-#### Decimal
 
-- Decimal32(n): 只能保存9位数字, n表示小数的位数
+
+## Decimal
+
+- Decimal32(S): 只能保存9位数字, S表示小数的位数
 
   **比如Decimal32(5)表示小数5位, 整数部分4位, 如果保存的小数位数超过了5位那么会直接截断**
 
-- Decimal64(n): 只能保存18位数字, n表示小数位的位数
+  所以他的取值范围是[-9999.9999, 9999.9999]
 
-- Decimal128(n): 只能保存38位数字, n表示小数位的位数
+- Decimal64(S): 只能保存18位数字, S表示小数位的位数
+
+- Decimal128(S): 只能保存38位数字, S表示小数位的位数
+
+- Decimal128(S): 只能保存76位数字, S表示小数的位数
+
+
+
+当然如果你觉得上面的类型太麻烦了, 那么你也可以使用下面两种类型
+
+- Decimal(P, S): 其中P表示能够保存的数字的长度, S表示小数部分的长度, P的取值为[1, 76], S的取值为[0, P]
+
+  比如Decimal(32, 15)就表示保存的数字长度为32位, 小数部分15位, 超过直接截断
+
+  - 如果P是1~9, 那么你实际上就是在使用Decimal32(S)
+  - 如果P是10~18, 那么实际上就是使用的Decimal64(S)
+  - 如果P是19~38, 那么你实际上就是在使用Decimal128(S)
+  - 如果P是39~76, 那么实际上就是使用的Decimal256(S)
+
+- Decimal(P): 等效于Decimal(P, 0), 即没有小数部分
+
+- Decimal: 等效于Decimal(10, 0), 没有小数部分
+
+
+
+比如Decimal(10, 4)表示保存10位数字, 其中小数位4位, 整数部分6位
+
+~~~sql
+create table decimal_test (
+    x Decimal(10, 4)
+) engine = TinyLog;
+
+-- 数据被截断
+insert into decimal_test values (123456.1234567);
+
+select * from decimal_test;
+   ┌───────────x─┐
+1. │ 123456.1234 │
+   └─────────────┘
+~~~
+
+
 
 > 使用场景是需要精确计算, 比如金额, 汇率
 
 
 
-#### 字符串
+## 字符串
 
 - String: 字符串可以任务长度, 他可以包含任意的字节集, 包括空字节
 
@@ -788,15 +884,94 @@ clickhouse中没有单独的boolean类型, 可以使用UInt8来代替, 取值限
 
 
 
-#### 枚举类型
+## 枚举类型
 
 Enum8和Enum16
 
 **实际上在Clickhouse中, Enum8和Enum16就是Int8和Int16, 包括数据存储也是使用的他们, Clickhouse会保存Enum到Int的转换, 然后在返回结果的时候进行转换**
 
-~~~shell
+~~~sql
+create table test_enum (
+    x Enum8 ('hello'=1, 'world'=2, 'nihao'=3)
+)
+engine = TinyLog;
 
+-- 在插入的时候可以直接使用字符串, 或者数字
+insert into test_enum values ('hello'), ('world'), (1);
+
+-- 查询
+select * from test_enum;
+   ┌─x─────┐
+1. │ hello │
+2. │ world │
+3. │ hello │
+   └───────┘
+   
+-- 查询的时候也可以转换为对应的数字
+select cast(x, 'Int8') from test_enum
+   ┌─CAST(x, 'Int8')─┐
+1. │               1 │
+2. │               2 │
+3. │               1 │
+   └─────────────────┘
+
+-- 插入不存在的枚举指会报错
+insert into test_enum values ('haha');
+Error on processing query: Code: 691. DB::Exception: Unknown element 'haha' for enum
 ~~~
+
+Enum8和Enum18主要使用在一些状态的字段上面, 算是一种空间优化, 也算是一种数据约束
+
+但是在实际使用过程中往往因为一些**数据内容的变化**而增加一定的维护成本, 所以谨慎使用
+
+
+
+## 时间类型
+
+目前Clickhouse中有三种时间类型
+
+- Date: 类似'2019-12-16'
+- Datetime: 类似'2019-12-16 20:50:10'
+- Datetime64: 精确到毫秒, 类似'2019-12-16 20:50:10.66'
+
+
+
+## 数组
+
+Array(T): 由T类型元素构成的数组, T可以是任意类型, 包括数组
+
+但是不推荐使用多维数组, 因为Clickhouse对多维数组的支持有限, 比如不能再MergeTree中存储多维数组
+
+
+
+创建方式
+
+1. 使用array函数
+
+   ~~~sql
+   -- array构造一个数组, toTypeName获取字段的类型
+   select array(1, 2) as x, toTypeName(x) ;
+      ┌─x─────┬─toTypeName(x)─┐
+   1. │ [1,2] │ Array(UInt8)  │
+      └───────┴───────────────┘
+      
+   -- array中的元素只能有一个类型, 否则会报错
+   select array(1, 2, 'haha') as x, toTypeName(x) ;
+   Code: 386. DB::Exception: Received from localhost:9000. DB::Exception: There is no supertype for types UInt8, UInt8, String because some of them are String/FixedString/Enum and some of them are not: In scope SELECT [1, 2, 'haha'] AS x, toTypeName(x). (NO_COMMON_TYPE)
+   ~~~
+
+2. 使用中括号创建数组
+
+   ~~~sql
+   select [1, 2] as x, toTypeName(x) ;
+      ┌─x─────┬─toTypeName(x)─┐
+   1. │ [1,2] │ Array(UInt8)  │
+      └───────┴───────────────┘
+   ~~~
+
+
+
+## Nullable
 
 
 
