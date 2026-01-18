@@ -4743,21 +4743,15 @@ SELECT drop_chunks(
 
 https://www.cnblogs.com/luomuwuh/p/16642172.html
 
-压缩表主要用来进行冷热数据的区分, 或者列式查询上
+压缩表主要用来进行冷热数据的区分, 或者**列式查询**上
 
 
 
-你可以在一个超表上面启用压缩, 然后设置定时压缩, 或者手动压缩, 同时也可以设置segement字段
+你可以在一个超表上面启用压缩, 然后设置定时压缩, 或者手动压缩, 同时也可以设置segement字段和order_by字段
 
-到了压缩的时候,  首先会将需要压缩的chunk按照segement字段进行分段, 分成好几段, 然后每一段都转换为列式存储, 每一列按照字段的类型, 自动的选择合适的压缩算法进行压缩
+到了压缩的时候,  首先会将需要压缩的chunk按照segement字段进行分段, 分成好几段, 然后每一段的内部都按照order by进行排序, 然后每一段都转换为列式存储, 每一列按照字段的类型, 自动的选择合适的压缩算法进行压缩
 
 之后将压缩好的chunk, 作为压缩表的超表的chunk, 原始的chunk不会被丢弃,但是会被标记为只读, 如果后续还有数据落在这个chunk的时间范围内, 那么timescaledb会新建另外一个chunk, 用来保持还没有被压缩的数据
-
-
-
-你在查询的时候, 只需要查询原始的超表就好了, pg会根据你的查询条件自动帮你路由到原始表还是压缩表进行列式查询
-
-
 
 
 
@@ -4768,10 +4762,12 @@ https://www.cnblogs.com/luomuwuh/p/16642172.html
 alter table operation_log 
 set (
     timescaledb.compress, 
-    -- 指定压缩的时候, segemen字段
-    timescaledb.compress_segmentby='log_account_id'
+    -- 指定压缩的时候, 按照特定的字段进行分段, 相当于物理分桶键
+    -- 字段一定不能是高奇数, 否则会有特别多的segment
+    -- segementby和orderby不能是相同的字段
+    timescaledb.compress_segmentby='service_name',
     -- 可选, 在压缩的时候, 按照时间字段排序
-    timescaledb.compress_orderby = 'time DESC'
+    timescaledb.compress_orderby = 'ts DESC'
 ); 
 
 -- 添加一个压缩策略
