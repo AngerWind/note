@@ -736,6 +736,14 @@ materialized_postgresql_tables_list = 'schema1.table1(co1, col2),schema1.table2,
 
 # 数据类型
 
+每个数据类型都有他们的默认值, 如果你在插入的时候没有指定这些列的值, 那么就是默认值, 比如0, 空字符串, false等等
+
+
+
+而对于Nullable类型, 如果没有指定的话, 默认为NULL
+
+
+
 ## 整型
 
 有符号整型: Int8, Int16, Int32, Int64, Int128, Int256
@@ -928,15 +936,352 @@ Enum8和Enum18主要使用在一些状态的字段上面, 算是一种空间优�
 
 ## 时间类型
 
-目前Clickhouse中有三种时间类型
+### Date
 
-- Date: 类似'2019-12-16'
-- Datetime: 类似'2019-12-16 20:50:10'
-- Datetime64: 精确到毫秒, 类似'2019-12-16 20:50:10.66'
+使用UInt16来存储至1970-01-01天数, 类似'2019-12-16', 范围[1970-01-01, 2149-06-06], 没有时区
+
+~~~sql
+CREATE TABLE dt
+(
+    `timestamp` Date,
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+-- 可以插入字符串或者自1970年的天数
+INSERT INTO dt VALUES ('2019-01-01', 1), (17897, 2);
+
+select * from dt;
+┌──timestamp─┬─event_id─┐
+│ 2019-01-01 │        1 │
+│ 2019-01-01 │        2 │
+└────────────┴──────────┘
+~~~
 
 
 
-## 数组
+### Date32
+
+使用Int32来保持自1970-01-01以来的天数, 负数表示1970-01-01以前的时间
+
+时间范围为: [1900-01-01, 2299-12-31]
+
+~~~sql
+CREATE TABLE dt32
+(
+    `timestamp` Date32,
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+
+
+INSERT INTO dt32 VALUES ('2100-01-01', 1);
+
+SELECT * FROM dt32;
+┌──timestamp─┬─event_id─┐
+│ 2100-01-01 │        1 │
+└────────────┴──────────┘
+~~~
+
+
+
+
+
+### Time
+
+Time: 只包含时分秒, 没有毫秒, 支持的范围是 [-999:59:59, 999:59:59], 不包含时区
+
+内部使用Int32字节来保存秒数, 因为和DateTime具有相同的字节, 所以性能相当
+
+~~~sql
+CREATE TABLE tab
+(
+    `event_id` UInt8,
+    `time` Time
+)
+ENGINE = TinyLog;
+
+-- 可以插入数字和字符串, 如果是数字的话, 那么是00:00:00的秒数
+INSERT INTO tab VALUES (1, '14:30:25'), (2, 52225);
+
+SELECT * FROM tab ORDER BY event_id;
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+~~~
+
+
+
+### Time64
+
+带有精度的Time类型, 可以表示微秒, 毫米, 纳秒, 不支持时区
+
+~~~sql
+Time64(precision)
+
+Time64(3) -- 精确到毫秒 
+Time64(6) -- 精确到微秒 
+Time64(9) -- 精确到纳秒 
+~~~
+
+支持的范围从[999:59:59.999999999, 999:59:59.999999999], 小数点的位数取决于你设置的精度
+
+他内部使用Decimal来实现
+
+~~~sql
+CREATE TABLE tab64
+(
+    `event_id` UInt8,
+    `time` Time64(3)
+)
+ENGINE = TinyLog;
+
+INSERT INTO tab64 VALUES (1, '14:30:25');
+
+SELECT * FROM tab64 ORDER BY event_id;
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+~~~
+
+在比较的时候需要手动将字符串转换为Time64
+
+~~~sql
+SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
+~~~
+
+
+
+
+
+### DataTime
+
+Datetime: 保存年月日时分秒, 带时区, 时间范围是[1970-01-01 00:00:00, 2106-02-07 06:28:15]
+
+内部使用Int32保存自1970-01-01 00:00:00以来的秒数, unix时间戳
+
+时区信息不保存在数据中, 而是在元数据中, 创建表时，您可以为 `DateTime` 类型列显式设置时区。例如： `DateTime('UTC')` 。如果未设置时区，ClickHouse 将在服务器启动时使用服务器设置或操作系统设置中的[时区](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#timezone)参数值。
+
+
+
+`Date` 类型需要 2 个字节的存储空间，而 `DateTime` 需要 4 个字节。然而，在压缩过程中，Date 和 DateTime 之间的大小差异会变得更加显著。这种差异的放大是由于 `DateTime` 中的分钟和秒更难压缩。此外，对 `Date` 进行筛选和聚合也比对 `DateTime` 更快。
+
+
+
+~~~sql
+CREATE TABLE dt
+(
+    `timestamp` DateTime('Asia/Istanbul'),
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+
+-- 可以插入字符串, 或者数字, 如果是数字表示自1970年以来的秒数
+-- 需要注意的是, 如果你插入的是字符串, 那么他表示的就是当前列的时区的时间
+-- 如果插入的是数字, 那么表示的是UTC时区的自1970年以来的秒数
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
+SELECT * FROM dt;
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+│ 2019-01-01 03:00:00 │        2 │
+└─────────────────────┴──────────┘
+~~~
+
+
+
+
+
+
+
+
+
+
+
+### Datetime64
+
+表示一个瞬时, 带时区, 可以指定精度
+
+~~~sql
+DataTime(precision, [timezone])
+
+DateTime64(3, 'Asia/Istanbul') -- 精确到毫秒
+DateTime64(6, 'Asia/Istanbul') -- 精确到微秒
+DateTime64(9, 'Asia/Istanbul') -- 精确到纳秒
+~~~
+
+支持的范围: [1900-01-01 00:00:00, 2299-12-31 23:59:59.999999999], 小数点后的位数取决于精度
+
+
+
+他的内部使用一个Int64来表示自`1970-01-01 00:00:00 UTC`以来的秒/毫秒/微秒/纳秒, 取决于精度
+
+时区信息不保存在数据中, 而在列的元数据中
+
+~~~sql
+CREATE TABLE dt64
+(
+    `timestamp` DateTime64(3, 'Asia/Istanbul'),
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+
+-- 如果插入的是字符串, 表示的是ck当前时区的时间
+-- 如果是integer, 那么表示的是自1970-01-01 !!!UTC!!! 以来的ticket数, 取决于精度
+INSERT INTO dt64 VALUES (1546300800123, 1),  ('2019-01-01 00:00:00', 3);
+
+SELECT * FROM dt64;
+┌───────────────timestamp─┬─event_id─┐
+│ 2019-01-01 03:00:00.123 │        1 │
+│ 2019-01-01 00:00:00.000 │        3 │
+└─────────────────────────┴──────────┘
+~~~
+
+在进行比较的时候, 字符串并不会自动转换为Datetime64, 所以需要手动转换
+
+~~~sql
+SELECT * FROM dt64 WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Asia/Istanbul');
+~~~
+
+
+
+## Nullable(T)
+
+允许列中的值为null, 比如Nullable(Int8)表示存储Int8的列, 但是可以为NULL
+
+如果你在插入数据的时候, 没有指定Nullable(Int8)的值, 那么他默认为NULL, 而对于Int8的列, 如果你在插入的时候没有指定默认值, 那么他默认为0
+
+
+
+
+
+`T` 不能是任何复合数据类型 [Array](https://clickhouse.com/docs/sql-reference/data-types/array) 、 [Map](https://clickhouse.com/docs/sql-reference/data-types/map) 和 [Tuple](https://clickhouse.com/docs/sql-reference/data-types/tuple) ，但复合数据类型可以包含 `Nullable` 类型的值，例如 `Array(Nullable(Int8))` 。
+
+**`Nullable` 类型的字段不能包含在表索引中。**
+
+
+
+> 不要使用Nullable, 除了要比普通的列占据更大的存储空间, 对性能的影响也是负面的, 如果一定要使用的话, 使用一个业务不可能的值来表示, 比如空字符串, -1
+
+
+
+~~~sql
+CREATE TABLE nullable (
+    `n` Nullable(UInt32)
+) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+-- 查看一个字段是否为null, 获取他的null属性, 如果是null的话, 那么返回1
+SELECT n.null FROM nullable;
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+~~~
+
+## UUID
+
+使用16字节来保持uuid, 类似`61f0c404-5cb3-11e7-907b-a6006ad3dba0`
+
+uuid的默认值为`00000000-0000-0000-0000-000000000000`, 如果在插入的时候没有指定列的值, 那么就会使用默认值
+
+由于历史原因，UUID 是按后半部分排序的。因此，**UUID 不应直接用作表的主键、排序键或分区键。**
+
+~~~sql
+CREATE TABLE tab (uuid UUID) ENGINE = Memory;
+
+INSERT INTO tab 
+SELECT generateUUIDv4() FROM numbers(50);
+
+SELECT * FROM tab ORDER BY uuid;
+┌─uuid─────────────────────────────────┐
+│ 36a0b67c-b74a-4640-803b-e44bb4547e3c │
+│ e3776711-6359-4f22-878d-bf290d052c85 │
+│                [...]                 │
+│ 06892f64-cc2d-45f3-bf86-f5c5af5768a9 │
+└──────────────────────────────────────┘
+~~~
+
+
+
+如果非要UUID作为主键或者排序键的话, 可以将UUID转换为UInt128类型
+
+~~~sql
+CREATE TABLE tab (uuid UUID) ENGINE = Memory;
+INSERT INTO tab 
+SELECT generateUUIDv4() FROM numbers(50);
+
+SELECT * FROM tab ORDER BY toUInt128(uuid);
+~~~
+
+
+
+
+
+
+
+## IPv4
+
+IPv4 地址。以 UInt32 格式存储在 4 个字节中。
+
+~~~sql
+CREATE TABLE hits (url String, from IPv4)
+ENGINE = MergeTree() ORDER BY url;
+
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.com', '183.247.232.58')('https://clickhouse.com/docs/en/', '116.106.34.242');
+
+SELECT * FROM hits;
+┌─url────────────────────────────────┬───────────from─┐
+│ https://clickhouse.com/docs/en/ │ 116.106.34.242 │
+│ https://wikipedia.org              │ 116.253.40.133 │
+│ https://clickhouse.com          │ 183.247.232.58 │
+└────────────────────────────────────┴────────────────┘
+~~~
+
+数值以紧凑的二进制形式存储：
+
+```sql
+SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
+┌─toTypeName(from)─┬─hex(from)─┐
+│ IPv4             │ B7F7E83A  │
+└──────────────────┴───────────┘
+```
+
+
+
+
+
+## IPv6
+
+IPv6 地址。以 16 字节的 UInt128 大端序存储。
+
+~~~sql
+CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
+
+INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.com', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.com/docs/en/', '2a02:e980:1e::1');
+
+SELECT * FROM hits;
+┌─url────────────────────────────────┬─from──────────────────────────┐
+│ https://clickhouse.com          │ 2001:44c8:129:2632:33:0:252:2 │
+│ https://clickhouse.com/docs/en/ │ 2a02:e980:1e::1               │
+│ https://wikipedia.org              │ 2a02:aa08:e000:3100::2        │
+└────────────────────────────────────┴───────────────────────────────┘
+~~~
+
+数值以紧凑的二进制形式存储：
+
+```sql
+SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
+┌─toTypeName(from)─┬─hex(from)────────────────────────┐
+│ IPv6             │ 200144C8012926320033000002520002 │
+└──────────────────┴──────────────────────────────────┘
+```
+
+
+
+## Array
 
 Array(T): 由T类型元素构成的数组, T可以是任意类型, 包括数组
 
@@ -971,7 +1316,85 @@ Array(T): 由T类型元素构成的数组, T可以是任意类型, 包括数组
 
 
 
-## Nullable
+## Tuple
+
+元组包含多个元素，每个元素都有各自的[类型 ](https://clickhouse.com/docs/sql-reference/data-types)。元组必须至少包含一个元素。
+
+元组用于临时列分组。在查询中使用 IN 表达式时，以及在指定 lambda 函数的某些形式参数时，可以对列进行分组。有关更多信息，请参阅 [“IN 运算符”](https://clickhouse.com/docs/sql-reference/operators/in) 和 [“高阶函数”](https://clickhouse.com/docs/sql-reference/functions/overview#higher-order-functions) 部分。
+
+
+
+创建Tuple, 使用tuple函数
+
+~~~sql
+SELECT tuple(1, 'a') AS x, toTypeName(x)
+┌─x───────┬─toTypeName(tuple(1, 'a'))─┐
+│ (1,'a') │ Tuple(UInt8, String)      │
+└─────────┴───────────────────────────┘
+~~~
+
+也可以直接使用小括号来创建元祖
+
+~~~sql
+SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple;
+┌─x───────┬─y──────────────────────────────────────┬─not_a_tuple─┐
+│ (1,'a') │ ('2022-09-21',2006973416,'someString') │ a           │
+└─────────┴────────────────────────────────────────┴─────────────┘
+~~~
+
+
+
+
+
+
+
+## Map
+
+
+
+## Variant
+
+
+
+## JSON
+
+
+
+## Dynamic
+
+
+
+## QBit
+
+
+
+## Nested
+
+
+
+## Demains
+
+
+
+## LowCardinality
+
+
+
+## AggregateFunction
+
+
+
+## SimpleAggregateFunction
+
+
+
+## Geo
+
+
+
+## 其他
+
+
 
 
 
