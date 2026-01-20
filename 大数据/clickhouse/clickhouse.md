@@ -1281,7 +1281,7 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 
 
 
-## Array
+## Array(T)
 
 Array(T): 由T类型元素构成的数组, T可以是任意类型, 包括数组
 
@@ -1316,11 +1316,9 @@ Array(T): 由T类型元素构成的数组, T可以是任意类型, 包括数组
 
 
 
-## Tuple
+## Tuple(T1, T2)
 
 元组包含多个元素，每个元素都有各自的[类型 ](https://clickhouse.com/docs/sql-reference/data-types)。元组必须至少包含一个元素。
-
-元组用于临时列分组。在查询中使用 IN 表达式时，以及在指定 lambda 函数的某些形式参数时，可以对列进行分组。有关更多信息，请参阅 [“IN 运算符”](https://clickhouse.com/docs/sql-reference/operators/in) 和 [“高阶函数”](https://clickhouse.com/docs/sql-reference/functions/overview#higher-order-functions) 部分。
 
 
 
@@ -1344,11 +1342,79 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 
 
 
+创建元祖表
+
+~~~sql
+CREATE TABLE named_tuples (
+    `a` Tuple(s String, i Int64)
+) ENGINE = Memory;
+
+INSERT INTO named_tuples VALUES (('y', 10)), (('x',-10));
+
+SELECT a.s FROM named_tuples; -- by name
+SELECT a.2 FROM named_tuples; -- by index
+~~~
+
+
+
+元祖主要用在in的比较中
+
+~~~sql
+select * from aaa where xxx in ('aaa', 'bbb')
+~~~
 
 
 
 
-## Map
+
+## Map(K, V)
+
+主要用来保存键值对, 和Java中的Map不同, **这里的map中的key是可以重复的, 因为内部的实现是Array(Tuple(K, V))**
+
+- k可以是除了Nullable 和 LowCardinality(Nullable)以外的任何类型
+
+- v可以是任何类型
+
+
+
+**你可以使用m[k] 来获取map中所有k对应的v,  这个操作会扫描整个map, 所以耗时和map的大小呈线性关系**
+
+~~~sql
+CREATE TABLE tab (
+    m Map(String, UInt64)
+) ENGINE=Memory;
+
+INSERT INTO tab VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
+-- 你也可以使用下面这种方式来插入一个map
+-- INSERT INTO tab VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
+
+-- 获取每一行的map, 然后从其中获取对应的key2对应的value
+SELECT m['key2'] FROM tab;
+┌─arrayElement(m, 'key2')─┐
+│                      10 │
+│                      20 │
+│                      30 │
+└─────────────────────────┘
+~~~
+
+**!!!如果这一行的map中, 没有对应的key, 那么会返回value的默认值!!!**
+
+~~~sql
+CREATE TABLE tab (
+    m Map(String, UInt64)
+) ENGINE=Memory;
+INSERT INTO tab VALUES ({'key1':100}), ({});
+
+
+-- 第二行的map中没有key1, 所以返回UInt64的默认值0
+SELECT m['key1'] FROM tab;
+┌─arrayElement(m, 'key1')─┐
+│                     100 │
+│                       0 │
+└─────────────────────────┘
+~~~
+
+
 
 
 
