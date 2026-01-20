@@ -1416,17 +1416,129 @@ SELECT m['key1'] FROM tab;
 
 
 
+## Variant(T1, T2, ...)
+
+这种数据类型是表示这一列可以是T1, T2等多种类型, 或者直接是NULL
+
+比如Variant(Date, String, UInt64)表示这一列的元素可以是Int32, String, UInt64, NULL这4种元素中的一种
+
+Variant中的类型可以指定为除了除 Nullable(...)、LowCardinality(Nullable(...)) 和 Variant(...) 类型之外的任意类型
+
+> 不建议使用相似的类型作为变体（例如不同的数值类型，如 `Variant(UInt32, Int64)` ，或不同的日期类型，如 `Variant(Date, DateTime)` ），因为处理此类类型的值可能会导致歧义。
 
 
-## Variant
+
+~~~sql
+CREATE TABLE test (
+    -- v可以是UInt64, String, Array(UInt64)
+    v Variant(UInt64, String, Array(UInt64))
+) ENGINE = Memory;
+
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT v FROM test;
+~~~
+
+类型转换
+
+~~~sql
+SELECT 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant, toTypeName(variant) AS type_name ;
+~~~
+
+
+
+**你可以从Variant中读取特定类型的值** 
+
+~~~sql
+CREATE TABLE test (
+    v Variant(UInt64, String, Array(UInt64))
+) ENGINE = Memory;
+
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+
+-- v.String表示v是String类型, 那么原样返回, 如果不是就看String类型能否嵌套在Nullable中, 如果可以就返回null, 如果不行就返回空值
+SELECT v, v.String, v.UInt64, v.`Array(UInt64)` FROM test;
+┌─v─────────────┬─v.String──────┬─v.UInt64─┬─v.Array(UInt64)─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ          │     ᴺᵁᴸᴸ │ []              │
+│ 42            │ ᴺᵁᴸᴸ          │       42 │ []              │
+│ Hello, World! │ Hello, World! │     ᴺᵁᴸᴸ │ []              │
+│ [1,2,3]       │ ᴺᵁᴸᴸ          │     ᴺᵁᴸᴸ │ [1,2,3]         │
+└───────────────┴───────────────┴──────────┴─────────────────┘
+~~~
+
+
+
+如果你要获取每一行的值的类型, 那么可以使用`variantType`函数
+
+~~~sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT variantType(v) FROM test;
+┌─variantType(v)─┐
+│ None           │
+│ UInt64         │
+│ String         │
+│ Array(UInt64)  │
+└────────────────┘
+~~~
+
+
+
+## Dynamic
+
+动态的类型, 可以存储任何类型的值
+
+~~~sql
+CREATE TABLE test (
+    -- max_type是可选的, n的取值范围是0-254, 默认是32
+    -- 表示在单个数据块（例如，MergeTree 表的单个数据部分）中，类型为 Dynamic 列可以存储多少种不同的数据类型作为单独的子列。
+    -- 如果超过此限制，所有新类型的值将以二进制形式存储在一个特殊的共享数据结构中
+    d Dynamic(max_type=N)
+) ENGINE = Memory;
+~~~
+
+使用案例如下
+
+~~~sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+
+SELECT d, dynamicType(d) FROM test;
+┌─d─────────────┬─dynamicType(d)─┐
+│ ᴺᵁᴸᴸ          │ None           │
+│ 42            │ Int64          │
+│ Hello, World! │ String         │
+│ [1,2,3]       │ Array(Int64)   │
+└───────────────┴────────────────┘
+~~~
+
+
+
+
 
 
 
 ## JSON
 
+JSON对象, **生产中不推荐在25.3版本以下的ck中使用这个类型, 25.3以上的版本JSON已经生产就绪**
+
+要声明一个JSON类型的列, 可以使用以下的语法
+
+~~~sql
+<column_name> JSON
+(
+    -- 可选, 指示可以将多少个path作为子列分别存储在单独存储的单个数据块中, 默认是1024
+    -- 如果超过了这个限制, 那么其他所有path都将存储在一个结构中
+    max_dynamic_paths=N, 
+    -- 可选, 只是在单个path
+    max_dynamic_types=M, 
+    some.path TypeName, 
+    SKIP path.to.skip, 
+    SKIP REGEXP 'paths_regexp'
+)
+~~~
 
 
-## Dynamic
 
 
 
@@ -1442,11 +1554,43 @@ SELECT m['key1'] FROM tab;
 
 
 
-## LowCardinality
+## LowCardinality(T)
+
+低基数, 将其他数据类型的内部表示形式更改为字典编码。
+
+他的主要场景是:  假如我有一个列是低基数的, 他只有有限的百来个值, 那么我就可以使用LowCardinality, clickhouse内部会保存一个内存表, 表中是值和数字的映射, 然后在实际保存的时候, 只保存对应的数字
+
+T的类型可以是String, FxiedString, Date, DateTime和除了Deimal之外的所有数字类型
+
+
+
+他和枚举的区别在于, 枚举你需要提前确定所有的值, 但是LowCardinality不需要, 只要他是低基数的值即可
+
+> Note: <font color=red>**不推荐对少于8字节的类型使用LowCardinality**</font>, 效率不高, 因为如果这个类型的字节较少, 那么实际存储的映射数字都更大了, 实际会导致存储上升, 并且MergeTree表引擎在合并的时候时间也会增加
+
+
+
+> 使用 `LowCardinality` 数据类型的效率取决于数据的多样性。如果字典包含少于 10,000 个不同的值，ClickHouse 通常能展现出更高的数据读取和存储效率。如果字典包含超过 100,000 个不同的值，ClickHouse 的性能可能不如使用普通数据类型。
+
+> 对于低基数的, 大于8字节的字符串, 建议使用 `LowCardinality` 而不是 Enum。LowCardinality 在使用上更加灵活 `LowCardinality` 并且通常能达到相同甚至更高的效率。
+
+
+
+~~~sql
+CREATE TABLE lc_t
+(
+    `id` UInt16,
+    `strings` LowCardinality(String)
+)
+ENGINE = MergeTree()
+ORDER BY id
+~~~
 
 
 
 ## AggregateFunction
+
+
 
 
 
