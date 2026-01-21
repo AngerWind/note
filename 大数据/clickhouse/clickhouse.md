@@ -1281,7 +1281,7 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 
 
 
-## Geo
+## 几何类型
 
 主要用来表示几何的数据类型, 他有如下的几个数据类型: Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, Geometry, Related Content
 
@@ -1652,18 +1652,154 @@ SELECT variantType(v) FROM test;
 
 
 
+## Nested
+
+Nested并不是一个真正独立的数据类型, 他是**一组等长的<font color=red>Array</font>列的语法糖**
+
+比如你定义了如下的表
+
+~~~sql
+CREATE TABLE logs
+(
+    message     String,
+    calls Nested (
+        target_service LowCardinality(String),
+        duration_ms    UInt32,
+        success        UInt8
+    ),
+    trace_id String
+)
+ENGINE = Memory;
+~~~
+
+他们他就等效于如下的表
+
+~~~sql
+CREATE TABLE logs
+(
+    message     String,
+    calls.target_service Array(LowCardinality(String)),
+    calls.duration_ms    Array(UInt32),
+    calls.success        Array(UInt8)
+    trace_id, String
+)
+ENGINE = Memory;
+~~~
+
+**只不过calls.target_service, calls.duration_ms, calls.success中的元素个数必须相同, 否则会报错**
+
+
+
+你可以使用如下的sql来进行数据的插入
+
+~~~sql
+INSERT INTO logs VALUES
+(
+    'create order failed',
+    -- 每一个子列都是数组
+    ['inventory','payment','coupon'],
+    [12, 230, 5],
+    [1, 0, 1],
+    'trace-001'
+);
+~~~
+
+你不能直接来查询calls这个列, 如果要获取对应的信息, 那么要查询对应的子类
+
+~~~sql
+SELECT
+    trace_id,
+    calls.target_service,
+    calls.duration_ms,
+    calls.success
+FROM logs;
+┌─trace_id──┬─calls.target_service─────────────┬─calls.duration_ms─┬─calls.success─┐
+│ trace-001 │ ['inventory','payment','coupon'] │ [12,230,5]        │ [1,0,1]       │
+└───────────┴──────────────────────────────────┴───────────────────┴───────────────┘
+~~~
+
+
+
+你可以使用如下的语法, 将Array中的元素炸裂为一行
+
+~~~sql
+SELECT
+    trace_id, message, 
+    call.target_service, call.duration_ms, call.success
+FROM logs
+ARRAY JOIN calls AS call;
+
+┌─trace_id──┬─message─────────────┬─call.target_service─┬─call.duration_ms─┬─call.success─┐
+│ trace-001 │ create order failed │ inventory           │               12 │            1 │
+│ trace-001 │ create order failed │ payment             │              230 │            0 │
+│ trace-001 │ create order failed │ coupon              │                5 │            1 │
+└───────────┴─────────────────────┴─────────────────────┴──────────────────┴──────────────┘
+~~~
+
+只炸裂某个字段也是可以的
+
+~~~sql
+SELECT
+    trace_id,
+    service
+FROM logs
+ARRAY JOIN calls.target_service AS service;
+┌─trace_id──┬─service───┐
+│ trace-001 │ inventory │
+│ trace-001 │ payment   │
+│ trace-001 │ coupon    │
+└───────────┴───────────┘
+~~~
+
+
+
+
+
+
+
+
+
+
+
+## LowCardinality(T)
+
+低基数, 将其他数据类型的内部表示形式更改为字典编码。
+
+他的主要场景是:  假如我有一个列是低基数的, 他只有有限的百来个值, 那么我就可以使用LowCardinality, clickhouse内部会保存一个内存表, 表中是值和数字的映射, 然后在实际保存的时候, 只保存对应的数字
+
+T的类型可以是String, FxiedString, Date, DateTime和除了Deimal之外的所有数字类型
+
+
+
+他和枚举的区别在于, 枚举你需要提前确定所有的值, 但是LowCardinality不需要, 只要他是低基数的值即可
+
+> Note: <font color=red>**不推荐对少于8字节的类型使用LowCardinality**</font>, 效率不高, 因为如果这个类型的字节较少, 那么实际存储的映射数字都更大了, 实际会导致存储上升, 并且MergeTree表引擎在合并的时候时间也会增加
+
+
+
+> 使用 `LowCardinality` 数据类型的效率取决于数据的多样性。如果字典包含少于 10,000 个不同的值，ClickHouse 通常能展现出更高的数据读取和存储效率。如果字典包含超过 100,000 个不同的值，ClickHouse 的性能可能不如使用普通数据类型。
+
+> 对于低基数的, 大于8字节的字符串, 建议使用 `LowCardinality` 而不是 Enum。LowCardinality 在使用上更加灵活 `LowCardinality` 并且通常能达到相同甚至更高的效率。
+
+
+
+~~~sql
+CREATE TABLE lc_t
+(
+    `id` UInt16,
+    `strings` LowCardinality(String)
+)
+ENGINE = MergeTree()
+ORDER BY id
+~~~
+
+
+
+
+
 ## Dynamic
 
 动态的类型, 可以存储任何类型的值
-
-~~~sql
-CREATE TABLE test (
-    -- max_type是可选的, n的取值范围是0-254, 默认是32
-    -- 表示在单个数据块（例如，MergeTree 表的单个数据部分）中，类型为 Dynamic 列可以存储多少种不同的数据类型作为单独的子列。
-    -- 如果超过此限制，所有新类型的值将以二进制形式存储在一个特殊的共享数据结构中
-    d Dynamic(max_type=N)
-) ENGINE = Memory;
-~~~
 
 使用案例如下
 
@@ -1682,6 +1818,17 @@ SELECT d, dynamicType(d) FROM test;
 ~~~
 
 
+
+Dynamic是强类型的, 在内存存储的时候, 会先保存数据的类型, 然后再按照类型的不同对进行进行编码保存, 可以理解为`(value_type_tag, value_data)`
+
+
+
+CREATE TABLE test (
+    -- max_type是可选的, n的取值范围是0-254, 默认是32
+    -- 表示在单个数据块（例如，MergeTree 表的单个数据部分）中，类型为 Dynamic 列可以存储多少种不同的数据类型作为单独的子列。
+    -- 如果超过此限制，所有新类型的值将以二进制形式存储在一个特殊的共享数据结构中
+    d Dynamic(max_type=N)
+) ENGINE = Memory;
 
 
 
@@ -1720,40 +1867,6 @@ JSON对象, **生产中不推荐在25.3版本以下的ck中使用这个类型, 2
 
 
 ## Demains
-
-
-
-## LowCardinality(T)
-
-低基数, 将其他数据类型的内部表示形式更改为字典编码。
-
-他的主要场景是:  假如我有一个列是低基数的, 他只有有限的百来个值, 那么我就可以使用LowCardinality, clickhouse内部会保存一个内存表, 表中是值和数字的映射, 然后在实际保存的时候, 只保存对应的数字
-
-T的类型可以是String, FxiedString, Date, DateTime和除了Deimal之外的所有数字类型
-
-
-
-他和枚举的区别在于, 枚举你需要提前确定所有的值, 但是LowCardinality不需要, 只要他是低基数的值即可
-
-> Note: <font color=red>**不推荐对少于8字节的类型使用LowCardinality**</font>, 效率不高, 因为如果这个类型的字节较少, 那么实际存储的映射数字都更大了, 实际会导致存储上升, 并且MergeTree表引擎在合并的时候时间也会增加
-
-
-
-> 使用 `LowCardinality` 数据类型的效率取决于数据的多样性。如果字典包含少于 10,000 个不同的值，ClickHouse 通常能展现出更高的数据读取和存储效率。如果字典包含超过 100,000 个不同的值，ClickHouse 的性能可能不如使用普通数据类型。
-
-> 对于低基数的, 大于8字节的字符串, 建议使用 `LowCardinality` 而不是 Enum。LowCardinality 在使用上更加灵活 `LowCardinality` 并且通常能达到相同甚至更高的效率。
-
-
-
-~~~sql
-CREATE TABLE lc_t
-(
-    `id` UInt16,
-    `strings` LowCardinality(String)
-)
-ENGINE = MergeTree()
-ORDER BY id
-~~~
 
 
 
