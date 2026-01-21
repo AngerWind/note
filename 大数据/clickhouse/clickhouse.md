@@ -1801,6 +1801,8 @@ ORDER BY id
 
 动态的类型, 可以存储任何类型的值
 
+**他的主要作用是在同一列中存储类型不同的值, 并在查询的时候还能保留类型信息**
+
 使用案例如下
 
 ~~~sql
@@ -1819,16 +1821,43 @@ SELECT d, dynamicType(d) FROM test;
 
 
 
-Dynamic是强类型的, 在内存存储的时候, 会先保存数据的类型, 然后再按照类型的不同对进行进行编码保存, 可以理解为`(value_type_tag, value_data)`
+Dynamic是强类型的, 他本质上一个`类型+值`的封装, , 在存储的时候, 会先保存数据的类型, 然后再按照类型的不同对进行进行编码保存, 可以理解为`(value_type_tag, value_data)`
 
 
 
+他和Variant的区别在于, Variant的性能相对来说会好一点, 因为Dynamic的类型是未知的,需要运行时动态的发现, 而Variant在定义的时候就指定了只能允许少数的几个类型, 如果你知道需要存储的类型, 那么优先使用Variant
+
+
+
+你可以从Dynamic的列中读取特定的数据类型的值, 比如读取所有String类型的值
+
+如果这个值是String, 那么原样返回, 如果不是String, 那么看这个类型是否可以嵌套在Nullable中, 如果可以就返回NULL, 否则返回这个类型的默认值
+
+~~~sql
+CREATE TABLE test (d Dynamic) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+
+-- d.String 表示读取所有String类型的列
+SELECT d, dynamicType(d), d.String, d.Int64, d.`Array(Int64)`, d.Date, d.`Array(String)` FROM test;
+┌─d─────────────┬─dynamicType(d)─┬─d.String──────┬─d.Int64─┬─d.Array(Int64)─┬─d.Date─┬─d.Array(String)─┐
+│ ᴺᵁᴸᴸ          │ None           │ ᴺᵁᴸᴸ          │    ᴺᵁᴸᴸ │ []             │   ᴺᵁᴸᴸ │ []              │
+│ 42            │ Int64          │ ᴺᵁᴸᴸ          │      42 │ []             │   ᴺᵁᴸᴸ │ []              │
+│ Hello, World! │ String         │ Hello, World! │    ᴺᵁᴸᴸ │ []             │   ᴺᵁᴸᴸ │ []              │
+│ [1,2,3]       │ Array(Int64)   │ ᴺᵁᴸᴸ          │    ᴺᵁᴸᴸ │ [1,2,3]        │   ᴺᵁᴸᴸ │ []              │
+└───────────────┴────────────────┴───────────────┴─────────┴────────────────┴────────┴─────────────────┘
+~~~
+
+
+
+在定义Dynamic列的时候, 你还可以指定一个可选的max_types的参数, 他用来限制这个Dynamic列中最多有多少种“**不同类型**”可以各自拥有独立的子列, 他的取值是0~254, 默认值为32, 超过 N 种类型后，新出现的类型不再创建独立子列，而是被塞进一个“共享的二进制结构”里
+
+~~~sql
 CREATE TABLE test (
-    -- max_type是可选的, n的取值范围是0-254, 默认是32
-    -- 表示在单个数据块（例如，MergeTree 表的单个数据部分）中，类型为 Dynamic 列可以存储多少种不同的数据类型作为单独的子列。
-    -- 如果超过此限制，所有新类型的值将以二进制形式存储在一个特殊的共享数据结构中
-    d Dynamic(max_type=N)
+    d Dynamic(max_types=64)
 ) ENGINE = Memory;
+~~~
+
+
 
 
 
@@ -1860,7 +1889,7 @@ JSON对象, **生产中不推荐在25.3版本以下的ck中使用这个类型, 2
 
 ## QBit
 
-
+> QBit在2026/01的时候还处于Beta阶段, 要使用这个类型需要设置`SET enable_qbit_type = 1`
 
 ## Nested
 
