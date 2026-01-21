@@ -1912,12 +1912,6 @@ JSON类型是专门为了查询, 筛选和聚合具有动态的, 不可预测的
 
 ### JSON的参数
 
-
-
-
-
-### 创建JSON
-
 要声明一个JSON类型的列, 可以使用以下的语法
 
 ~~~sql
@@ -1926,12 +1920,212 @@ JSON类型是专门为了查询, 筛选和聚合具有动态的, 不可预测的
     -- 可选, 指示可以将多少个path作为子列分别存储在单独的列中, 默认是1024
     -- 如果超过了这个限制, 那么其他所有path都将存储在一个结构中
     max_dynamic_paths=N, 
-    -- 可选, 只是在单个path
+    -- 一个介于1-255之间的可选参数, 指示在单个path列中, 类型为Dynamic的列可以存储多少种不同的类型
+    -- 如果超过了这个限制, 那么所有新的类型都将转换为String
     max_dynamic_types=M, 
+    
+    -- 可选, 指定JSON中特定的路径, 这个路径始终作为特定类型的子列进行存储
     some.path TypeName, 
+    -- 可选, 指定在保存JSON的时候, 跳过指定的路径不进行保存
+    -- 如果指定的路径是一个嵌套的 JSON 对象，则整个嵌套对象都将被跳过。
     SKIP path.to.skip, 
+    -- 可选的正则表达式提示，用于在 JSON 解析过程中跳过某些路径。
+    -- 所有匹配此正则表达式的路径都不会存储在 JSON 列中。	
     SKIP REGEXP 'paths_regexp'
 )
+~~~
+
+
+
+
+
+### 创建JSON
+
+~~~sql
+CREATE TABLE test (json JSON) ENGINE = Memory;
+INSERT INTO test VALUES 
+('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'), 
+('{"f" : "Hello, World!"}'), 
+('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+
+SELECT json FROM test;
+┌─json────────────────────────────────────────┐
+│ {"a":{"b":"42"},"c":["1","2","3"]}          │
+│ {"f":"Hello, World!"}                       │
+│ {"a":{"b":"43","e":"10"},"c":["4","5","6"]} │
+└─────────────────────────────────────────────┘
+~~~
+
+
+
+你还可以提前定义JSON中对应的path的类型, 比如如下
+
+~~~sql
+-- 指定a.b为UInt32类型
+CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
+INSERT INTO test VALUES 
+('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'), 
+('{"f" : "Hello, World!"}'), 
+('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+
+SELECT json FROM test;
+┌─json──────────────────────────────┐
+│ {"a":{"b":42},"c":["1","2","3"]}  │
+│ {"a":{"b":0},"f":"Hello, World!"} │
+│ {"a":{"b":43},"c":["4","5","6"]}  │
+└───────────────────────────────────┘
+~~~
+
+
+
+如果你不提前指定对应的类型的话, 那么在实际存储的时候, 未知的path的类型被自动推断为Dynamic
+
+~~~sql
+CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
+INSERT INTO test VALUES
+('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), 
+('{"f" : "Hello, World!", "d" : "2020-01-02"}'),
+('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
+SELECT json FROM test;
+┌─json────────────────────────────────────────────────────────┐
+│ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
+│ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
+└─────────────────────────────────────────────────────────────┘
+
+SELECT toTypeName(json.a.b), toTypeName(json.a.g), toTypeName(json.c), toTypeName(json.d) FROM test;
+┌─toTypeName(json.a.b)─┬─toTypeName(json.a.g)─┬─toTypeName(json.c)─┬─toTypeName(json.d)─┐
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+│ UInt32               │ Dynamic              │ Dynamic            │ Dynamic            │
+└──────────────────────┴──────────────────────┴────────────────────┴────────────────────┘
+~~~
+
+
+
+
+
+你还可以通过`SKIP`来指定保存JSON的时候, 跳过特定的path
+
+~~~sql
+-- 跳过a.e不进行存储
+CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
+INSERT INTO test VALUES 
+('{"a" : {"b" : 42}, "c" : [1, 2, 3]}'), 
+('{"f" : "Hello, World!"}'), 
+('{"a" : {"b" : 43, "e" : 10}, "c" : [4, 5, 6]}');
+
+SELECT json FROM test;
+┌─json──────────────────────────────┐
+│ {"a":{"b":42},"c":["1","2","3"]}  │
+│ {"a":{"b":0},"f":"Hello, World!"} │
+│ {"a":{"b":43},"c":["4","5","6"]}  │
+└───────────────────────────────────┘
+~~~
+
+
+
+
+
+JSON 路径以扁平化方式存储。这意味着在保存`{"a.b.c":"42"}`这样的数据的时候，JSON 对象会被扁平化。在返回的时候会以`{"a":{"b":{"c":"42"}}}`的形式进行返回
+
+~~~sql
+SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
+   ┌─json───────────────────┐
+1. │ {"a":{"b":{"c":"42"}}} │
+   └────────────────────────┘
+~~~
+
+
+
+
+
+### 数据转换
+
+你可以使用`::JSON`将各种类型转换为JSON
+
+1. 将String转换为JSON
+
+   ~~~sql
+   SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
+   ┌─json───────────────────────────────────────────────────┐
+   │ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+   └────────────────────────────────────────────────────────┘
+   ~~~
+
+2. 将Tuple转换为JSON
+
+   ~~~sql
+   SET enable_named_columns_in_function_tuple = 1;
+   
+   SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json;
+   ┌─json───────────────────────────────────────────────────┐
+   │ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+   └────────────────────────────────────────────────────────┘
+   ~~~
+
+3. 将Map转换为JSON
+
+   ~~~sql
+   SET use_variant_as_common_type=1;
+   SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
+   ┌─json───────────────────────────────────────────────────┐
+   │ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
+   └────────────────────────────────────────────────────────┘
+   ~~~
+
+
+
+### 读取JSON子列
+
+~~~sql
+CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
+INSERT INTO test VALUES 
+('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), 
+('{"f" : "Hello, World!", "d" : "2020-01-02"}'),
+('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
+
+SELECT json FROM test;
+┌─json────────────────────────────────────────────────────────┐
+│ {"a":{"b":42,"g":42.42},"c":["1","2","3"],"d":"2020-01-01"} │
+│ {"a":{"b":0},"d":"2020-01-02","f":"Hello, World!"}          │
+│ {"a":{"b":43,"g":43.43},"c":["4","5","6"]}                  │
+└─────────────────────────────────────────────────────────────┘
+
+SELECT json.a.b, json.a.g, json.c, json.d FROM test;
+┌─json.a.b─┬─json.a.g─┬─json.c──┬─json.d─────┐
+│       42 │ 42.42    │ [1,2,3] │ 2020-01-01 │
+│        0 │ ᴺᵁᴸᴸ     │ ᴺᵁᴸᴸ    │ 2020-01-02 │
+│       43 │ 43.43    │ [4,5,6] │ ᴺᵁᴸᴸ       │
+└──────────┴──────────┴─────────┴────────────┘
+~~~
+
+
+
+你也可以通过`getSubcolumn`函数来读取对应的子列
+
+~~~sql
+SELECT getSubcolumn(json, 'a.b'), 
+getSubcolumn(json, 'a.g'), 
+getSubcolumn(json, 'c'), 
+getSubcolumn(json, 'd') 
+FROM test;
+┌─getSubcolumn(json, 'a.b')─┬─getSubcolumn(json, 'a.g')─┬─getSubcolumn(json, 'c')─┬─getSubcolumn(json, 'd')─┐
+│                        42 │ 42.42                     │ [1,2,3]                 │ 2020-01-01              │
+│                         0 │ ᴺᵁᴸᴸ                      │ ᴺᵁᴸᴸ                    │ 2020-01-02              │
+│                        43 │ 43.43                     │ [4,5,6]                 │ ᴺᵁᴸᴸ                    │
+└───────────────────────────┴───────────────────────────┴─────────────────────────┴─────────────────────────┘
+~~~
+
+如果对应的子列不存在, 那么返回NULL
+
+~~~sql
+SELECT json.non.existing.path FROM test;
+┌─json.non.existing.path─┐
+│ ᴺᵁᴸᴸ                   │
+│ ᴺᵁᴸᴸ                   │
+│ ᴺᵁᴸᴸ                   │
+└────────────────────────┘
 ~~~
 
 
