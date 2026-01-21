@@ -1281,6 +1281,175 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 
 
 
+## Geo
+
+主要用来表示几何的数据类型, 他有如下的几个数据类型: Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon, Geometry, Related Content
+
+
+
+### Point
+
+表示一个点的坐标, 内部通过`Tuple(Float64, Float64)`来实现的, 用来保存x, y坐标
+
+~~~sql
+CREATE TABLE geo_point (
+    p Point
+) ENGINE = Memory();
+INSERT INTO geo_point VALUES((10, 10));
+SELECT p, toTypeName(p) FROM geo_point;
+
+┌─p───────┬─toTypeName(p)─┐
+│ (10,10) │ Point         │
+└─────────┴───────────────┘
+~~~
+
+
+
+### Ring
+
+表示一个多边形, 你可以通过多个点的坐标来描述这个多边形的顶点, 这样这个多边形的形状也就定好了
+
+Ring内部是通过Array(Point)来实现的
+
+~~~sql
+CREATE TABLE geo_ring (
+    r Ring
+) ENGINE = Memory();
+
+INSERT INTO geo_ring VALUES(
+    [(0, 0), (10, 0), (10, 10), (0, 10)]
+);
+
+SELECT r, toTypeName(r) FROM geo_ring;
+┌─r─────────────────────────────┬─toTypeName(r)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ Ring          │
+└───────────────────────────────┴───────────────┘
+~~~
+
+
+
+### LineString
+
+折线, 你可以通过折线的顶点来描述这个折线的形状
+
+内部是通过Array(Point)来实现的
+
+~~~sql
+CREATE TABLE geo_linestring (
+    l LineString
+) ENGINE = Memory();
+INSERT INTO geo_linestring VALUES(
+    [(0, 0), (10, 0), (10, 10), (0, 10)]
+);
+SELECT l, toTypeName(l) FROM geo_linestring;
+┌─r─────────────────────────────┬─toTypeName(r)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ LineString    │
+└───────────────────────────────┴───────────────┘
+~~~
+
+
+
+### MultiLineString
+
+多条折线, 内部是通过Array(LineString)来实现的
+
+~~~sql
+CREATE TABLE geo_multilinestring (l MultiLineString) ENGINE = Memory();
+INSERT INTO geo_multilinestring VALUES(
+    [[(0, 0), (10, 0), (10, 10), (0, 10)], [(1, 1), (2, 2), (3, 3)]]
+);
+
+SELECT l, toTypeName(l) FROM geo_multilinestring;
+┌─l───────────────────────────────────────────────────┬─toTypeName(l)───┐
+│ [[(0,0),(10,0),(10,10),(0,10)],[(1,1),(2,2),(3,3)]] │ MultiLineString │
+└─────────────────────────────────────────────────────┴─────────────────┘
+~~~
+
+
+
+### Polygon
+
+描述带有孔洞的多边形,  内部使用Array(Ring)来实现的
+
+其中第一个元素是用来描述多边形的形状的,  其余的元素是用来描述孔洞的
+
+~~~sql
+CREATE TABLE geo_polygon (pg Polygon) ENGINE = Memory();
+INSERT INTO geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]]);
+SELECT pg, toTypeName(pg) FROM geo_polygon;
+┌─pg────────────────────────────────────────────────────────────┬─toTypeName(pg)─┐
+│ [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]] │ Polygon        │
+└───────────────────────────────────────────────────────────────┴────────────────┘
+~~~
+
+
+
+### MultiPolygon
+
+用来描述多个多边形的, 内部使用Array(Polygon)来实现
+
+~~~sql
+CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
+
+--这个多边形由两个独立的多边形组成——第一个多边形没有孔，第二个多边形有一个孔：
+INSERT INTO geo_multipolygon VALUES(
+    [
+        [[(0, 0), (10, 0), (10, 10), (0, 10)]], 
+        [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]
+    ]
+);
+SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
+┌─mpg─────────────────────────────────────────────────────────────────────────────────────────────┬─toTypeName(mpg)─┐
+│ [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]] │ MultiPolygon    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
+~~~
+
+
+
+### Geometry
+
+Geometry可以存储上述的所有几何类型,  用来描述最通用的几何
+
+他就等效于`Variant(Point, Ring, LineString, MultiLineString, Polygon, MultiPolygon)`
+
+~~~sql
+CREATE TABLE IF NOT EXISTS geo (
+    geom Geometry
+) ENGINE = Memory();
+INSERT INTO geo VALUES ((1, 2));
+SELECT * FROM geo;
+   ┌─geom──┐
+1. │ (1,2) │
+   └───────┘
+~~~
+
+~~~sql
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+
+CREATE TABLE IF NOT EXISTS geo (geom String, id Int) ENGINE = Memory();
+INSERT INTO geo VALUES ('POLYGON((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 1);
+INSERT INTO geo VALUES ('POINT(0 0)', 2);
+INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
+INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
+INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
+INSERT INTO geo_dst SELECT readWKT(geom) FROM geo ORDER BY id;
+
+SELECT * FROM geo_dst;
+   ┌─geom─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+2. │ (0,0)                                                                                                            │
+3. │ [[[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] │
+4. │ [(1,0),(10,0),(10,10),(0,10),(1,0)]                                                                              │
+5. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+~~~
+
+
+
+
+
+
+
 ## Array(T)
 
 Array(T): 由T类型元素构成的数组, T可以是任意类型, 包括数组
@@ -1598,7 +1767,7 @@ ORDER BY id
 
 
 
-## Geo
+
 
 
 
