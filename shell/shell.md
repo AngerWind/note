@@ -3032,6 +3032,68 @@ df -h /var/log # 查看/var/log所在的磁盘使用情况
 
 
 
+### xargs
+
+xarg的主要作用是将**标准输入（stdin）转换为命令行参数**。
+
+在linux中, 有很多命令并不能像grep一样, 从管道中接受输入, 比如rm命令
+
+~~~shell
+echo "file1.txt file2.txt file3.txt" | rm
+# ❌ 失败：rm 不接受 stdin 输入
+~~~
+
+这个时候xargs就排上用场了,  你可以通过xargs将标准输入转换为命令行参数
+
+~~~shell
+echo "file1.txt file2.txt file3.txt" | xargs rm
+
+# xargs 会将管道中的数据作为参数给rm
+# 等效于执行了 rm file1.txt file2.txt file3.txt
+~~~
+
+
+
+xargs还有很多有用的参数
+
+- `-n`参数, 指定每次传递的参数个数
+
+  有的参数不接受多个参数, 他只接受一个参数, 那么你就可以通过-n 来指定每次只传递一个参数
+
+  ~~~shell
+  # docker load -i 就不接受多个参数, 你只能一个命令load一个tar包, 那么就可以使用-n参数了
+  echo "a.tar b.tar c.tar" | xargs -n 1 docker load -i
+  # 他会将上面的命令转换为
+  # docker load -i a.tar
+  # docker load -i b.tar
+  # docker load -i c.ta
+  ~~~
+
+- -I参数: 定义字符串替换
+
+  ~~~shell
+  echo -e "a.tar\nb.tar\nc.tar" | xargs -I {} touch {}.gz
+  # 首先xargs通过-n指令指定每次传递一个参数
+  # 然后每个实际传递的参数都被定义为{}这个占位符
+  # 然后解析要执行的命令, 将命令中的{}替换为实际传递的值
+  # 这样就会执行如下的三个命令
+  # touch a.tar.gz
+  # touch b.tar.gz
+  # touch c.tar.gz
+  ~~~
+
+  特别需要注意的是, 在使用-I的时候, 是按行进行输入的, 并且他会忽略-n参数, 所以如果你使用下面的shell的话
+
+  ~~~shell
+  echo -e "a.tar b.tar c.tar" | xargs -I {} touch {}.gz
+  ~~~
+
+  因为是按行输入的, 所以实际执行的命令是`touch 'a.tar b.tar c.tar.gz'`
+
+- -t参数: 回显xargs要实际仔细的命令
+
+- -p参数: xargs在每次执行命令的时候, 都交互式确认是否要执行
+
 
 
 ## 其他
