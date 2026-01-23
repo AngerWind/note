@@ -2467,9 +2467,55 @@ SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVA
 
 # 表引擎
 
+## MergeTree
+
+ck中最强大的表引擎当属MergeTree和该系列的其他引擎, 地位相当于innodb之于myasql
+
+而且基于MergeTree还衍生了很多其他的合并树引擎
 
 
 
+~~~sql
+create table order_mf (
+  id UInt32,
+    sku_id String,
+    total_amount Decimal(16, 2),
+    create_time Datetime
+) engine = MergeTree
+partition by toYYYYMMDD(create_time) -- 按照每天分区
+primary key(id)
+order by(id, sku_id)
+
+INSERT INTO order_mf (id, sku_id, total_amount, create_time) VALUES
+(1, 'SKU001', 199.99, '2026-01-20 10:15:00'),
+(2, 'SKU002', 299.50, '2026-01-20 12:30:00'),
+(3, 'SKU003', 15.75, '2026-01-21 09:00:00'),
+(4, 'SKU004', 45.00, '2026-01-21 14:20:00'),
+(5, 'SKU005', 123.45, '2026-01-22 11:05:00'),
+(6, 'SKU006', 67.89, '2026-01-22 16:45:00'),
+(7, 'SKU007', 250.00, '2026-01-23 08:10:00'),
+(8, 'SKU008', 89.99, '2026-01-23 13:50:00'),
+(9, 'SKU009', 10.50, '2026-01-24 09:30:00'),
+(10, 'SKU010', 500.00, '2026-01-24 17:15:00');
+~~~
+
+需要注意的是: 
+
+- partition by指定分区字段, 他是可选的, 如果不指定就是不分区
+
+  分区的目的主要是用来降低扫描范围的, 优化查询速度
+
+  MergeTree是以列文件+ 索引+ 表定义文件组成的, 如果设置了分区, 那么这些文件会保持到本地磁盘的不同的分区目录
+
+  如果设置了分区, 在进行跨分区统计的时候, ck会以分区为单位并行处理多个分区
+
+- primary key可以重复
+
+- order by会导致数据在分区内进行排序, 他是必须得
+
+
+
+支持索引和分区
 
 
 
