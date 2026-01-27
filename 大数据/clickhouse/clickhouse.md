@@ -133,15 +133,45 @@
 
    ![image-20220817222103877](img/clickhouse/image-20220817222103877.png)
 
-4. 所有的clickhouse-server的数据文件都保存在`/var/lib/clickhouse`
+## clickhouse的数据目录
 
-   ![image-20260113232147355](img/clickhouse/image-20260113232147355.png)
+所有的clickhouse-server的数据文件都保存在`/var/lib/clickhouse`
 
-   - metadata中保存的是数据库和表相关的DDL sql文件, 也是数据库和表的元信息
-   - store中保存的是所有atomic表的数据
-   - uuid中保存的是表名到uuid的映射
-   - metadata_dropped中保存的是已经删除的表的相关sql文件
-   - data用于保存老版本的ordinary数据库的表数据
+![image-20260113232147355](img/clickhouse/image-20260113232147355.png)
+
+- uuid中保存的是表名到uuid的映射
+
+  在clickhouse中, 每个表都有一个uuid,  ck在使用的时候实际上是使用的这个uuid, 而不是表名, 所以你如果修改表的名字的话, 实际上是非常快的, 不需要改全部的东西, 只需要修改uuid这个文件即可
+
+- metadata_dropped中保存的是已经删除的表的相关sql文件
+
+- data用于保存老版本的ordinary数据库的表数据
+
+- metadata中保存的是数据库和表相关的DDL sql文件, 也是数据库和表的元信息
+
+  他的目录结构如下
+
+  ~~~sql
+  [root@node173 data]# tree metadata
+  metadata
+  ├── default -> /var/lib/clickhouse/store/761/761a6195-ac76-4455-ad10-2593390cfc87/
+  ├── default.sql
+  ├── information_schema
+  ├── INFORMATION_SCHEMA
+  ├── information_schema.sql
+  ├── INFORMATION_SCHEMA.sql
+  ├── system -> /var/lib/clickhouse/store/086/0861ad55-8547-413e-bf95-71ebac75c67b/
+  ├── system.sql
+  ├── test -> /var/lib/clickhouse/store/c14/c148f90a-90c4-4109-a732-5f10528cd99f/
+  └── test.sql
+  ~~~
+
+  1. 其中`default.sql, information_schema.sql, INFORMATION_SCHEMA.sql, system.sql, test.sql`这些是数据库的ddl
+  2. `default,system, test`这是保存的是对应数据库的表的实际数据, 他们都是一个软连接, 连接到`/var/lib/clickhouse/store/`目录下
+
+- store中保存的是所有atomic表的数据
+
+  
 
 
 
@@ -433,7 +463,7 @@ CREATE DATABASE test
 
 atomic就是原子的意思, 表示他可以原子性的修改表的元数据, 比如drop table, rename table, alter table等等, 而不会出现中间状态, 因为在atomic数据库中
 
-- 所有的元数据和数据都是保存到本地的`/var/lib/clickhouse/metadata`和`/var/lib/clickhouse/metadata`中, **所以一般都是单机版本的clickhouse使用这种数据库类型**
+- 所有的元数据和数据都是保存到本地的`/var/lib/clickhouse/metadata`和`/var/lib/clickhouse/store`中, **所以一般都是单机版本的clickhouse使用这种数据库类型**
 
 - clickhouse会自动为每个表生成一个uuid, 当然你也可以自己指定, 但是不建议这么做
 
@@ -2730,47 +2760,99 @@ SELECT now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVA
 
 # 表引擎
 
-## MergeTree
+## TinyLog
 
-ck中最强大的表引擎当属MergeTree和该系列的其他引擎, 地位相当于innodb之于myasql
+以列文件的形式保持在磁盘上面, 不支持索引, 没有并发控制.  一般保存少量数据的小表, 生产环境上作用有限.
 
-而且基于MergeTree还衍生了很多其他的合并树引擎
-
-
+可以用于平时联系测试使用
 
 ~~~sql
-create table order_mf (
-  id UInt32,
-    sku_id String,
-    total_amount Decimal(16, 2),
-    create_time Datetime
-) engine = MergeTree
-partition by toYYYYMMDD(create_time) -- 按照每天分区
-primary key(id)
-order by(id, sku_id)
-
-INSERT INTO order_mf (id, sku_id, total_amount, create_time) VALUES
-(1, 'SKU001', 199.99, '2026-01-20 10:15:00'),
-(2, 'SKU002', 299.50, '2026-01-20 12:30:00'),
-(3, 'SKU003', 15.75, '2026-01-21 09:00:00'),
-(4, 'SKU004', 45.00, '2026-01-21 14:20:00'),
-(5, 'SKU005', 123.45, '2026-01-22 11:05:00'),
-(6, 'SKU006', 67.89, '2026-01-22 16:45:00'),
-(7, 'SKU007', 250.00, '2026-01-23 08:10:00'),
-(8, 'SKU008', 89.99, '2026-01-23 13:50:00'),
-(9, 'SKU009', 10.50, '2026-01-24 09:30:00'),
-(10, 'SKU010', 500.00, '2026-01-24 17:15:00');
+create table tiny_log_test(
+  id String,
+  name String
+) engine = TinyLog;
 ~~~
 
-需要注意的是: 
+
+
+## Memory
+
+内存引擎, 数据以未压缩的原始形式直接保持在内存当中, 服务器重启就会消失
+
+支持并发读写, 读写操作不会相互堵塞, 不支持索引
+
+简单的查询有非常非常高的性能表现(**超过10G/s**)
+
+一般用到他的地方不多, 除了测试就是在**需要非常高的性能, 同时数据量有不太大(上限大概1亿行)的场景**
+
+~~~sql
+create table tiny_log_test(
+  id String,
+  name String
+) engine = Memory;
+~~~
+
+
+
+
+
+## MergeTree
+
+ClickHouse中最强大的表引擎当属 MergeTree(合并树引擎及该系列 (*MergeTree)中的其他引擎
+
+<font color=red>支持索引和分区</font>, 地位可以相当于 innodb 之于Mysql . 而且基于 MergeTree还衍生除了很多小弟，也是非常有特色的引擎。
+
+~~~sql
+create database test;
+use test;
+
+create table t_order_mt(
+  id UInt32,
+  sku_id String,
+  total_amount Decimal(16,2),
+  create_time Datetime
+) engine=MergeTree
+partition by toYYYYMMDD(create_time)
+primary key (id)
+order by (id,sku_id);
+
+insert into t_order_mt values
+(101,'sku_001',1000.00,'2020-06-01 12:00:00') ,
+(102,'sku_002',2000.00,'2020-06-01 11:00:00'),
+(102,'sku_004',2500.00,'2020-06-01 12:00:00'),
+(102,'sku_002',2000.00,'2020-06-01 13:00:00')
+(102,'sku_002',12000.00,'2020-06-01 13:00:00')
+(102,'sku_002',600.00,'2020-06-02 12:00:00');
+
+
+select * from t_order_mt;
+Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
+
+┌──id─┬─sku_id──┬─total_amount─┬─────────create_time─┐
+│ 102 │ sku_002 │          600 │ 2020-06-02 12:00:00 │
+└─────┴─────────┴──────────────┴─────────────────────┘
+┌──id─┬─sku_id──┬─total_amount─┬─────────create_time─┐
+│ 101 │ sku_001 │         1000 │ 2020-06-01 12:00:00 │
+│ 102 │ sku_002 │         2000 │ 2020-06-01 11:00:00 │
+│ 102 │ sku_002 │         2000 │ 2020-06-01 13:00:00 │
+│ 102 │ sku_002 │        12000 │ 2020-06-01 13:00:00 │
+│ 102 │ sku_004 │         2500 │ 2020-06-01 12:00:00 │
+└─────┴─────────┴──────────────┴─────────────────────┘
+6 rows in set. Elapsed: 0.003 sec.
+~~~
+
+
 
 - order by: 必选, 会导致数据在分区内进行排序
 
 - partition by指定分区字段, 他是可选的, 如果不指定就是不分区
 
-  分区的目的主要是用来降低扫描范围的, 优化查询速度
 
-  MergeTree是以列文件+ 索引+ 表定义文件组成的, 如果设置了分区, 那么这些文件会保持到本地磁盘的不同的分区目录
+
+### 分区
+
+在创建MergeTree的时候, 你可以指定分区字段, 分区字段的作用是减低扫描范围, 优化查询速度
+
 
   **如果设置了分区, 在进行跨分区统计的时候, ck会以分区为单位并行处理多个分区**
 
@@ -2787,6 +2869,12 @@ INSERT INTO order_mf (id, sku_id, total_amount, create_time) VALUES
   
 
 
+- 分区字段是**可选**的, 如果不指定的话, 那么就是不分区, 所有数据写到一个分区中
+- 如果分区了, 那么在进行跨分区统计的时候, clickhouse会以分区为单位并行处理多个分区
+
+- 任何一个批次的数据在写入的时候都会在磁盘上产生一个临时的分区, 不会纳入到任何一个已有的分区
+
+  在写入后的某个时刻(大概10-15分钟之后),  clickhouse会自动执行合并操作, 将临时的分区合并到已有的分区中
 
 ![image-20260127215539194](img/clickhouse/image-20260127215539194.png)
 
@@ -2794,7 +2882,57 @@ INSERT INTO order_mf (id, sku_id, total_amount, create_time) VALUES
 
 `default, system`是实际保存目录的位置, 他们是一个软链接, 链接到store的目录下
 
+
+
+
+
 `/var/lib/clickhouse/store/of1/of11632a-b17b...`其中
+
+  如果想要手动执行合并的话, 可以使用如下的sql
+
+  ~~~sql
+  optimize table xxxx final
+  ~~~
+
+  > 生产一定慎用这个sql, 这个sql的作用还不仅仅是合并分区, 还会对历史数据生产新添加的索引,  如果数据特别多的话, 会导致这个命令卡特别久
+
+  比如我们再次插入数据
+
+  ~~~sql
+  insert into t_order_mt values
+  (101,'sku_001',1000.00,'2020 06 01 12:00:00') ,
+  (102,'sku_002',2000.00,'2020 06 01 11:00:00'),
+  (102,'sku_004',2500.00,'2020 06 01 12:00:00'),
+  (102,'sku_002',2000.00,'2020 06 01 13:00:00')
+  (102,'sku_002',12000.00,'2020 06 01 13:00:00')
+  (102,'sku_002',600.00,'2020 06 02 12:00:00')
+  
+  select * from t_order_mt;
+  ~~~
+
+  查看数据发现新插入的数据没有纳入任何的分区
+
+  <img src="D:\my_code\note\大数据\clickhouse\img\image-20260127114117920.png" alt="image-20260127114117920" style="zoom: 67%;" />
+
+  我们手动optimize之后
+
+  ~~~sql
+  optimize table t_order_mt;
+  select * from t_order_mt;
+  ~~~
+
+  <img src="D:\my_code\note\大数据\clickhouse\img\image-20260127114232482.png" alt="image-20260127114232482" style="zoom:67%;" />
+
+  发现已经合并到了之前的分区里面了
+
+- MergeTree是以列文件+ 索引+ 表定义文件组成的, 如果设置了分区, 那么这些文件会保持到本地磁盘的不同的分区目录
+
+  比如在上面的插入之后, 我们已经有了两个分区了, 我们可以查看一下本地的磁盘
+
+  
+
+  
+
 
 
 

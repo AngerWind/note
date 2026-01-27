@@ -4439,39 +4439,11 @@ Chunk 3: 2025-01-03 ~ 2025-01-04
 
 **如果按照时间范围进行分Chunk还不够的话,  那么你还可以按照其他的列进行分区, 这样可以将并发写入的热点打散, 类似于hive中的分区分桶**
 
-
-
-### 为什么快
-
-对于普通的pg表, 你在插入数据的时候, 随着数据库的越来越大
-
-- 单表索引越来越大
-
-- B-Tree 高度增加
-
-- Page split 频繁
-
-- WAL 放大
+这样在进行时间范围查询的时候,  TimescaleDB只会扫描特定的几个Chunk, 而不用全表扫描
 
 
 
-而对于TimescaleDB的写入模型 和时间序列的数据
 
-~~~shell
-INSERT
-  ↓
-路由器（根据时间戳）
-  ↓
-写入某一个 Chunk（小表）
-~~~
-
-- 时间序列99%的情况下都是递增的, 所以写入总是落在最新的那个Chunk中
-- Page几乎是append-only
-- WAL更友好
-
-
-
-并且在进行时间范围查询的时候,  TimescaleDB只会扫描特定的几个Chunk, 而不用全表扫描
 
 #### 需要注意的点
 
@@ -4479,8 +4451,8 @@ INSERT
 
 2. Chunk的事件范围及其重要
 
-   - 如果事件范围太大, 那么索引也会很大, 在扫描Chunk的时候要扫描很多数据
-   - 事件范围太小, 那么Chunk的数量会很多, planner的成功很高
+   - 如果时间范围太大, 那么索引也会很大, 在扫描Chunk的时候要扫描很多数据
+   - 意见范围太小, 那么Chunk的数量会很多, planner的成功很高
 
    经验值:
 
@@ -4489,6 +4461,8 @@ INSERT
    | 每秒 < 1 万  | 1 天       |
    | 每秒 5–10 万 | 1 小时     |
    | 超高频       | 10–30 分钟 |
+
+   // todo
 
 3. 建立索引的时候, 一定要添加时间序列, 如果没有时间序列, 那么就没有办法进行Chunk裁剪, 比如下面的sql
 
@@ -4526,7 +4500,9 @@ INSERT
 
 要使用TimescaleDB, 有如下的步骤
 
-1. 查看pg在启动的时候, 有没有加载timescaladb这个c扩展库
+1. 首先要在pg中安装timescaledb插件, 具体的步骤网上查一下即可
+
+2. 查看pg在启动的时候, 有没有加载timescaladb这个c扩展库
 
    ~~~sql
    SHOW shared_preload_libraries;
@@ -4548,7 +4524,7 @@ INSERT
 
    > 配置完毕之后一定要重启
 
-2. 针对当前的数据库启用TimescaleDB扩展
+3. 针对当前的数据库启用TimescaleDB扩展
 
    ~~~sql
    -- 启用TimescaleDB扩展
@@ -4564,7 +4540,7 @@ INSERT
    WHERE name = 'timescaledb';
    ~~~
 
-3. 建立Hypertable
+4. 建立Hypertable
 
    ~~~sql
    -- Hypertable不支持直接建立, 必须要建立一个普通的表, 然后转换为Hypertable
@@ -4617,7 +4593,7 @@ INSERT
    SELECT set_chunk_time_interval('表名', 86400000000);
    ~~~
 
-4. 建立索引
+5. 建立索引
 
    ~~~sql
    -- 根据你常用的业务查询sql来建立索引
