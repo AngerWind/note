@@ -148,6 +148,265 @@
 // todo 默认的详细
 
 
+
+
+
+
+
+~~~sql
+create database log_db;
+use log_db;
+CREATE TABLE log_db.log_with_partition_index
+(
+    ts          DateTime,
+    service     String,
+    level       LowCardinality(String),
+    duration_ms UInt32,
+    trace_id    String,
+
+    -- 二级跳数索引
+    INDEX idx_level level TYPE set(0) GRANULARITY 4,
+    INDEX idx_duration duration_ms TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(ts)
+ORDER BY (service, ts)
+SETTINGS index_granularity = 8192;
+
+INSERT INTO log_db.log_with_partition_index VALUES
+('2026-01-25 10:00:00', 'order', 'INFO', 120, 't1'),
+('2026-01-25 10:01:00', 'order', 'ERROR', 500, 't2'),
+('2026-01-25 11:00:00', 'pay',   'INFO', 80,  't3'),
+
+('2026-01-26 09:00:00', 'order', 'INFO', 200, 't4'),
+('2026-01-26 09:01:00', 'pay',   'ERROR', 900, 't5'),
+('2026-01-26 10:00:00', 'pay',   'INFO', 100, 't6');
+~~~
+
+之后我们来查看`/var/lib/clickhouse`中的目录
+
+~~~shell
+[root@cdh clickhouse]# ls
+access  flags           metadata          preprocessed_configs  store  user_files
+data    format_schemas  metadata_dropped  status                tmp    uuid
+~~~
+
+#### metadata
+
+`metadata`保存的是clickhouse中的元数据, 我们来看看他的结构
+
+~~~shell
+[root@cdh clickhouse]# tree metadata
+metadata
+|-- default.sql
+|-- information_schema.sql
+|-- INFORMATION_SCHEMA.sql
+|-- log_db -> ../store/c4f/c4f038fd-117b-48f7-ac0c-3cc116073956
+|-- log_db.sql
+|-- system -> ../store/2e8/2e8ea662-1cdd-475b-9a01-e4f6ba38f2fd
+`-- system.sql
+~~~
+
+- `default.sql,information_schema.sql,INFORMATION_SCHEMA.sql,system.sql, log_db.sql `都是数据库的ddl语句, 用于保存数据库的元数据
+
+  ~~~shell
+  [root@cdh clickhouse]# cat metadata/log_db.sql 
+  ATTACH DATABASE _ UUID 'c4f038fd-117b-48f7-ac0c-3cc116073956'
+  ENGINE = Atomic
+  ~~~
+
+  从上面我们可以看到, `log_db`数据库的uuid就是`c4f038fd-117b-48f7-ac0c-3cc116073956`
+
+- `log_db, system`中保存的都是对应数据库中的表的ddl, 他们通过软链接链接到`/var/lib/clickhouse/store`下面
+
+  比如`log_db`目录会软连接到`../store/c4f/c4f038fd-117b-48f7-ac0c-3cc116073956`, 其中`c4f038fd-117b-48f7-ac0c-3cc116073956`就是数据库的uuid, 这个我们可以通过`log_db.sql`中看出来, 然后`c4f`其实就是uuid的前三位
+
+  我们再来看下`log_db`中的文件
+
+  ~~~shell
+  [root@cdh clickhouse]# tree metadata/log_db
+  metadata/log_db
+  `-- log_with_partition_index.sql
+  ~~~
+
+  上面的`log_with_partition_index.sql`就是表对应的ddl
+
+  ~~~shell
+  [root@cdh clickhouse]# cat metadata/log_db/log_with_partition_index.sql 
+  ATTACH TABLE _ UUID '684ec291-3536-4f23-9116-7bc4943a29bb'
+  (
+      `ts` DateTime,
+      `service` String,
+      `level` LowCardinality(String),
+      `duration_ms` UInt32,
+      `trace_id` String,
+      INDEX idx_level level TYPE set(0) GRANULARITY 4,
+      INDEX idx_duration duration_ms TYPE minmax GRANULARITY 1
+  )
+  ENGINE = MergeTree
+  PARTITION BY toYYYYMMDD(ts)
+  ORDER BY (service, ts)
+  SETTINGS index_granularity = 8192
+  ~~~
+  
+  
+
+
+
+#### data
+
+我们再让看看data目录, 其实这个目录保存的是真正的数据的目录
+
+~~~shell
+[root@cdh clickhouse]# tree data
+data
+|-- log_db
+|   `-- log_with_partition_index -> ../../store/684/684ec291-3536-4f23-9116-7bc4943a29bb
+`-- system
+    |-- asynchronous_metric_log -> ../../store/479/47938e11-c3ab-49cd-b271-c3408a5cd661
+    |-- error_log -> ../../store/43f/43f552c9-a20a-4d66-805d-d89fefb30276
+    |-- metric_log -> ../../store/dcb/dcbbf379-7002-4d8b-b6ed-678d7741f27f
+    |-- part_log -> ../../store/483/483bab45-3dfb-4405-9dea-2cc92530c0ef
+    |-- processors_profile_log -> ../../store/933/933d057e-80c4-49f9-ae25-bebba588e3ff
+    |-- query_log -> ../../store/f70/f7038f13-3755-4fff-9e8a-2ed5dad82c98
+    |-- text_log -> ../../store/06d/06d3170b-fdf2-42e0-b6ad-bb21f1dc8548
+    `-- trace_log -> ../../store/8c6/8c6c314e-6fbe-4c1b-8ce7-531e37c39d82
+~~~
+
+上面的`log_db, system`就是对应的数据库名, 然后`log_with_partition_index`就是对应的表名, 他们又是通过软链接链接到`store`目录下面的
+
+`store/684/684ec291-3536-4f23-9116-7bc4943a29bb`这里的`684ec291-3536-4f23-9116-7bc4943a29bb`其实就表的uuid, 然后`648`是uuid的前三位, 这个我们可以通过上面的`metadata/log_db/log_with_partition_index.sql `已经查看过了
+
+
+
+
+
+#### store
+
+最后再让看看store目录, 因为store目录太深了, 这里只列出了两种种类的目录
+
+~~~shell
+[root@cdh clickhouse]# tree store/c4f/c4f038fd-117b-48f7-ac0c-3cc116073956/  store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
+store/c4f/c4f038fd-117b-48f7-ac0c-3cc116073956/
+`-- log_with_partition_index.sql
+store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
+|-- 20260125_1_1_0
+|   |-- checksums.txt
+|   |-- columns_substreams.txt
+|   |-- columns.txt
+|   |-- count.txt
+|   |-- data.bin
+|   |-- data.cmrk4
+|   |-- default_compression_codec.txt
+|   |-- metadata_version.txt
+|   |-- minmax_ts.idx
+|   |-- partition.dat
+|   |-- primary.cidx
+|   |-- serialization.json
+|   |-- skp_idx_idx_duration.cmrk4
+|   |-- skp_idx_idx_duration.idx2
+|   |-- skp_idx_idx_level.cmrk4
+|   `-- skp_idx_idx_level.idx
+|-- 20260126_2_2_0
+|   |-- checksums.txt
+|   |-- columns_substreams.txt
+|   |-- columns.txt
+|   |-- count.txt
+|   |-- data.bin
+|   |-- data.cmrk4
+|   |-- default_compression_codec.txt
+|   |-- metadata_version.txt
+|   |-- minmax_ts.idx
+|   |-- partition.dat
+|   |-- primary.cidx
+|   |-- serialization.json
+|   |-- skp_idx_idx_duration.cmrk4
+|   |-- skp_idx_idx_duration.idx2
+|   |-- skp_idx_idx_level.cmrk4
+|   `-- skp_idx_idx_level.idx
+|-- detached
+`-- format_version.txt
+~~~
+
+- 首先就是`store/c4f/c4f038fd-117b-48f7-ac0c-3cc116073956/`, 他里面保存的是`log_test`数据库中的表的sql
+
+  ~~~shell
+  store/c4f/c4f038fd-117b-48f7-ac0c-3cc116073956/
+  `-- log_with_partition_index.sql
+  ~~~
+
+- 然后是`store/684/684ec291-3536-4f23-9116-7bc4943a29bb/`, 他里面保存的是`log_with_partition_index`这个表的原始数据
+
+  我们实现来看第一层级目录
+
+  ~~~shell
+  |-- 20260126_2_2_0
+  |-- 20260126_2_2_0
+  |-- detached
+  `-- format_version.txt
+  ~~~
+
+  - `20260126_2_2_0,20260126_2_2_0`这两个是是分区值, 里面保存的是对应分区的数据
+
+  - `detached`目录中保存是已经卸载的分区目录, 这些目录表示的分区已经被卸载了, 不再参与查询, merge, ttl, replica同步, 但是又希望分区数据完整保存, 不进行删除, 随时可以恢复
+
+    你可以将一个分区目录手动detach, 使用的如下的sql
+
+    ~~~shell
+    ALTER TABLE log_db.log_with_partition_index DETACH PART '20260126_2_2_0';
+    ~~~
+
+    这会将`20260126_2_2_0`这个分区目录卸载掉, 之后你可以通过如下的sql将分区目录重新加载回来
+
+    ~~~sql
+    ALTER TABLE log_db.log ATTACH PART '20260126_2_2_0';
+    ~~~
+
+  - `format_version.txt`文件中保存的是分区目录的结构版本, 他的内容一般就是1或者2
+
+    可以理解为
+
+    | 值   | 含义（概念）             |
+    | ---- | ------------------------ |
+    | 1    | 初代 Atomic 表目录       |
+    | 2    | 支持新版 part / txn 机制 |
+
+  
+
+  之后我们再来看看分区目录中有什么内容
+
+  数据是按照分区存放的, 每个分区中都有如下的文件
+
+  ~~~shell
+  |-- 20260126_2_2_0 # 对应的分区值
+  |   |-- checksums.txt 
+  |   |-- columns_substreams.txt # 
+  |   |-- columns.txt
+  |   |-- count.txt
+  |   |-- data.bin
+  |   |-- data.cmrk4
+  |   |-- default_compression_codec.txt
+  |   |-- metadata_version.txt
+  |   |-- minmax_ts.idx
+  |   |-- partition.dat
+  |   |-- primary.cidx
+  |   |-- serialization.json
+  |   |-- skp_idx_idx_duration.cmrk4
+  |   |-- skp_idx_idx_duration.idx2
+  |   |-- skp_idx_idx_level.cmrk4
+  |   `-- skp_idx_idx_level.idx
+  ~~~
+
+  - `checksums.txt`文件里面保存了当前分区中所有其他文件的checksums, 用于一致性校验
+
+  - 
+
+    
+
+    
+
+
+
 # 数据库引擎
 
 在clickhouse中, 创建数据库的时候可以指定多种数据库引擎, 每种数据库引擎都有不一样的功能, 你可以通过如下sql来查看数据库使用的引擎
@@ -2529,7 +2788,13 @@ INSERT INTO order_mf (id, sku_id, total_amount, create_time) VALUES
 
 
 
-支持索引和分区
+![image-20260127215539194](img/clickhouse/image-20260127215539194.png)
+
+`default.sql, system.sql`是数据库的ddl, 
+
+`default, system`是实际保存目录的位置, 他们是一个软链接, 链接到store的目录下
+
+`/var/lib/clickhouse/store/of1/of11632a-b17b...`其中
 
 
 
