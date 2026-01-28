@@ -3018,7 +3018,7 @@ insert into t_order_mt2 values
 
 其中`GRANULARITY 5`是设置二级索引相对于主键的一级索引的索引力度, 这里表示主键索引上的5个数据, 会生成一个二级索引的数据
 
-之后我们使用如下的命令来执行查询, 看看其中的详细过程
+之后我们使用如下的命令来执行查询, 看看其中的详细过程, 看看二级索引在非主键字段中发挥的作用
 
 ~~~shell
 [root@cdh ~]# clickhouse-client --send_logs_level=trace <<< 'select * from log_db.t_order_mt2 where total_amount > toDecimal32(900, 2)';
@@ -3053,11 +3053,121 @@ insert into t_order_mt2 values
 
 
 
-
-
-
-
 ### TTL
+
+MergeTree提供了表级别的ttl和列级别的ttl,  只要数据到了指定的时间, 那么就会被设置为数据类型的默认值
+
+
+
+#### 列的TTL
+
+首先我们看看列级别的ttl, 使用如下的sql
+
+~~~sql
+create table t_order_mt3(
+  id UInt32,
+  sku_id String,
+  -- 指定在create_time的10秒之后, 就过期掉
+  total_amount Decimal(16,2) TTL create_time+interval 10 SECOND,
+  create_time Datetime
+) engine=MergeTree
+partition by toYYYYMMDD(create_time)
+primary key (id)
+order by (id, sku_id);
+
+insert into t_order_mt3 values
+(106,'sku_001',1000.00,'2020 06 12 22:52:30'),
+(107,'sku_002',2000.00,'2020 06 12 22:52:30'),
+(110,'sku_003',600.00,'2020 06 13 12:00:00');
+
+-- 重新查询数据
+select * from t_order_mt3;
+   ┌──id─┬─sku_id──┬─total_amount─┬─────────create_time─┐
+1. │ 106 │ sku_001 │            0 │ 2020-06-12 22:52:30 │
+2. │ 107 │ sku_002 │            0 │ 2020-06-12 22:52:30 │
+3. │ 110 │ sku_003 │            0 │ 2020-06-13 12:00:00 │
+   └─────┴─────────┴──────────────┴─────────────────────┘
+~~~
+
+上面我们可以看到, total_amout中的列别置为了默认值
+
+
+
+你还可以使用如下的sql来查看, 删除, 修改, 增加某个列的ttl
+
+~~~sql
+-- 查看完整表结构，包括 TTL
+SHOW CREATE TABLE t_order_mt3;
+
+-- 给total_amount列 添加 / 修改TTL
+ALTER TABLE t_order_mt3
+MODIFY COLUMN total_amount TTL create_time + INTERVAL 10 SECOND;
+
+-- 移除某个列的ttl
+ALTER TABLE t_order_mt3
+MODIFY COLUMN total_amount TTL NULL;
+~~~
+
+
+
+
+
+#### 表的TTL
+
+~~~sql
+DROP TABLE IF EXISTS t_order_mt4;
+CREATE TABLE t_order_mt4
+(
+    id UInt32,
+    sku_id String,
+    total_amount Decimal(16,2),
+    create_time Datetime
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMMDD(create_time)
+PRIMARY KEY (id)
+ORDER BY (id, sku_id)
+TTL create_time + INTERVAL 10 SECOND;
+
+insert into t_order_mt4 values
+(106,'sku_001',1000.00,'2020 06 12 22:52:30'),
+(107,'sku_002',2000.00,'2020 06 12 22:52:30'),
+(110,'sku_003',600.00,'2020 06 13 12:00:00');
+
+-- 重新查询数据
+select * from t_order_mt4;
+
+0 rows in set. Elapsed: 0.005 sec.
+~~~
+
+上面可以看到,  所有过期的数据都已经被清空了
+
+
+
+你可以使用如下的sql来增删改查表级别的ttl
+
+~~~sql
+-- 查看表级别的ttl
+SHOW CREATE TABLE t_order_mt3;
+
+-- 增加和修改表的ttl
+ALTER TABLE t_order_mt3
+MODIFY TTL create_time + INTERVAL 1 MINUTE;
+
+-- 删除表的ttl
+ALTER TABLE t_order_mt3
+MODIFY TTL NULL;
+~~~
+
+
+
+
+
+## ReplacingMergeTree
+
+
+
+## SummingMergeTree
 
 
 
