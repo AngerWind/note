@@ -2881,8 +2881,8 @@ insert into t_order_mt values
 (101,'sku_001',1000.00,'2020-06-01 12:00:00') ,
 (102,'sku_002',2000.00,'2020-06-01 11:00:00'),
 (102,'sku_004',2500.00,'2020-06-01 12:00:00'),
-(102,'sku_002',2000.00,'2020-06-01 13:00:00')
-(102,'sku_002',12000.00,'2020-06-01 13:00:00')
+(102,'sku_002',2000.00,'2020-06-01 13:00:00'),
+(102,'sku_002',12000.00,'2020-06-01 13:00:00'),
 (102,'sku_002',600.00,'2020-06-02 12:00:00');
 
 
@@ -2929,9 +2929,9 @@ Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
     (101,'sku_001',1000.00,'2020 06 01 12:00:00') ,
     (102,'sku_002',2000.00,'2020 06 01 11:00:00'),
     (102,'sku_004',2500.00,'2020 06 01 12:00:00'),
-    (102,'sku_002',2000.00,'2020 06 01 13:00:00')
-    (102,'sku_002',12000.00,'2020 06 01 13:00:00')
-    (102,'sku_002',600.00,'2020 06 02 12:00:00')
+    (102,'sku_002',2000.00,'2020 06 01 13:00:00'),
+    (102,'sku_002',12000.00,'2020 06 01 13:00:00'),
+    (102,'sku_002',600.00,'2020 06 02 12:00:00');
     
     select * from t_order_mt;
     ~~~
@@ -2959,19 +2959,105 @@ Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
 
 如果不需要排序, 那么可以设置为`order by tuple()`
 
+
+
 ### 主键
 
 clickhouse中的主键和其他数据库中的主键不一样, 他不是唯一约束, 意味着可以有两个一样的primary key
 
-通常情况下你不需要指定主键,  clickhouse会默认使用默认使用`order by`字段作为主键
+**通常情况下你不需要指定主键,  clickhouse会默认使用默认使用`order by`字段作为主键**
 
 
 
-主键本质上是一个稀疏索引, 首先我们在创建MergeTree表的时候可以指定一个`index_granularity`的参数, 他的默认值为8192, 官方不推荐修改这个值, 除非你的排序列有大量的重复值
+主键本质上是一个**稀疏索引**, 首先我们在创建MergeTree表的时候可以指定一个`index_granularity`的参数, 他的默认值为8192, 官方不推荐修改这个值, 除非你的排序列有大量的重复值
 
 `index_granularity`表示的是主键索引的索引力度, 换句话说就是稀疏索引中两个相邻索引间隔多少行数据
 
+**<font color=red>在设置主键的时候, 主键必须是`order by`的前缀字段, 比如`order by`字段是 `(id, sku_id)` 那么主键必须是` id `或者`(id, sku_id)`</font>**
 
+
+
+
+
+### 二级索引
+
+在ClickHouse 的官网上二级索引的功能 在` v20.1.2.4` 之前 是被标注为实验性的, 之后默认是开启的
+
+如果你是老版本的话, 那么可以如下的配置来开启, 这个配置在`v20.1.2.4`被删除了
+
+~~~shell
+set allow_experimental_data_skipping_indices=1;
+~~~
+
+二级索引本质上是建立在主键稀疏索引上面的一个跳表, 能够快速找到主键索引
+
+
+
+下面是测试案例, 我们首先创建一个带二级索引的表
+
+~~~sql
+create table t_order_mt2(
+  id UInt32,
+  sku_id String,
+  total_amount Decimal(16, 2),
+  create_time Datetime,
+  INDEX a total_amount TYPE minmax GRANULARITY 5
+) engine=MergeTree
+partition by toYYYYMMDD(create_time)
+primary key (id)
+order by (id, sku_id);
+
+insert into t_order_mt2 values
+(101,'sku_001',1000.00,'2020 06 01 12:00:00') ,
+(102,'sku_002',2000.00,'2020 06 01 11:00:00'),
+(102,'sku_004',2500.00,'2020 06 01 12:00:00'),
+(102,'sku_002',2000.00,'2020 06 01 13:00:00'),
+(102,'sku_002',12000.00,'2020 06 01 13:00:00'),
+(102,'sku_002',600.00,'2020 06 02 12:00:00');
+~~~
+
+其中`GRANULARITY 5`是设置二级索引相对于主键的一级索引的索引力度, 这里表示主键索引上的5个数据, 会生成一个二级索引的数据
+
+之后我们使用如下的命令来执行查询, 看看其中的详细过程
+
+~~~shell
+[root@cdh ~]# clickhouse-client --send_logs_level=trace <<< 'select * from log_db.t_order_mt2 where total_amount > toDecimal32(900, 2)';
+[cdh] 2026.01.28 20:17:11.435069 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> executeQuery: (from [::1]:47462) (query 1, line 1) select * from log_db.t_order_mt2 where total_amount > toDecimal32(900, 2)  (stage: Complete)
+[cdh] 2026.01.28 20:17:11.439997 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Trace> Planner: Query to stage Complete
+[cdh] 2026.01.28 20:17:11.440122 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Trace> Planner: Query from stage FetchColumns to stage Complete
+[cdh] 2026.01.28 20:17:11.440520 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Trace> QueryPlanOptimizePrewhere: The min valid primary key position for moving to the tail of PREWHERE is -1
+[cdh] 2026.01.28 20:17:11.440540 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Trace> QueryPlanOptimizePrewhere: Moved 1 conditions to PREWHERE
+[cdh] 2026.01.28 20:17:11.440642 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Key condition: unknown
+[cdh] 2026.01.28 20:17:11.440667 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): MinMax index condition: unknown
+[cdh] 2026.01.28 20:17:11.440686 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Trace> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Filtering marks by primary and secondary keys
+[cdh] 2026.01.28 20:17:11.446577 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): PK index has dropped 0/2 granules, it took 0ms across 2 threads.
+[cdh] 2026.01.28 20:17:11.446606 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Index `a` has dropped 1/2 granules, it took 11ms across 2 threads.
+[cdh] 2026.01.28 20:17:11.446640 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Query condition cache has dropped 0/1 granules for PREWHERE condition greater(__table1.total_amount, _CAST('900'_Decimal(9, 2), 'Decimal(9, 2)'_String)).
+[cdh] 2026.01.28 20:17:11.446661 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Query condition cache has dropped 0/1 granules for WHERE condition greater(total_amount, _CAST('900'_Decimal(9, 2), 'Decimal(9, 2)'_String)).
+[cdh] 2026.01.28 20:17:11.446693 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Selected 2/2 parts by partition key, 1 parts by primary key, 2/2 marks by primary key, 1 marks to read from 1 ranges
+[cdh] 2026.01.28 20:17:11.446735 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Trace> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Spreading mark ranges among streams (default reading)
+[cdh] 2026.01.28 20:17:11.446795 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Trace> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Reading 1 ranges in order from part 20200601_1_1_0, approx. 5 rows starting from 0
+[cdh] 2026.01.28 20:17:11.450652 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> executeQuery: Read 5 rows, 155.00 B in 0.015649 sec., 319.5092338168573 rows/sec., 9.67 KiB/sec.
+101     sku_001 1000    2020-06-01 12:00:00
+102     sku_002 2000    2020-06-01 11:00:00
+102     sku_002 2000    2020-06-01 13:00:00
+102     sku_002 12000   2020-06-01 13:00:00
+102     sku_004 2500    2020-06-01 12:00:00
+~~~
+
+上面的debug日志中, 有一句
+
+~~~shell
+[cdh] 2026.01.28 20:17:11.446606 [ 2594 ] {3e088ba9-4b0f-4baa-be66-90f081c53ed9} <Debug> log_db.t_order_mt2 (06e3314e-1970-4e3f-aede-f5a51078a3d9) (SelectExecutor): Index `a` has dropped 1/2 granules, it took 11ms across 2 threads.
+~~~
+
+
+
+
+
+
+
+### TTL
 
 
 

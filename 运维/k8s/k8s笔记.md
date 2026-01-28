@@ -5079,6 +5079,48 @@ spec:
 
 
 
+## 高级功能
+
+上面的路由转发只是使用了nginx最基础的功能, 在nginx中能用的功能, 在Ingress-Nginx中都可以使用, 比如限流, 超时, 重试, 只允许特定协议等等
+
+这些都是通过Ingress中的annotations注解来实现的, 比如只运行https
+
+~~~yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-ingress
+  namespace: default
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.2 TLSv1.3"
+    nginx.ingress.kubernetes.io/ssl-prefer-server-ciphers: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: api-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 8080
+~~~
+
+详细的功能实现问问ai
+
+
+
+
+
 ## ingress-nginx镜像加速
 
 > Note: 使用上面网站的yml安装ingress-nginx经常会失败, 因为镜像下载不下来, 可以使用下面这个文件
