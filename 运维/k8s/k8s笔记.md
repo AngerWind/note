@@ -5040,10 +5040,11 @@ kubectl get pods --namespace=ingress-nginx
 
 外部请求的转发过程如下:
 
-1. 用户通过域名请求我们的服务, 然后经过dns域名解析, 解析到我们的k8s集群上的80端口
-2. 之后请求就会被ingress-nginx-controller这个svc接受到, 并转发给ingress-nginx-controller这个pod
-3. ingress-nginx-controller这个pod再接受到svc转发过来的请求之后,  你可以理解他就是一个nginx, 他会按照你定义的规则, 将不同域名, 不同端口的, 不同路径的请求, 转发给特定服务的svc
-4. 之后就是不同服务的svc接受到请求之后, 将请求负载均衡到各自的pod上面, 并返回请求了
+1. 用户通过域名请求我们的服务, 然后经过dns域名解析, 解析到我们的k8s集群上的80(http)端口或者443(https)端口
+2. 之后请求就会被`ingress-nginx-controller`这个svc接受到, 并转发给`ingress-nginx-controller`这个pod
+3. 通过`ingress-nginx-controller`这个pod还会监听k8s中的Ingress资源, 如果你创建了一个Ingress资源, 那么他会监听到, 这个Ingress资源就相当于一个配置规则, 他会将这个规则加载, 实现动态加载转发规则
+4. `ingress-nginx-controller`这个pod再接受到svc转发过来的请求之后,  你可以理解他就是一个nginx, 他会按照你定义的规则, 将不同域名, 不同端口的, 不同路径的请求, 转发给特定服务的svc
+5. 之后就是不同服务的svc接受到请求之后, 将请求负载均衡到各自的pod上面, 并返回请求了
 
 
 
@@ -5063,9 +5064,9 @@ spec:
     - host: www1.atguigu.com # 指定访问的域名
       http:
         paths:
-          - path: / # 指定路径前缀
-            pathType: Prefix
-            backend:
+          - pathType: Prefix # 指定路径的匹配方式为前缀匹配
+            path: /  # 前缀为/
+            backend: # 指定要转发的svc和端口
               service:
                 name: demo-svc # 转发到的svc
                 port: 
@@ -9788,16 +9789,14 @@ description: >
 type: application 
 
 version: 1.4.2 # 当前chart的版本
-appVersion: "2.3.7" # 业务应用的版本
+appVersion: v1.4.2 # 业务主镜像的版本, 一般和version一致
 
 kubeVersion: ">=1.23.0 <1.30.0" # 声明当前Chart支持的k8s的版本范围, 如果版本不匹配, 安装会报错
 
-# 下面三个属性是当前chart的home page
-home: https://github.com/example/my-web-app
+home: https://github.com/example/my-web-app # 当前chart的home page
 sources:
-  - https://github.com/example/my-web-app
-  - https://github.com/example/my-web-app-deploy
-icon: https://raw.githubusercontent.com/example/my-web-app/main/docs/logo.png
+  - https://github.com/example/my-web-app # chart的源码地址
+icon: https://raw.githubusercontent.com/example/my-web-app/main/docs/logo.png # 项目图标
 
 # 关键字, 在helm search / Artifact Hub 中搜索有用
 keywords:
@@ -9806,7 +9805,7 @@ keywords:
   - backend
   - api
 
-# 负责任信息
+# 负责人信息
 maintainers:
   - name: Alice Zhang
     email: alice@example.com
@@ -9820,9 +9819,12 @@ dependencies:
     version: "~17.3.0"
     repository: "https://charts.bitnami.com/bitnami"
     alias: cache # 安装的时候重命名这个chart
-    condition: cache.enabled
+    # 指定在什么情况下启用这个子chart, 之后你可以在values.yaml中指定如下的配置来启动或者关闭这个chart
+    # cache:
+    #   enabled: false
+    condition: cache.enabled 
 
-# helm不使用这个, 主要用于第三方平台(Artifact Hub)读取
+# helm不使用这个, 主要用于第三方平台(Artifact Hub)读取, 在页面上显示一些信息
 annotations:
   category: backend
   support: "support@example.com"
@@ -9833,6 +9835,29 @@ annotations:
     - name: Documentation
       url: https://example.com/docs
 ~~~
+
+
+
+#### Chart.lock
+
+这个文件是在`helm dependencies update `的时候生成的, 类似于node中的package.lock, 用于固定子chart的版本, 内容类似下面的格式
+
+~~~yaml
+dependencies:
+- name: etcd
+  repository: https://charts.bitnami.com/bitnami
+  version: 10.4.2
+- name: nats
+  repository: https://nats-io.github.io/k8s/helm/charts/
+  version: 1.3.13
+- name: minio
+  repository: https://charts.min.io
+  version: 5.3.0
+digest: sha256:c7ebd99f64ace3aef9bebc9766ce5bd2b790dd6ecfb6c4d268b9a8f50aa556e8
+generated: "2026-01-06T15:32:42.17252355+08:00"
+~~~
+
+
 
 
 
@@ -9920,7 +9945,7 @@ spec:
 
 #### _helpers.tpl
 
-如果你有通用的模板, 那么可以定义在这个文件里面, 比如下面的文件
+ 文件放在`templates`目录下, 如果你有通用的模板, 那么可以定义在这个文件里面, 比如下面的文件
 
 ~~~yaml
 # _helpers.tpl
@@ -10063,8 +10088,8 @@ dependencies:
 | --------------- | ------ | ------------------------------------------------------------ |
 | `name`          | string | 依赖的 Chart 名称（通常是 Chart 的 `Chart.yaml` 中的 `name`）。 |
 | `version`       | string | 指定依赖 Chart 的版本，可以使用 semver 范围，如 `">=14.0.0 <15.0.0"`。 |
-| `repository`    | string | 如果你使用的是远程仓库中的第三方chart, 那么这个字段是指定helm仓库的url<br />如果你的子chart就是你自己写的, 并且放在`charts`目录下面, 那么可省略这个字段。 |
-| `condition`     | string | 用来控制是否启用这个依赖 Chart。通常指向父项目的 `values.yaml` 中的布尔值，例如 `redis.enabled`。 |
+| `repository`    | string | 如果你使用的是远程仓库中的第三方chart, 那么这个字段是指定helm仓库的url<br />如果你的子chart就是你自己写的, 并且放在`charts`目录下面, 那么可省略这个字段。<br />如果这个chart不是放在charts目录下面, 那么你可以使用如下的代码来引用`file://charts/b`, 这里目录是相对于父chart根目录, 你也可以指定绝对目录 |
+| `condition`     | string | 用来控制是否启用这个依赖 Chart。通常指向父项目的 `values.yaml` 中的布尔值，例如 `redis.enabled`。之后你可以在父chart的values.yaml中指定redis.enabled来开关 |
 | `tags`          | list   | 用于对依赖 Chart 分类，通过 `--set <tag>=true` 启用或禁用同一标签下的所有依赖。 |
 | `import-values` | list   | 用于从子 Chart 的 `values.yaml` 导入部分值到父 Chart 的 `values.yaml`。可以是简单映射或嵌套映射。 |
 
@@ -10115,9 +10140,173 @@ dependencies:
 
 
 
+#### 控制子chart的values.yaml
+
+如果你有一个chart a, 里面有一个子chart b, b的values.yaml中有一个字段为compress, 用来控制压缩之类的东西
+
+他会在b/template/configmap.yaml中使用这个compress字段
+
+项目的结构如下
+
+~~~shell
+[root@node-182 ha]# tree a
+a
+├── charts
+│   └── b
+│       ├── charts
+│       ├── Chart.yaml
+│       ├── templates
+│       │   └── configmap.yaml
+│       └── values.yaml
+├── Chart.yaml
+├── templates
+└── values.yaml
+~~~
+
+文件内容如下
+
+~~~shell
+[root@node-182 ha]# cat a/charts/b/values.yaml a/charts/b/templates/configmap.yaml
+compress: false
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: b-config
+data:
+  compress: "{{ .Values.compress }}"
+~~~
+
+这个时候你想要在install父chart的时候, 来设置这个compress字段, 那么你可以使用`b.compress`来指定这个值, 这里的`b`是子chart的命令
+
+- 比如下父chart的values.yaml文件中指定这个值
+
+  ~~~shell
+  [root@node-182 ha]# cat a/values.yaml
+  b:
+    compress: true
+    
+  [root@node-182 ha]# helm template test ./a
+  ---
+  # Source: a/charts/b/templates/configmap.yaml
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: b-config
+  data:
+    compress: "true"
+  ~~~
+
+- 或者在install的时候指定这个值
+
+  ~~~shell
+  [root@node-182 ha]# helm template test ./a --set b.compress=false
+  ---
+  # Source: a/charts/b/templates/configmap.yaml
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: b-config
+  data:
+    compress: "false"
+  ~~~
+
+  
+
+
+
+
+
+
+
 #### import-values
 
-这个字段在 Helm v3 中非常重要，它用于 **将子 Chart 的值映射到父 Chart 的 values 中**,  **这样你就可以在父chart中的values.yaml中控制子chart的行为了**
+这个字段在 Helm v3 中非常重要，它用于 **将子 Chart 中values.yaml的值映射到父 Chart 的 values.yaml 中** , 这样父chart就可以获取子chart的配置了
+
+使用方式有两种
+
+1. 首先你可以在子chart的values.yaml中export出一些字段
+
+   ~~~yaml
+   # child's values.yaml file
+   exports:
+     data:
+       myint: 99
+   ~~~
+
+   然后再父chart中, 导入这些字段
+
+   ~~~yaml
+   # parent's Chart.yaml file
+   dependencies:
+     - name: subchart
+       repository: http://localhost:10191
+       version: 0.1.0
+       import-values:
+         - data
+   ~~~
+
+   最终在父chart的values.yaml中, 会包含我们导入的字段
+
+   ~~~yaml
+   # parent's values
+   myint: 99
+   ~~~
+
+   > 需要注意的是, values.yaml中并没有包含data这个parent key
+
+2. 第二种方式你不需要提前在子chart的values.yaml文件中将特定的字段exports出来即可使用子chart中的值
+
+   比如我有一个子chart的values.yaml如下
+
+   ~~~yaml
+   # subchart1's values.yaml file
+   default:
+     data:
+       myint: 999
+       mybool: true
+   ~~~
+
+   之后我可以通过如下的配置来导入
+
+   ~~~yaml
+   # parent's Chart.yaml file
+   
+   dependencies:
+     - name: subchart1
+       repository: http://localhost:10191
+       version: 0.1.0
+       ...
+       import-values:
+         - child: default.data
+           parent: myimports
+   ~~~
+
+   这个会将子chart中的`default.data`导入到父chart中, 并重命名为`myimports`, 这样父chart中的values.yaml中就会有这些值, 并且会覆盖本身chart中对应的值
+
+   比如我父chart中定义的values.yaml文件如下
+
+   ~~~shell
+   # parent's values.yaml file
+   
+   myimports:
+     myint: 0
+     mybool: false
+     mystring: "helm rocks!"
+   ~~~
+
+   那么渲染之后的父chart的values.yaml如下
+
+   ~~~shell
+   # parent's final values
+   
+   myimports:
+     myint: 999
+     mybool: true
+     mystring: "helm rocks!"
+   ~~~
+
+   
 
 
 
@@ -10306,15 +10495,27 @@ helm dependency list
 之后你可以通过如下的命令下载依赖的子依赖的tag压缩包
 
 ~~~helm
-helm dependency update myapp
+helm dependency update ./myapp
 ~~~
 
-上面的命令会读取`dependencies`字段, 然后下载对应的chart压缩包到`charts/`中, 然后生成`Chart.lock`到根目录下面
+上面的命令会读取`dependencies`字段, 然后下载对应的chart压缩包到`charts/`中, 然后生成`Chart.lock`到根目录下面, 目录结构类似如下
+
+~~~shell
+wordpress/charts/
+├── common # 解压之后的子chart
+├── common-2.0.1.tgz # 子chart的tgz包
+├── mariadb
+├── mariadb-11.2.2.tgz
+├── memcached
+└── memcached-6.2.3.tgz
+~~~
+
+
 
 如果你的chart已经有了`Chart.lock`文件, 你也可以使用下面的命令来下载子chart,  他会严格按照`Chart.lock`中指定的版本来下载
 
 ~~~shell
-helm dependency build myapp
+helm dependency build ./myapp
 ~~~
 
 
