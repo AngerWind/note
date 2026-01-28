@@ -133,6 +133,12 @@
 
    ![image-20220817222103877](img/clickhouse/image-20220817222103877.png)
 
+
+
+
+
+
+
 ## clickhouse的数据目录
 
 所有的clickhouse-server的数据文件都保存在`/var/lib/clickhouse`
@@ -145,43 +151,9 @@
 
 - metadata_dropped中保存的是已经删除的表的相关sql文件
 
-- data用于保存老版本的ordinary数据库的表数据
-
-- metadata中保存的是数据库和表相关的DDL sql文件, 也是数据库和表的元信息
-
-  他的目录结构如下
-
-  ~~~sql
-  [root@node173 data]# tree metadata
-  metadata
-  ├── default -> /var/lib/clickhouse/store/761/761a6195-ac76-4455-ad10-2593390cfc87/
-  ├── default.sql
-  ├── information_schema
-  ├── INFORMATION_SCHEMA
-  ├── information_schema.sql
-  ├── INFORMATION_SCHEMA.sql
-  ├── system -> /var/lib/clickhouse/store/086/0861ad55-8547-413e-bf95-71ebac75c67b/
-  ├── system.sql
-  ├── test -> /var/lib/clickhouse/store/c14/c148f90a-90c4-4109-a732-5f10528cd99f/
-  └── test.sql
-  ~~~
-
-  1. 其中`default.sql, information_schema.sql, INFORMATION_SCHEMA.sql, system.sql, test.sql`这些是数据库的ddl
-  2. `default,system, test`这是保存的是对应数据库的表的实际数据, 他们都是一个软连接, 连接到`/var/lib/clickhouse/store/`目录下
-
-- store中保存的是所有atomic表的数据
-
-  
 
 
-
-// todo 默认的详细
-
-
-
-
-
-
+`/var/lib/clickhouse`中的metdata, data, store需要详细讲一下, 我们先试用如下的sql来创建一个案例
 
 ~~~sql
 create database log_db;
@@ -221,7 +193,9 @@ access  flags           metadata          preprocessed_configs  store  user_file
 data    format_schemas  metadata_dropped  status                tmp    uuid
 ~~~
 
-#### metadata
+
+
+### metadata
 
 `metadata`保存的是clickhouse中的元数据, 我们来看看他的结构
 
@@ -283,7 +257,7 @@ metadata
 
 
 
-#### data
+### data
 
 我们再让看看data目录, 其实这个目录保存的是真正的数据的目录
 
@@ -311,7 +285,7 @@ data
 
 
 
-#### store
+### store
 
 最后再让看看store目录, 因为store目录太深了, 这里只列出了两种种类的目录
 
@@ -410,7 +384,7 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
   ~~~shell
   |-- 20260126_2_2_0 # 对应的分区值
   |   |-- checksums.txt 
-  |   |-- columns_substreams.txt # 
+  |   |-- columns_substreams.txt 
   |   |-- columns.txt
   |   |-- count.txt
   |   |-- data.bin
@@ -429,11 +403,97 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
 
   - `checksums.txt`文件里面保存了当前分区中所有其他文件的checksums, 用于一致性校验
 
-  - 
+  - `columns.txt`中保存的是列的信息
 
+    ~~~shell
+[root@cdh 20260125_1_1_0]# cat columns.txt 
+    columns format version: 1
+    5 columns:
+    `ts` DateTime
+    `service` String
+    `level` LowCardinality(String)
+    `duration_ms` UInt32
+    `trace_id` String
+    ~~~
     
-
-    
+  - `columns_substreams.txt`中保存每一列的信息
+  
+    ~~~shell
+    [root@cdh 20260125_1_1_0]# cat columns_substreams.txt 
+    columns substreams version: 1
+    5 columns: # 说明有5个列
+    1 substreams for column `ts`:
+            ts # 字段ts生产了一个单独的列
+    1 substreams for column `service`:
+            service
+    3 substreams for column `level`: # 字段level生成了3个列
+            level.dict_prefix  # 这是字典值的前缀, 用于加速字典值的查询的
+            level.dict # 这个列保存的是level对应的字段值, INFO, ERROR这些, 常驻内存
+            level  # 这个列保存的是level实际存储的值, 是字典值对应的数字
+    1 substreams for column `duration_ms`:
+            duration_ms
+    1 substreams for column `trace_id`:
+            trace_id
+    ~~~
+  
+  - `count.txt`中保持的是当前这个分区的行数
+  
+    ~~~shell
+    [root@cdh 20260125_1_1_0]# cat count.txt
+    3
+    ~~~
+  
+  - `metadata_version.txt`中保存的是一个版本信息, 不知道干嘛的
+  
+    ~~~shell
+    [root@cdh 20260125_1_1_0]# cat metadata_version.txt 
+    0
+    ~~~
+  
+  - `default_compression_codec.txt`中保存的是当前分区的列的数据文件`data.bin`使用的压缩算法
+  
+    LZ4的特点是压缩和解压速度非常快, cpu占用低, 但是压缩率一般
+  
+    ~~~shell
+    [root@cdh 20260125_1_1_0]# cat default_compression_codec.txt
+    CODEC(LZ4)
+    ~~~
+  
+  - `serialization.json`中保持的是每一列数据的序列化方式
+  
+    ~~~shell
+    [root@cdh 20260125_1_1_0]# cat serialization.json
+    {"columns":[{"kind":"Default","name":"duration_ms","num_defaults":0,"num_rows":3},{"kind":"Default","name":"service","num_defaults":0,"num_rows":3},{"kind":"Default","name":"trace_id","num_defaults":0,"num_rows":3},{"kind":"Default","name":"ts","num_defaults":0,"num_rows":3}],"version":0}
+    ~~~
+  
+    `kind:Default`表示是当前数据类型默认的序列号方式
+  
+  - `partition.dat`中保持的是当前分区值的hash
+  
+    ~~~shell
+    [root@cdh 20260125_1_1_0]# cat partition.dat 
+    %5
+    ~~~
+  
+  - `minmax_ts.idx`是一个建立在ts上面的minmax索引
+  
+  - `primary.cidx`是一个主键索引
+  
+  - `data.bin`中保持的是具体的数据, 按列存储, 按 granule（默认 8192 行）切分, 
+  
+    每列的数据可能经过 **列级压缩**（如你看到的 `default_compression_codec.txt → LZ4`）
+  
+    不同列的 substream 数据在 `data.bin` 中顺序写入，解压时按 `columns_substreams.txt` 和 `serialization.json` 解析
+  
+  - `data.cmrk4`是granule 索引文件（mark file）
+  
+  - `skp_idx_idx_duration.cmrk4`和`skp_idx_idx_duration.idx2`
+  
+    // todo
+  
+  - `skp_idx_idx_level.cmrk4`和`skp_idx_idx_level.idx`
+  
+    // todo
 
 
 
@@ -2814,7 +2874,8 @@ create table t_order_mt(
 ) engine=MergeTree
 partition by toYYYYMMDD(create_time)
 primary key (id)
-order by (id,sku_id);
+order by (id,sku_id)
+SETTINGS index_granularity = 8192;
 
 insert into t_order_mt values
 (101,'sku_001',1000.00,'2020-06-01 12:00:00') ,
@@ -2843,95 +2904,76 @@ Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
 
 
 
-- order by: 必选, 会导致数据在分区内进行排序
-
-- partition by指定分区字段, 他是可选的, 如果不指定就是不分区
-
-
-
 ### 分区
 
 在创建MergeTree的时候, 你可以指定分区字段, 分区字段的作用是减低扫描范围, 优化查询速度
 
+- partition by是一个**可选**字段, 如果不指定的话, 那么就是不分区, 所有数据写入到一个分区中
 
-  **如果设置了分区, 在进行跨分区统计的时候, ck会以分区为单位并行处理多个分区**
+- **如果指定了分区, 那么不同分区的数据会在store中的不同目录中分开存放, 在进行跨分区统计的时候, ck会以分区为单位并行处理多个分区**
 
-- primary key可以重复, 不像mysql之类的数据库是唯一的
+- 任何一个批次的数据写入都会产生一个临时分区，不会纳入任何一个己有的分区。写入后的某个时刻(大概 10-15 分钟后)，clickHouse 会自动执行合并操作
 
-- 任何一个批次的数据写入都会产生一个临时分区，不会纳入任何一个己有的分区。写入后的某个时刻(大概 10-15 分钟后)，clickHouse 会自动执行合并操作(等不及也可以手动通过 optimize 执行)，把临时分区的数据，合并到已有分区中。
+  等不及也可以手动通过 optimize 执行，把临时分区的数据，合并到已有分区中。
 
-  ~~~sql
-  optimize table xxxx final;
-  ~~~
+    ~~~sql
+    optimize table xxxx final
+    ~~~
 
-  
+    > 生产一定慎用这个sql, 这个sql的作用还不仅仅是合并分区, 还会对历史数据生产新添加的索引,  如果数据特别多的话, 会导致这个命令卡特别久
 
-  
+    比如我们再次插入数据
 
+    ~~~sql
+    insert into t_order_mt values
+    (101,'sku_001',1000.00,'2020 06 01 12:00:00') ,
+    (102,'sku_002',2000.00,'2020 06 01 11:00:00'),
+    (102,'sku_004',2500.00,'2020 06 01 12:00:00'),
+    (102,'sku_002',2000.00,'2020 06 01 13:00:00')
+    (102,'sku_002',12000.00,'2020 06 01 13:00:00')
+    (102,'sku_002',600.00,'2020 06 02 12:00:00')
+    
+    select * from t_order_mt;
+    ~~~
 
-- 分区字段是**可选**的, 如果不指定的话, 那么就是不分区, 所有数据写到一个分区中
-- 如果分区了, 那么在进行跨分区统计的时候, clickhouse会以分区为单位并行处理多个分区
+    查看数据发现新插入的数据没有纳入任何的分区
 
-- 任何一个批次的数据在写入的时候都会在磁盘上产生一个临时的分区, 不会纳入到任何一个已有的分区
+    <img src="D:\my_code\note\大数据\clickhouse\img\image-20260127114117920.png" alt="image-20260127114117920" style="zoom: 67%;" />
 
-  在写入后的某个时刻(大概10-15分钟之后),  clickhouse会自动执行合并操作, 将临时的分区合并到已有的分区中
+    我们手动optimize之后
 
-![image-20260127215539194](img/clickhouse/image-20260127215539194.png)
-
-`default.sql, system.sql`是数据库的ddl, 
-
-`default, system`是实际保存目录的位置, 他们是一个软链接, 链接到store的目录下
-
-
-
-
-
-`/var/lib/clickhouse/store/of1/of11632a-b17b...`其中
-
-  如果想要手动执行合并的话, 可以使用如下的sql
-
-  ~~~sql
-  optimize table xxxx final
-  ~~~
-
-  > 生产一定慎用这个sql, 这个sql的作用还不仅仅是合并分区, 还会对历史数据生产新添加的索引,  如果数据特别多的话, 会导致这个命令卡特别久
-
-  比如我们再次插入数据
-
-  ~~~sql
-  insert into t_order_mt values
-  (101,'sku_001',1000.00,'2020 06 01 12:00:00') ,
-  (102,'sku_002',2000.00,'2020 06 01 11:00:00'),
-  (102,'sku_004',2500.00,'2020 06 01 12:00:00'),
-  (102,'sku_002',2000.00,'2020 06 01 13:00:00')
-  (102,'sku_002',12000.00,'2020 06 01 13:00:00')
-  (102,'sku_002',600.00,'2020 06 02 12:00:00')
-  
-  select * from t_order_mt;
-  ~~~
-
-  查看数据发现新插入的数据没有纳入任何的分区
-
-  <img src="D:\my_code\note\大数据\clickhouse\img\image-20260127114117920.png" alt="image-20260127114117920" style="zoom: 67%;" />
-
-  我们手动optimize之后
-
-  ~~~sql
+    ~~~sql
   optimize table t_order_mt;
   select * from t_order_mt;
-  ~~~
+    ~~~
 
-  <img src="D:\my_code\note\大数据\clickhouse\img\image-20260127114232482.png" alt="image-20260127114232482" style="zoom:67%;" />
+    <img src="D:\my_code\note\大数据\clickhouse\img\image-20260127114232482.png" alt="image-20260127114232482" style="zoom:67%;" />
 
-  发现已经合并到了之前的分区里面了
+    发现已经合并到了之前的分区里面了
 
-- MergeTree是以列文件+ 索引+ 表定义文件组成的, 如果设置了分区, 那么这些文件会保持到本地磁盘的不同的分区目录
 
-  比如在上面的插入之后, 我们已经有了两个分区了, 我们可以查看一下本地的磁盘
 
-  
+### 排序
 
-  
+在MergeTree中, `order by`是必选的, 你可以指定多个排序字段, 这些数据在分区中会按照排序字段进行排序保存
+
+如果不需要排序, 那么可以设置为`order by tuple()`
+
+### 主键
+
+clickhouse中的主键和其他数据库中的主键不一样, 他不是唯一约束, 意味着可以有两个一样的primary key
+
+通常情况下你不需要指定主键,  clickhouse会默认使用默认使用`order by`字段作为主键
+
+
+
+主键本质上是一个稀疏索引, 首先我们在创建MergeTree表的时候可以指定一个`index_granularity`的参数, 他的默认值为8192, 官方不推荐修改这个值, 除非你的排序列有大量的重复值
+
+`index_granularity`表示的是主键索引的索引力度, 换句话说就是稀疏索引中两个相邻索引间隔多少行数据
+
+
+
+
 
 
 
