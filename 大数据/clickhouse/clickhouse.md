@@ -352,35 +352,47 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
 
   - `20260126_2_2_0,20260126_2_2_0`这两个是是分区值, 里面保存的是对应分区的数据
 
+    其中的`20260126_2_2_0`分别是
+
+    - PartitionId: 当前分区的分区id
+    - 如果当前没有指定分区key, 那么会默认生成一个目录名为all的分区, 所有数据存放在这个目录下面
+      - 如果分区列为整型, 那么就直接使用他本来的值作为分区id
+      - 如果为日期类型, 那么就是日期的字符串作为分区id
+      - 如果是其他的类型, 比如String, Float那么就使用他的128位hash值来作为分区id
+
+    - MinBlockNum: 当前分区中的最小分区编号, 自增类型, 从1开始向上递增, 每产生一个新的分区目录就向上递增一个数字
+  - MaxBlockNum: 当前分区中的最大分区编号, 新创建的分区MinBlockNum等于MaxBlockNum的编号
+    - MergeLevel: 当前分区的合并等级, 分区每次合并都会加1, 合并次数越多, 当前分区中的数据量就越大
+  
   - `detached`目录中保存是已经卸载的分区目录, 这些目录表示的分区已经被卸载了, 不再参与查询, merge, ttl, replica同步, 但是又希望分区数据完整保存, 不进行删除, 随时可以恢复
 
     你可以将一个分区目录手动detach, 使用的如下的sql
 
     ~~~shell
-    ALTER TABLE log_db.log_with_partition_index DETACH PART '20260126_2_2_0';
+  ALTER TABLE log_db.log_with_partition_index DETACH PART '20260126_2_2_0';
     ~~~
-
+  
     这会将`20260126_2_2_0`这个分区目录卸载掉, 之后你可以通过如下的sql将分区目录重新加载回来
-
-    ~~~sql
+  
+  ~~~sql
     ALTER TABLE log_db.log ATTACH PART '20260126_2_2_0';
-    ~~~
-
-  - `format_version.txt`文件中保存的是分区目录的结构版本, 他的内容一般就是1或者2
-
-    可以理解为
-
+  ~~~
+  
+- `format_version.txt`文件中保存的是分区目录的结构版本, 他的内容一般就是1或者2
+  
+  可以理解为
+  
     | 值   | 含义（概念）             |
     | ---- | ------------------------ |
     | 1    | 初代 Atomic 表目录       |
     | 2    | 支持新版 part / txn 机制 |
-
   
-
+  
+  
   之后我们再来看看分区目录中有什么内容
-
+  
   数据是按照分区存放的, 每个分区中都有如下的文件
-
+  
   ~~~shell
   |-- 20260126_2_2_0 # 对应的分区值
   |   |-- checksums.txt 
@@ -388,25 +400,25 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
   |   |-- columns.txt
   |   |-- count.txt
   |   |-- data.bin
-  |   |-- data.cmrk4
+|   |-- data.cmrk4
   |   |-- default_compression_codec.txt
-  |   |-- metadata_version.txt
+|   |-- metadata_version.txt
   |   |-- minmax_ts.idx
-  |   |-- partition.dat
+|   |-- partition.dat
   |   |-- primary.cidx
-  |   |-- serialization.json
+|   |-- serialization.json
   |   |-- skp_idx_idx_duration.cmrk4
   |   |-- skp_idx_idx_duration.idx2
   |   |-- skp_idx_idx_level.cmrk4
   |   `-- skp_idx_idx_level.idx
   ~~~
-
-  - `checksums.txt`文件里面保存了当前分区中所有其他文件的checksums, 用于一致性校验
-
-  - `columns.txt`中保存的是列的信息
-
+  
+  - `checksums.txt`文件里面保存了当前分区中所有其他文件的checksums, 大小, 用于一致性校验
+  
+  - `columns.txt`中保存的是列的名字和类型
+  
     ~~~shell
-[root@cdh 20260125_1_1_0]# cat columns.txt 
+  [root@cdh 20260125_1_1_0]# cat columns.txt 
     columns format version: 1
     5 columns:
     `ts` DateTime
@@ -475,9 +487,9 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
     %5
     ~~~
   
-  - `minmax_ts.idx`是一个建立在ts上面的minmax索引
+  - `minmax_ts.idx`记录了当前分区中分区key的最大最小值
   
-  - `primary.cidx`是一个主键索引
+  - `primary.cidx`是一个主键索引文件
   
   - `data.bin`中保持的是具体的数据, 按列存储, 按 granule（默认 8192 行）切分, 
   
@@ -485,7 +497,7 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
   
     不同列的 substream 数据在 `data.bin` 中顺序写入，解压时按 `columns_substreams.txt` 和 `serialization.json` 解析
   
-  - `data.cmrk4`是granule 索引文件（mark file）
+  - `data.cmrk4`是主键索引在data.bin文件中的变异量, 这样如果在主键的稀疏索引中找到了另一个合适的范围, 那么就可以使用这个文件来快速定位data.bin中的数据
   
   - `skp_idx_idx_duration.cmrk4`和`skp_idx_idx_duration.idx2`
   
@@ -2904,13 +2916,56 @@ Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
 
 
 
+### 排序
+
+在MergeTree中, `order by`是必选的, 你可以指定多个排序字段, 这些数据在分区中会按照排序字段进行排序保存
+
+如果不需要排序, 那么可以设置为`order by tuple()`
+
+
+
+
+
 ### 分区
 
 在创建MergeTree的时候, 你可以指定分区字段, 分区字段的作用是减低扫描范围, 优化查询速度
 
-- partition by是一个**可选**字段, 如果不指定的话, 那么就是不分区, 所有数据写入到一个分区中
+- partition by是一个**可选**字段, 如果不指定的话, 那么就是不分区, 所有数据写入到一个名为`all`的分区中
+
+  ~~~sql
+  CREATE DATABASE IF NOT EXISTS demo;
+  CREATE TABLE demo.mt_nopart
+  (
+      id UInt32,
+      ts DateTime
+  )
+  ENGINE = MergeTree
+  ORDER BY id;
+  INSERT INTO demo.mt_nopart VALUES (1, now());
+  ~~~
+
+  ~~~shell
+  [root@cdh mt_nopart]# pwd
+  /var/lib/clickhouse/data/demo/mt_nopart
+  [root@cdh mt_nopart]# ls
+  all_1_1_0  detached  format_version.txt
+  ~~~
+
+  从上面我们可以看出来, PartitionId为`all`
 
 - **如果指定了分区, 那么不同分区的数据会在store中的不同目录中分开存放, 在进行跨分区统计的时候, ck会以分区为单位并行处理多个分区**
+
+  对应的分区目录是`/var/lib/clickhouse/data/${db_name}/${table_name}/${partitionId}_${minBlockNum}_${maxBlockNum}_${mergeLevel}`
+
+  - PartitionId: 当前分区的分区id
+    - 如果当前没有指定分区key, 那么会默认生成一个目录名为all的分区, 所有数据存放在这个目录下面
+    - 如果分区列为整型, 那么就直接使用他本来的值作为分区id
+    - 如果为日期类型, 那么就是日期的字符串作为分区id
+    - 如果是其他的类型, 比如String, Float那么就使用他的128位hash值来作为分区id
+
+  - MinBlockNum: 当前分区中的最小分区编号, 自增类型, 从1开始向上递增, 每产生一个新的分区目录就向上递增一个数字
+  - MaxBlockNum: 当前分区中的最大分区编号, 新创建的分区MinBlockNum等于MaxBlockNum的编号
+  - MergeLevel: 当前分区的合并等级, 分区每次合并都会加1, 合并次数越多, 当前分区中的数据量就越大
 
 - 任何一个批次的数据写入都会产生一个临时分区，不会纳入任何一个己有的分区。写入后的某个时刻(大概 10-15 分钟后)，clickHouse 会自动执行合并操作
 
@@ -2953,14 +3008,6 @@ Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
 
 
 
-### 排序
-
-在MergeTree中, `order by`是必选的, 你可以指定多个排序字段, 这些数据在分区中会按照排序字段进行排序保存
-
-如果不需要排序, 那么可以设置为`order by tuple()`
-
-
-
 ### 主键
 
 clickhouse中的主键和其他数据库中的主键不一样, 他不是唯一约束, 意味着可以有两个一样的primary key
@@ -2976,6 +3023,8 @@ clickhouse中的主键和其他数据库中的主键不一样, 他不是唯一�
 **<font color=red>在设置主键的时候, 主键必须是`order by`的前缀字段, 比如`order by`字段是 `(id, sku_id)` 那么主键必须是` id `或者`(id, sku_id)`</font>**
 
 
+
+> 主键的一级索引只有在针对主键字段进行查询的时候有加速作用, 否则没有加速作用
 
 
 
