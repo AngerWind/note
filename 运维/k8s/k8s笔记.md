@@ -74,8 +74,8 @@ kubectl delete pod --all # 删除所有pod
 kubectl delete pod -n namespace_name --all # 删除一个namespace中所有的pod
 kubectl delete pod -n namespace_name pod_name # 删除一个pod, 如果这个pod被deployment管理了, 那么deployment还会重新创建出一个pod副本
 
-
-kubectl exec  -n namespace_name pod_name -c container_name -it -- /bin/bash # 进入容器内部, 如果pod只有一个container, 那么可以省略-c参数
+kubect exec -it -n namespace_name deployment/deployment_name -c container_name -- bash # 进入指定的deployment的内部, 如果有多个副本, 那么会随机挑选一个副本, 如果pod只有一个container, 那么可以省略-c参数
+kubectl exec  -it -n namespace_name pod_name -c container_name  -- /bin/bash # 进入容器内部, 如果pod只有一个container, 那么可以省略-c参数
 kubectl log -n namespace_name pod_name -c container_name # 查看pod中指定容器的日志
 
 kubectl get pod --show-labels # 查看pod的label
@@ -4295,6 +4295,8 @@ spec:
 
 他的主要的功能和NodePort是一样的, 都是在每一台机器上创建一个端口, 访问这个端口就可以负载均衡的访问到对应的Pod
 
+> 他也可以设置nodePort端口
+
 但是他和NodePort的区别在于:
 
 - 我们不需要手动的在NodePort前面加一个nginx, 来实现高可用, 而是通过云供应商提供的服务, 将我们的请求负载均衡到各个Node节点上
@@ -5014,6 +5016,16 @@ https://kubernetes.github.io/ingress-nginx/deploy/#quick-start
 
 
 
+> 公司的ingress是使用的kong-ingress, 他是一个基于openstack+lua实现的ingress方案
+>
+> github地址为https://github.com/Kong/kubernetes-ingress-controller
+>
+> 官网地址为https://developer.konghq.com/
+>
+> 他相较于nginx多了很多功能, 比如鉴权, 限流, 审计, 多租户, Saas, B2B, 统一网关
+
+
+
 要使用上面这个项目, 我们首先要在k8s集群中部署ingress-nginx的相关pod和svc
 
 ~~~shell
@@ -5048,6 +5060,18 @@ kubectl get pods --namespace=ingress-nginx
 
 
 
+需要注意的是, 一个集群上面可以安装多个Ingress, 他们只需要监听不同的端口即可, 他们可以有不同的转发规则
+
+如果你的集群上面有多个ingress, 那么你可以通过如下的命令来查看
+
+~~~shell
+[root@node-182 ingress]# kubectl get ingressclass -A
+NAME    CONTROLLER             PARAMETERS   AGE
+nginx   k8s.io/ingress-nginx   <none>       27m
+~~~
+
+
+
 上面我们通过ingress-nginx创建了对应的controller, 和对应的svc, 那么就要通过yaml文件来定义外部请求到内部svc的转发规则了
 
 ~~~yaml
@@ -5059,6 +5083,7 @@ spec:
   # # 需要添加这个,否则ingress不会添加到nginx.config中. 参考https://www.cnblogs.com/dudu/p/15548461.html
   # 这个字段主要用于k8s集群中, 可能会部署多个ingress实现, 那么会有多个ingress controller
   # 这个字段用于指定当前的ingress规则到底归属于哪个ingress controller的
+  # 可以通过kubectl get ingressclassname 来查看有多少个ingress
   ingressClassName: nginx 
   rules:
     - host: www1.atguigu.com # 指定访问的域名

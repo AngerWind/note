@@ -362,12 +362,13 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
 
     - MinBlockNum: 当前分区中的最小分区编号, 自增类型, 从1开始向上递增, 每产生一个新的分区目录就向上递增一个数字
   - MaxBlockNum: 当前分区中的最大分区编号, 新创建的分区MinBlockNum等于MaxBlockNum的编号
-    - MergeLevel: 当前分区的合并等级, 分区每次合并都会加1, 合并次数越多, 当前分区中的数据量就越大
+    
+  - MergeLevel: 当前分区的合并等级, 分区每次合并都会加1, 合并次数越多, 当前分区中的数据量就越大
+    
+- `detached`目录中保存是已经卸载的分区目录, 这些目录表示的分区已经被卸载了, 不再参与查询, merge, ttl, replica同步, 但是又希望分区数据完整保存, 不进行删除, 随时可以恢复
   
-  - `detached`目录中保存是已经卸载的分区目录, 这些目录表示的分区已经被卸载了, 不再参与查询, merge, ttl, replica同步, 但是又希望分区数据完整保存, 不进行删除, 随时可以恢复
-
-    你可以将一个分区目录手动detach, 使用的如下的sql
-
+  你可以将一个分区目录手动detach, 使用的如下的sql
+  
     ~~~shell
   ALTER TABLE log_db.log_with_partition_index DETACH PART '20260126_2_2_0';
     ~~~
@@ -382,10 +383,10 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
   
   可以理解为
   
-    | 值   | 含义（概念）             |
-    | ---- | ------------------------ |
-    | 1    | 初代 Atomic 表目录       |
-    | 2    | 支持新版 part / txn 机制 |
+  | 值   | 含义（概念）             |
+  | ---- | ------------------------ |
+  | 1    | 初代 Atomic 表目录       |
+  | 2    | 支持新版 part / txn 机制 |
   
   
   
@@ -2993,7 +2994,7 @@ Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
 
     查看数据发现新插入的数据没有纳入任何的分区
 
-    <img src="D:\my_code\note\大数据\clickhouse\img\image-20260127114117920.png" alt="image-20260127114117920" style="zoom: 67%;" />
+    <img src="img\image-20260127114117920.png" alt="image-20260127114117920" style="zoom: 67%;" />
 
     我们手动optimize之后
 
@@ -3002,7 +3003,7 @@ Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
   select * from t_order_mt;
     ~~~
 
-    <img src="D:\my_code\note\大数据\clickhouse\img\image-20260127114232482.png" alt="image-20260127114232482" style="zoom:67%;" />
+    <img src="img\image-20260127114232482.png" alt="image-20260127114232482" style="zoom:67%;" />
 
     发现已经合并到了之前的分区里面了
 
