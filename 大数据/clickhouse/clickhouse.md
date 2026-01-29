@@ -364,7 +364,7 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
   - MaxBlockNum: 当前分区中的最大分区编号, 新创建的分区MinBlockNum等于MaxBlockNum的编号
     
   - MergeLevel: 当前分区的合并等级, 分区每次合并都会加1, 合并次数越多, 当前分区中的数据量就越大
-    
+  
 - `detached`目录中保存是已经卸载的分区目录, 这些目录表示的分区已经被卸载了, 不再参与查询, merge, ttl, replica同步, 但是又希望分区数据完整保存, 不进行删除, 随时可以恢复
   
   你可以将一个分区目录手动detach, 使用的如下的sql
@@ -3158,6 +3158,18 @@ ALTER TABLE t_order_mt3
 MODIFY COLUMN total_amount TTL NULL;
 ~~~
 
+涉及判断的字段必须是 Date 或者 Datetime 类型，推荐使用分区的日期字段。
+能够使用的时间周期：
+
+- SECOND
+- MINUTE
+- HOUR
+- DAY
+- WEEK
+- MONTH
+- QUARTER
+- YEAR  
+
 
 
 
@@ -3219,6 +3231,163 @@ MODIFY TTL NULL;
 
 ## SummingMergeTree
 
+
+
+
+
+# SQL操作
+
+## Insert
+
+基本和标准的SQL一致
+
+- 比如插入
+
+  ~~~sql
+  insert into [table_name] values(…),(….)
+  ~~~
+
+- 从表到表的插入
+
+  ~~~sql
+  insert into [table_name] select a,b,c from [table_name_2]
+  ~~~
+
+
+
+## Update和Delete
+
+Clickhouse提供了Delete和Update的能力, 但是他和一般的OLTP数据库不一样, **他是一种很重的操作, 而且不支持事务**
+
+重的原因是每次修改或者删除都要导致放弃目标数据的原有分区, 重建新的分区, 所有要修改的时候尽量做批量的修改, 而不要进行频繁的小的修改
+
+由于操作比较重, 所以在Update和Delete的时候, 分两步执行, 同步执行的部分其实只是新增数据, 新增分区并把就分区打上逻辑失效的标记, 直到触发分区合并的时候, 才会删除旧数据并释放磁盘空间
+
+
+
+Clickhouse的Update和Delete和标准的sql不太一样, 使用的是`alter table`语法
+
+1. 删除操作
+
+   ~~~sql
+   alter table t_order_smt delete where sku_id ='sku_001';
+   ~~~
+
+2. 修改操作
+
+   ~~~sql
+   alter table t_order_smt update total_amount=toDecimal32(2000.00,2) where id
+   =102;
+   ~~~
+
+
+
+## Select
+
+ClickHouse中的Select与标准的SQL差别不大
+
+- 支持子查询
+- 支持CTE
+- 支持各种JOIN, 但是JOIN操作无法使用缓存, 所以即使是两次相同的JOIN语句, ClickHouse也会视为两条新的SQL
+- 窗口函数
+- 不支持自定义函数
+- Group By操作增加了with rollup, with cube, with total操作用来计算小计和总和
+
+
+
+比如下面的案例
+
+~~~sql
+insert into t_order_mt values
+(101,'sku_001',1000.00,'2020-06-01 12:00:00'),
+(101,'sku_002',2000.00,'2020-06-01 12:00:00'),
+(103,'sku_004',2500.00,'2020-06-01 12:00:00'),
+(104,'sku_002',2000.00,'2020-06-01 12:00:00'),
+(105,'sku_003',600.00,'2020-06-02 12:00:00'),
+(106,'sku_001',1000.00,'2020-06-04 12:00:00'),
+(107,'sku_002',2000.00,'2020-06-04 12:00:00'),
+(108,'sku_004',2500.00,'2020-06-04 12:00:00'),
+(109,'sku_002',2000.00,'2020-06-04 12:00:00'),
+(110,'sku_003',600.00,'2020-06-01 12:00:00');
+~~~
+
+`with rollup`的作用是从右到左丢掉维度进行小计
+
+~~~sql
+-- 这个sql一共会返回三个结果
+-- 一个是 select id , sku_id, sum(total_amount) from t_order_mt group by id, sku_id的结果
+-- 第二个是select id , sku_id, sum(total_amount) from t_order_mt group by id的结果, 因为维度列sku_id被丢掉, 所以所有行的sku_id都被设置为了默认值
+-- 第三个是select id , sku_id, sum(total_amount) from t_order_mt的结果, 因为id和sku_id都被丢掉了, 所以所有行都是返回0和空字符串
+select id , sku_id, sum(total_amount) from t_order_mt group by
+id, sku_id with rollup;
+~~~
+
+![image-20260129225645809](img/clickhouse/image-20260129225645809.png)
+
+`with cube`的作用是从右到左丢掉维度列进行小计, 再从左到右去掉维度列进行小计
+
+~~~sql
+-- 这个sql一共有4个结果
+-- group by id, sku_id
+-- group by id
+-- group by
+-- group by sku_id
+select id , sku_id,sum(total_amount) from t_order_mt group by
+id,sku_id with cube;
+~~~
+
+![image-20260129225813052](img/clickhouse/image-20260129225813052.png)
+
+`with totals`丢掉所有维度列
+
+~~~sql
+-- 这个sql有两个结果
+-- group by id, sku_id
+-- group by
+select id , sku_id,sum(total_amount) from t_order_mt group by
+id,sku_id with totals;
+~~~
+
+![image-20260129225938048](img/clickhouse/image-20260129225938048.png)
+
+
+
+## Alter
+
+同 MySQL 的修改字段基本一致
+
+- 新增字段
+
+  ~~~sql
+  alter table tableName add column newcolname String after col1;
+  ~~~
+
+- 修改字段类型
+
+  ~~~sql
+  alter table tableName modify column newcolname String;
+  ~~~
+
+- 删除字段
+
+  ~~~sql
+  alter table tableName drop column newcolname;
+  ~~~
+
+
+
+
+
+
+
+
+## 导出数据
+
+```shell
+clickhouse-client \
+--query "select * from t_order_mt where create_time='2020-06-01 12:00:00'" \
+--format CSVWithNames > /opt/module/data/rs1.csv
+```
 
 
 
