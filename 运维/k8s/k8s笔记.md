@@ -5905,19 +5905,23 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
          image: bash
          command: ["/bin/sh", "-c", "env | grep color"]
          env:
-           - name: color.good 
-             valueFrom: # 将configmap中的key-value挂载到env中
+           # 这种方式用于将指定configmap中指定的key, 挂载到指定的环境变量中
+           # 这会将env-config.color.good设置为环境变量color.good1
+           - name: color.good1  # 挂载后的环境变量的名称
+             valueFrom:
                configMapKeyRef:
                  name: env-config # configmap的名字
                  key: color.good # configmap中key的名字
-           - name: color.bad
+           - name: color.bad1
              valueFrom:
                configMapKeyRef:
                  name: env-config
                  key: color.bad
+         # 这种方式用于将configmap中所有的key-value一次性全部挂载到环境变量中
+         # 之后环境变量中就有color.warn: yellow, color.forbidden: black这些环境变量了
          envFrom:
            - configMapRef:
-               name: env-config1 # configmap的名字, 将整个configmap中的key-value挂载到环境变量中
+               name: env-config1 # config的名字
      restartPolicy: Never
    ~~~
 
@@ -5957,7 +5961,7 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
          command: ["/bin/sh", "-c", "ls /etc/config & cat /etc/config/* & sleep 600s"]
          volumeMounts:
           - name: v1 # 要使用的存储卷的名字
-            mountPath: /etc/config # 将configmap env-config中的所有kv都挂载到/etc/config下, 每个key一个文件
+            mountPath: /etc/config # 将configmap env-config中的所有kv都挂载到/etc/config下, 每个key一个文件, 内容是对应的value
      volumes: 
        - name: v1 # 存储卷的名字
          configMap:
@@ -6000,7 +6004,7 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
      containers:
        - name: test-container1
          image: bash
-         command: ["/bin/sh", "-c", "ls /etc/config & cat /etc/config/* & sleep 600s"]
+         command: ["/bin/sh", "-c", "sleep 600s"]
          volumeMounts:
           - name: v1 # 要使用的存储卷的名字
             mountPath: /etc/config # 要挂载的目录
@@ -6010,13 +6014,26 @@ kubectl delete cm -n namespace_name cm_name # 删除configmap
            name: env-config # configmap的名字
            items:
            - key: application.properties # 要挂载的key
-             path: application.properties # 挂载后的文件的名称
-           - key: application-dev.propertie
-             path: application-dev.propertie
+             path: application222.properties # 挂载后的文件的名称
+           - key: application-dev.properties
+             path: application-dev222.properties
      restartPolicy: Never
    ~~~
 
-   之后就会在容器中的`/etc/config`目录下生成两个文件`application.properties`和`application-dev.propertie`
+   之后就会在容器中的`/etc/config`目录下生成两个文件`application222.properties`和`application-dev222.properties`
+   
+   ~~~shell
+   [root@node-182 tmp]# kubectl exec   test  -- /bin/bash  -c "ls /etc/config && echo '-----' &&  cat /etc/config/*"
+   application-dev222.propertie
+   application222.properties
+   -----
+   server.port=8081
+   cc=dd
+   server.port=8080
+   aaa=bbb
+   ~~~
+   
+   
 
 
 
@@ -7064,7 +7081,7 @@ spec:
 
 ### 自动创建的pvc
 
-当然你也可以直接在创建Controller的时候, 直接创建要使用的pvc来
+当然你也可以直接在创建Controller(deployment, statefulset, deamonset)的时候, 直接创建要使用的pvc来
 
 ~~~shell
 # 创建headless service
@@ -7322,13 +7339,343 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.containers[0].name
-
-
 ```
 
 
 
 
+
+## 挂载和覆盖
+
+### configmap的挂载与覆盖
+
+在使用config挂载为文件的时候, 如果你的容器的`/data`下面已经有了文件, 那么不管你使用挂载整个configmap到`/data`下面, 还是使用items的方式将部分的key挂载到`/data`下面, 都会导致`/data`中的内容被全部覆盖
+
+**因为不管是那种方式, k8s的内部都会先生成一个volume, 这个volume中包含了你在yaml中指定的文件, 然后将这个volume挂载为`/data`, 所以会导致/data被一整个覆盖**
+
+下面是测试案例
+
+~~~shell
+# 拉取 nginx:latest 镜像
+docker pull nginx:latest
+
+# 运行一个容器
+docker run -d --name nginx-container nginx:latest
+
+# 进入容器并创建 /data/config1.txt 和 /data/config2.txt 文件
+docker exec -it nginx-container sh -c 'mkdir -p /data && echo "This is config1.txt content" > /data/config1.txt'
+docker exec -it nginx-container sh -c 'mkdir -p /data && echo "This is config2.txt content" > /data/config2.txt'
+
+# 提交更改为新的镜像
+docker commit nginx-container nginx-with-config
+
+# 查看新的镜像
+docker images | grep nginx-with-config
+
+# 生成对应的yaml文件
+cat << EOF > bb.yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: example-config
+data:
+  config1.txt: |
+    This is the content from ConfigMap for config1.txt
+  config3.txt: |
+    This is the content from ConfigMap for config3.txt
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: configmap-test-pod
+spec:
+  containers:
+  - name: test-container
+    image: nginx-with-config:latest  # 使用你生成的新的镜像
+    imagePullPolicy: Never
+    volumeMounts:
+    - name: config-volume
+      mountPath: /data  # 将整个 ConfigMap 挂载到 /data 目录下
+  volumes:
+  - name: config-volume
+    configMap:
+      name: example-config
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: configmap-test-pod2
+spec:
+  containers:
+  - name: test-container
+    image: nginx-with-config:latest  # 使用你生成的新的镜像
+    imagePullPolicy: Never
+    volumeMounts:
+    - name: config-volume
+      mountPath: /data  # 将部分的key挂载到/data下
+  volumes:
+  - name: config-volume
+    configMap:
+      name: example-config
+      items:
+        - key: config1.txt
+          path: config1.txt1  # 将 config1.txt 挂载为 config1.txt1
+        - key: config3.txt
+          path: config3.txt1  # 将 config3.txt 挂载为 config3.txt1
+EOF
+
+kubectl apply -f bb.yaml
+~~~
+
+之后我们来看看容器中的`/data`目录下面到底有什么文件
+
+~~~shell
+[root@node173 tmp]# kubectl exec configmap-test-pod -- /bin/bash -c "ls /data && echo '----' && cat /data/*"
+config1.txt
+config3.txt
+----
+This is the content from ConfigMap for config1.txt
+This is the content from ConfigMap for config3.txt
+[root@node173 tmp]# kubectl exec configmap-test-pod2 -- /bin/bash -c "ls /data && echo '----' && cat /data/*"
+config1.txt1
+config3.txt1
+----
+This is the content from ConfigMap for config1.txt
+This is the content from ConfigMap for config3.txt
+~~~
+
+可以看到, 不管是哪种方式,  `/data`下面的全部文件都被覆盖了
+
+对于这个问题, 我们可以通过subPath这个字段来解决, 比如下面的yaml
+
+~~~yaml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: configmap-test-pod3
+spec:
+  containers:
+  - name: test-container
+    image: nginx-with-config:latest  # 使用你生成的新的镜像
+    imagePullPolicy: Never
+    volumeMounts:
+    - name: config-volume
+      subPath: config1.txt
+      mountPath: /data/config1.txt2
+    - name: config-volume
+      subPath: config3.txt
+      mountPath: /data/confi3.txt2
+      
+  volumes:
+  - name: config-volume
+    configMap:
+      name: example-config
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: configmap-test-pod4
+spec:
+  containers:
+  - name: test-container
+    image: nginx-with-config:latest  # 使用你生成的新的镜像
+    imagePullPolicy: Never
+    volumeMounts:
+    # 这里指定将config-volume这个volume中的config1.txt1, 挂载为/data/cofnig1.txt2
+    # 将config-volume中的config3.txt1, 挂载为/data/config3.txt2
+    # 而不进行一整个的覆盖,
+    - name: config-volume
+      subPath: config1.txt1
+      mountPath: /data/config1.txt2
+    - name: config-volume
+      subPath: config3.txt1
+      mountPath: /data/config3.txt2
+      
+  volumes:
+  # 这里指定新生成一个volume, 名为config-volume
+  # 然后将example-config中的config1.txt和config3.txt保存到volume中, 文件名为config1.txt1和config3.txt1
+  - name: config-volume
+    configMap:
+      name: example-config
+      items:
+        - key: config1.txt 
+          path: config1.txt1
+        - key: config3.txt
+          path: config3.txt1      
+~~~
+
+我们来看看两个pod中的内容
+
+~~~shell
+[root@node173 tmp]# kubectl exec configmap-test-pod3 -- /bin/bash -c "ls /data && echo '----' && cat /data/*"
+confi3.txt2
+config1.txt
+config1.txt2
+config2.txt
+----
+This is the content from ConfigMap for config2.txt
+This is config1.txt content
+This is the content from ConfigMap for config1.txt
+This is config2.txt content
+[root@node173 tmp]# kubectl exec configmap-test-pod4 -- /bin/bash -c "ls /data && echo '----' && cat /data/*"
+config1.txt
+config1.txt2
+config2.txt
+config3.txt2
+----
+This is config1.txt content
+This is the content from ConfigMap for config1.txt
+This is config2.txt content
+This is the content from ConfigMap for config2.txt
+~~~
+
+可以看到, 不管是哪种方式都没有覆盖镜像中原有的config2.txt
+
+
+
+### PV的挂载与覆盖
+
+对于PV也是类似的, 如果你的镜像中的`/data`已经有文件了, 那么你将一个pv挂载为/data, 会导致`/data`中的内容被全部覆盖
+
+如果不想要`/data`被全部覆盖的话,  你可以使用subPath来指定挂载的子目录
+
+下面是测试案例与解决办法
+
+~~~shell
+# 拉取 nginx:latest 镜像
+docker pull nginx:latest
+
+# 运行一个容器
+docker run -d --name nginx-container nginx:latest
+
+# 进入容器并创建 /data/config1.txt 和 /data/config2.txt 文件
+docker exec -it nginx-container sh -c 'mkdir -p /data && echo "This is config1.txt content" > /data/config1.txt'
+docker exec -it nginx-container sh -c 'mkdir -p /data/nginx/ && echo "This is config2.txt content" > /data/nginx/config2.txt'
+
+# 提交更改为新的镜像
+docker commit nginx-container nginx-with-data
+
+# 查看新的镜像
+docker images | grep nginx-with-data
+~~~
+
+之后我们使用如下的yaml来验证文件和目录的覆盖
+
+~~~shell
+#  在pv中创建对应的目录和文件
+mkdir -p /tmp/test-pv/aa
+touch /tmp/test-pv/aa/aa.txt
+touch /tmp/test-pv/bb.txt
+
+[root@node173 tmp]# tree /tmp/text-pv/
+/tmp/text-pv/
+├── aa
+│   └── aa.txt
+└── bb.txt
+~~~
+
+之后我们创建对应的yaml
+
+~~~yaml
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: test-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /tmp/test-pv # 使用主机目录，测试时可以替换为具体的路径
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: test-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pv-test-pod
+spec:
+  containers:
+  - name: test-container
+    image: nginx-with-data:latest  # 使用包含文件的自定义镜像
+    imagePullPolicy: Never
+    volumeMounts:
+    - name: pv-storage
+      mountPath: /data  # 将 PV 挂载到 /data
+  volumes:
+  - name: pv-storage
+    persistentVolumeClaim:
+      claimName: test-pvc
+---
+~~~
+
+之后我们来看`/data`下面的文件
+
+~~~shell
+[root@node173 tmp]# kubectl exec pv-test-pod -- bash -c "ls /data"
+aa
+bb.txt
+~~~
+
+可以看到`/data`被一整个覆盖
+
+之后我们在用subPath的yaml文件来试试
+
+~~~yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pv-test-pod1
+spec:
+  containers:
+  - name: test-container
+    image: nginx-with-data:latest  # 使用包含文件的自定义镜像
+    imagePullPolicy: Never
+    volumeMounts:
+    - name: pv-storage
+      subPath: bb.txt
+      mountPath: /data/bb.txt1
+    - name: pv-storage
+      subPath: aa
+      mountPath: /data/aa1
+  volumes:
+  - name: pv-storage
+    persistentVolumeClaim:
+      claimName: test-pvc
+~~~
+
+我们看看`/data`中的内容
+
+~~~shell
+[root@node173 tmp]# kubectl exec pv-test-pod1 -- bash -c "ls /data"
+aa1
+bb.txt1
+config1.txt
+nginx
+~~~
+
+可以看到, 使用了subPath之后, 他就不会讲/data一整个覆盖了
+
+
+
+### 总结
+
+实际上在使用configmap或者pv进行挂载的时候, 如果不使用subPath, 那么你说要挂载到`/data`, k8s就会将一整个volume挂载为/data, 这会导致镜像/data中原有的文件被全部覆盖
+
+如果你使用了subPath的话, 那么语义就变成了我要将volume中指定的文件或者目录, 挂载为/data下指定的文件或者目录, 他就不会一整个volume挂载为/data了, 避免了全部覆盖
 
 
 
