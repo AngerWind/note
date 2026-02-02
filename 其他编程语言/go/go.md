@@ -46,7 +46,7 @@ CGO_ENABLED=0  GOOS=windows  GOARCH=amd64  go build main.go
 CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build main.go
 CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build main.go
 
-// windows下编译为mac和linux64位可执行程序
+// windows下使用cmd编译为mac和linux64位可执行程序
 SET CGO_ENABLED=0
 SET GOOS=darwin
 SET GOARCH=amd64
@@ -55,6 +55,12 @@ go build main.go
 SET CGO_ENABLED=0
 SET GOOS=linux
 SET GOARCH=amd64
+go build main.go
+
+// windows下使用powershell编译为linux64位的可执行程序
+$env:CGO_ENABLED=0
+$env:GOOS="linux"
+$env:GOARCH="amd64"
 go build main.go
 ~~~
 
@@ -2521,20 +2527,26 @@ GO111MODULE一共具有三个值:
 go mod init // 初始化项目, 并生成go.mod文件
 
 go get // 根据go.mod中指定的依赖包, 下载到$GOMODCACHE中
-go get -u // 同上, 但是会将go.mod中依赖包的版本更新为同一个大版本的最新版本
+go get -u // 同上, 但是会将go.mod中直接依赖(require)的版本更新为同一个大版本的最新版本
+go get -u all // 下载并更新go.mod中需要的所有依赖, 包括直接依赖和间接依赖到同一个大版本的追星版本
 
 go get github.com/gin-gonic/gin // 如果go.mod中指定了版本, 那么下载指定, 否则下载最新版本, 并将依赖设置到go.mod中
-go get -u github.com/gin-gonic/gin // 如果go.mdo中指定了版本, 那么下载同一个大版本的最新版本, 否则下载最新的版本, 并更新go.mod
+go get -u github.com/gin-gonic/gin // 如果go.mod中指定了版本, 那么下载同一个大版本的最新版本, 否则下载最新的版本, 并更新go.mod
 go get github.com/gin-gonic/gin@latest // 下载最新版本的依赖, 并跟新go.mod
 go get -u github.com/gin-gonic/gin@1.6.2 // 下载指定版本的依赖, 并更新go.mod
 
-go mod tidy // 移除go.mod中没有用到的依赖
 go clean -modcache // 移除$GOMODCACHE中下载的所有依赖包
 go mod download // 按照go.mod中指定的版本下载依赖包
 go mod verify // 校验模块的完整性
 
 go mod why github.com/xxx/yyy // 显示当前项目为什么需要依赖yyy这个模块
 go mod graph // 显示依赖的关系图谱
+
+// 1. 移除代码中没有使用到, 但是在go.mod中声明了的依赖
+// 2. 如果在代码中使用了某些依赖, 但是没有在go.mod中声明, 那么tidy会将依赖添加到go.mod中
+// 3. 优化依赖的版本, 确保依赖之间没有版本冲突
+// 4. 更新go.sum, 和go.mod保持一致
+go mod tidy // 
 ~~~
 
 
@@ -2545,7 +2557,7 @@ go mod graph // 显示依赖的关系图谱
 
 1. 检查`$GOPATH/pkg/mod` 目录下是否已经下载过了
 2. 如果go module proxy可用的话, 那么会从go module proxy中下载依赖, 通常是`https://proxy.golang.org`
-3. 如果go module proxy不可用的话, 那么go会直接访问vcs仓库(github, gitlab), 来下载依赖, 比如g`o get -u github.com/gin-gonic/gin@1.6.2`, Go 将会访问 `https://github.com/gin-gonic/gin`，并获取 `1.6.2` 版本的源代码。
+3. 如果go module proxy不可用的话, 那么go会直接访问vcs仓库(github, gitlab), 来下载依赖, 比如`go get -u github.com/gin-gonic/gin@1.6.2`, Go 将会访问 `https://github.com/gin-gonic/gin`，并获取 `1.6.2` 版本的源代码。
 
 
 
@@ -5567,7 +5579,7 @@ clean:
 
 一般情况下, 任务都是需要生成一个文件的, 并且使用文件名来作为任务的名称
 
-但是如果任务不是要生成一个文件, 而是其他的作用, 那么他就被称为伪目录
+但是如果任务不是要生成一个文件, 而是其他的作用, 那么他就被称为伪目标
 
 比如上面的clean
 
