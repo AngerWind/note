@@ -7679,6 +7679,173 @@ nginx
 
 
 
+
+
+## 挂载传播
+
+kubernetes 的 mountPropagation 翻译成中文就是挂载传播。挂载传播提供了共享卷挂载的能力, 它允许在同一个 Pod, 甚至同一个节点内, 在多个容器之间共享卷的挂载。 说白了就是在容器或 host 内的挂载目录中 再 mount 了一个别的挂载。
+
+kubernetes 中 卷的挂载传播由 Container.volumeMounts 的 mountPropagation 字段控制。它的值包含如下三种
+
+- None: - 这种卷挂载将不会收到任何后续由 host 创建的在这个卷上或其子目录上的挂载。同样的, 由容器创建的挂载在 host 上也是不可见的。这是默认的模式。这个其实很好理解, 就是容器内和 host 的后续挂载完全隔离
+- HostToContainer: - 这种卷挂载将会收到之后所有的由 host 创建在该卷上或其子目录上的挂载。换句话说, 如果 host 在卷挂载内挂载的任何内容, 在容器中都是可见的。同样, 如果任何具有 Bidirectional 的 Pod 挂载传播到该卷挂载上, 具有 HostToContainer 的挂载传播都可以看见
+- Bidirectional: - 这种挂载机制和 HostToContainer 类似。此外, 任何在容器中创建的挂载都会传播到 host, 然后传播到使用相同卷的所有 Pod 的所有容器。注意: Bidirectional 挂载传播是很危险的。可能会危害到 host 的操作系统。因此只有特权 securityContext: privileged: true 容器在允许使用它
+
+![在这里插入图片描述](img/2c331f3b4d4cb96036690256334d016a.png)
+
+**mountPropagation: None**
+
+~~~yaml
+[root@k8s-master-1 mountPropagation]# cat mountPropagation_none.yaml 
+apiVersion: v1
+kind: Pod
+metadata:
+    name: mount-none
+spec:
+    containers:
+    - name: busybox
+      image: busybox:1.28
+      command: ["/bin/sh","-c","sleep 300000"]
+      volumeMounts:
+      - name: testmount
+        mountPath: /mnt
+        mountPropagation: None
+    volumes:
+    - name: testmount
+      hostPath:
+        path: /data/mounttest
+~~~
+
+~~~shell
+# 将本机的/var 目录挂载过来
+	mount --bind /var /data/mounttest
+
+# 本机查看目录，已挂载过来
+[root@k8s-master-1 mountPropagation]# ls /data/mounttest/
+adm  cache  crash  db  empty  games  gopher  kerberos  lib  local  lock  log  mail  nis  opt  preserve  run  spool  tmp  yp
+
+# 查看容器内目录，可以发现宿主机挂载的目录在容器内并没有看到
+[root@k8s-master-1 mountPropagation]# kubectl exec mount-none -- ls /mnt
+[root@k8s-master-1 mountPropagation]# 
+
+# 卸载挂载点
+umount /data/mounttest
+~~~
+
+**mountPropagation: HostToContainer**
+
+~~~yaml
+[root@k8s-master-1 mountPropagation]# cat mountPropagation_hosttocontainer.yaml 
+apiVersion: v1
+kind: Pod
+metadata:
+    name: mount-host-to-container
+spec:
+    containers:
+    - name: busybox
+      image: busybox:1.28
+      command: ["/bin/sh","-c","sleep 300000"]
+      volumeMounts:
+      - name: testmount
+        mountPath: /mnt
+        mountPropagation: HostToContainer
+    volumes:
+    - name: testmount
+      hostPath:
+        path: /data/mounttest
+~~~
+
+~~~shell
+# 将本机的/var 目录挂载过来
+mount --bind /var /data/mounttest
+
+# 本机查看目录，已挂载过来
+[root@k8s-master-1 mountPropagation]# ls /data/mounttest/
+adm  cache  crash  db  empty  games  gopher  kerberos  lib  local  lock  log  mail  nis  opt  preserve  run  spool  tmp  yp
+
+# 查看容器文件夹内容，并创建一个文件，可见宿主机挂载的文件在容器内可见
+[root@k8s-master-1 mountPropagation]# kubectl exec mount-host-to-container -- /bin/sh -c "touch /mnt/a.txt && ls /mnt"
+adm  a.txt  cache  crash  db  empty  games  gopher  kerberos  lib  local  lock  log  mail  nis  opt  preserve  run  spool  tmp  yp
+
+# 查看挂载点，宿主机也可见
+[root@k8s-master-1 mountPropagation]# ls /data/mounttest/
+adm  a.txt  cache  crash  db  empty  games  gopher  kerberos  lib  local  lock  log  mail  nis  opt  preserve  run  spool  tmp  yp
+~~~
+
+**mountPropagation: Bidirectional**
+
+~~~shell
+apiVersion: v1
+kind: Pod
+metadata:
+    name: mount-bidir-a
+spec:
+    containers:
+    - name: busybox
+      image: busybox:1.28
+      command: ["/bin/sh","-c","sleep 300000"]
+      volumeMounts:
+      - name: testmount
+        mountPath: /mnt
+        mountPropagation: Bidirectional
+      securityContext:
+        privileged: true
+    volumes:
+    - name: testmount
+      hostPath:
+        path: /data/mounttest
+---
+apiVersion: v1
+kind: Pod
+metadata:
+    name: mount-bidir-b
+spec:
+    containers:
+    - name: busybox
+      image: busybox:1.28
+      command: ["/bin/sh","-c","sleep 300000"]
+      volumeMounts:
+      - name: testmount
+        mountPath: /mnt
+        mountPropagation: Bidirectional
+      securityContext:
+        privileged: true
+    volumes:
+    - name: testmount
+      hostPath:
+        path: /data/mounttest
+---
+~~~
+
+~~~shell
+# 在容器mount-bidir-a创建挂载点
+[root@k8s-master-1 mountPropagation]# kubectl exec mount-bidir-a -- /bin/sh -c "mount --bind /var /mnt && ls /mnt"
+run
+spool
+www
+
+# 在host 上查看目录, 这里可以看到已经将挂载传递到了host上
+[root@k8s-master-1 mountPropagation]# ls /data/mounttest/
+run  spool  www
+
+# 查看mount-bidir-b挂载点，可以发现也已经将挂载传递到了 另一个容器b上
+[root@k8s-master-1 mountPropagation]# kubectl exec mount-bidir-b -- ls /mnt
+run
+spool
+www
+~~~
+
+**linux mount 的几种类型**
+
+mount 分为下面几种:
+
+- shared mount: - 相当于上面所说的 Bidirectional 的挂载传播。
+- slave mount: - 每个 slave mount 都有一个 shared master mount, 挂载传播只能从 master -> slave, 等同于上面的 HostToContainer, host 是 master，container 是 slave。
+- private mount: - 很明显, private 就是相当于 None，挂载不会向任何一方传播。
+- unbindable mount: - 其实就是 unbindable private mount, 也就是不允许使用 –bind 的挂载。
+
+
+
 ## 存储卷的细节
 
 - 对于configmap类型的存储卷, 可以配置item, 这样可以不用挂载全部的文件和目录到pod中
