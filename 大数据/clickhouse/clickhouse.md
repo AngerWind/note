@@ -516,7 +516,77 @@ store/684/684ec291-3536-4f23-9116-7bc4943a29bb/
 
 # 多节点集群安装
 
+1. 首先在三个节点上面都按照上面的步骤进行单机安装
 
+2. 启动Zookeeper
+
+3. 在clickhouse的配置文件指定zk的地址, 有两种方式
+
+   1. 在`/etc/clickhouse-server/config.xml`中指定zk的地址
+
+      先在`config.xml`中搜索zookeeper字段, 然后找到该位置, 添加如下的内容
+
+      ~~~xml
+        <zookeeper-servers>
+          <node index="1">
+            <host>hadoop102</host>
+            <port>2181</port>
+          </node>
+          <node index="2">
+            <host>hadoop103</host>
+            <port>2181</port>
+          </node>
+          <node index="3">
+            <host>hadoop104</host>
+            <port>2181</port>
+          </node>
+        </zookeeper-servers>
+      ~~~
+
+      
+
+   2. 在`/etc/clickhouse-server/config.d` 目录下创建一个名为 `metrika.xml`的配置文件,内容如下：  
+
+      ~~~xml
+      <?xml version="1.0"?>
+      <yandex>
+        <zookeeper-servers>
+          <node index="1">
+            <host>hadoop102</host>
+            <port>2181</port>
+          </node>
+          <node index="2">
+            <host>hadoop103</host>
+            <port>2181</port>
+          </node>
+          <node index="3">
+            <host>hadoop104</host>
+            <port>2181</port>
+          </node>
+        </zookeeper-servers>
+      </yandex>
+      ~~~
+
+      修改文件的所有者和所属组
+
+      ~~~shell
+      chowm clickhouse:clickhouse /etc/clickhouse-server/config.d/metrika.xml
+      ~~~
+
+      在`/etc/clickhouse-server/config.xml`中导入这个配置文件, 搜索include_from字样, 找到位置, 然后添加如下的内容
+
+      ~~~xml
+      <zookeeper incl="zookeeper-servers" optional="true" />
+      <include_from>/etc/clickhouse-server/config.d/metrika.xml</include_from>
+      ~~~
+   
+4. 同步所有文件到其他的节点
+
+   4. 在所有节点上面重启clickhouse服务
+
+      ~~~shell
+      clickhouse restart
+      ~~~
 
 # 数据库引擎
 
@@ -3425,7 +3495,11 @@ clickhouse-client \
 
 # 副本
 
-副本的目的是为了保证数据的高可用性, 即使一台clickhouse节点挂掉, 也可以从其他的节点中获取相同的数据
+**副本的目的是为了保证数据的高可用性, 即使一台clickhouse节点挂掉, 也可以从其他的节点中获取相同的数据**
+
+**但是缺点是并没有解决数据的横向库容问题, 即如果一个表特别大的的话, 那么同样会撑爆一个节点, 这个时候就要使用分片技术了, 即对数据进行水平分片, 然后将每个分片的数据分发到不同的节点上面, 进行负载均衡**
+
+
 
 
 
@@ -3441,7 +3515,102 @@ clickhouse-client \
 
 
 
+## ReplicatedMergeTree引擎
+
+所有的MergeTree引擎, 他们都有对应的ReplicatedMergeTree引擎作为对应, 这个Replicated引擎是用作多副本的
+
+**副本只能同步数据，不能同步表结构，所以我们需要在多个机器上自己手动建表 , 你需要多少个副本, 就要建多少个表**
+
+比如下面的案例, 我们分别在hadoop102和hadoop103上面建立同一个表的两个副本
+
+~~~sql
+-- hadoop102
+create table t_order_rep2 (
+  id UInt32,
+  sku_id String,
+  total_amount Decimal(16,2),
+  create_time Datetime
+) 
+-- /clickhouse/table/01/t_order_rep表示当前这个副本表在zk中的元数据的路径
+-- 一般按照/clickhouse/table/{当前副本编号}/{table_name} 的格式
+-- rep_102表示当前这个副本的名字, 多个副本之间不能同名
+engine=ReplicatedMergeTree('/clickhouse/table/01/t_order_rep','rep_102')
+partition by toYYYYMMDD(create_time)
+primary key (id)
+order by (id,sku_id);
+
+
+-- hadoop103
+create table t_order_rep2 (
+id UInt32,
+sku_id String,
+total_amount Decimal(16,2),
+create_time Datetime
+) engine =ReplicatedMergeTree('/clickhouse/table/01/t_order_rep','rep_103')
+partition by toYYYYMMDD(create_time)
+primary key (id)
+order by (id,sku_id);
+~~~
+
+这样建表之后, 我们在hadoop102上面执行insert语句
+
+~~~sql
+insert into t_order_rep2 values
+(101,'sku_001',1000.00,'2020-06-01 12:00:00'),
+(102,'sku_002',2000.00,'2020-06-01 12:00:00'),
+(103,'sku_004',2500.00,'2020-06-01 12:00:00'),
+(104,'sku_002',2000.00,'2020-06-01 12:00:00'),
+(105,'sku_003',600.00,'2020-06-02 12:00:00');
+~~~
+
+在hadoop102和hadoop103上面都能查得到
+
+![image-20260203230343864](img/clickhouse/image-20260203230343864.png)
+
+![image-20260203230354979](img/clickhouse/image-20260203230354979.png)
+
+
+
+# 分片
+
+
+
+副本虽然能够提高数据的可用性，降低丢失风险，**<font color=red>但是每台服务器实际上必须容纳全量数据， 对数据的横向扩容没有解决。</font>**
+**<font color=red>要解决数据水平切分的问题，需要引入分片的概念。 通过分片把一份完整的数据进行切分，不同的分片分布到不同的节点上，再通过 Distributed 表引擎来创建一个逻辑表, 将不同节点上面的分片逻辑上构成一个完整的表</font>**
+
+**<font color=red>Distributed 表引擎本身不存储数据， 有点类似于 MyCat 之于 MySql，成为一种中间件，通过分布式逻辑表来写入、分发、路由来操作多台节点不同分片的分布式数据。</font>**  
+
+> 注意： ClickHouse 的集群是表级别的，即有的表是分布式表, 有的表是单节点的表
+>
+> 实际企业中， 大部分做了高可用， 但是没有用分片，避免降低查询性能以及操作集群的复杂性。  
+
+
+
+
+
 ## 集群写入流程
+
+下面是一个3分配2副本一共六个节点的表的写入流程
+
+![image-20260203231622826](img/clickhouse/image-20260203231622826.png)
+
+
+
+
+
+
+
+## 集群读取流程
+
+下面是一个3分配2副本一共六个节点的表的读取流程
+
+
+
+## 3分片2副本6节点的集群配置
+
+
+
+
 
 # 其他
 
