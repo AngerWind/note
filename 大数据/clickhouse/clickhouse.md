@@ -3594,9 +3594,12 @@ insert into t_order_rep2 values
 
 ![image-20260203231622826](img/clickhouse/image-20260203231622826.png)
 
+在ck中有两种同步模式
 
+- 一种是开启internal_replication, 即使用内部复制, 在这种情况下客户端发送过来的数据, **首先会到分布式表上面, 然后分布式表将数据发送给数据对应的分片的一个副本, 然后由这个副本同步给其他的副本**, 即上面绿色箭头表示的情况
+- 第二种方式是关闭internal_replication, 这种情况下client将数据发送给分布式表, 然后通过**分布式表将数据发送给对应的分片的所有副本**, 即上图中的黄色表示的情况
 
-
+在生产中我们一般都是开启internal_replication, 均衡各个副本的压力
 
 
 
@@ -3604,11 +3607,89 @@ insert into t_order_rep2 values
 
 下面是一个3分配2副本一共六个节点的表的读取流程
 
+![image-20260204225158654](img/clickhouse/image-20260204225158654.png)
+
+clickhouse会在读取的时候, 统计每个副本在读取的时候发生的错误数, 然后记录为errors_count
+
+在之后的读取中, 会选择errors_count较小的副本来进行数据的读取, 如果errors_count相同的话, 有三种选择的方式: 随机/顺序/host名相同
 
 
-## 3分片2副本6节点的集群配置
 
 
+
+## 3分片2副本3节点的集群配置
+
+
+
+这种集群配置和ck的多节点安装中的zk的配置类似, 都有两种方式方式
+
+- 直接将副本和分片的配置放在`/etc/clickhouse-server/config.xml`中
+
+- 将配置放在`/etc/clickhouse-server/config.d/metrika.xml`中, 内容如下
+
+  ~~~xml
+  <yandex>
+    <remote_servers>
+      <!-- 集群名称, 自定义-->
+      <gmall_cluster>
+        <!--集群的第一个分片-->
+        <shard>
+          <!-- 使用内部复制的方式来写入数据 -->
+          <internal_replication>true</internal_replication>
+          <!-- 该分片的第一个副本 -->
+          <replica>
+            <host>hadoop101</host>
+            <port>9000</port>
+          </replica>
+          <!--该分片的第二个副本-->
+          <replica>
+            <host>hadoop102</host>
+            <port>9000</port>
+          </replica>
+        </shard>
+          
+        <!--集群的第二个分片-->
+        <shard>
+          <!-- 使用内部复制的方式来写入数据 -->
+          <internal_replication>true</internal_replication>
+          <replica>
+            <!--该分片的第一个副本-->
+            <host>hadoop103</host>
+            <port>9000</port>
+          </replica>
+          <replica>
+            <!--该分片的第二个副本-->
+            <host>hadoop104</host>
+            <port>9000</port>
+          </replica>
+        </shard>
+        <!--集群的第三个分片-->
+        <shard>
+          <!-- 使用内部复制的方式来写入数据 -->
+          <internal_replication>true</internal_replication>
+          <replica>
+            <!--该分片的第一个副本-->
+            <host>hadoop105</host>
+            <port>9000</port>
+          </replica>
+          <replica>
+            <!--该分片的第二个副本-->
+            <host>hadoop106</host>
+            <port>9000</port>
+          </replica>
+        </shard>
+      </gmall_cluster>
+    </remote_servers>
+  </yandex>
+  ~~~
+
+  然后在`/etc/clickhouse-server/config.xml`中配置如下的代码来引入`metrika.xml`
+
+  ~~~xml
+  <include_from>/etc/clickhouse-server/config.d/metrika.xml</include_from>
+  ~~~
+
+  
 
 
 
