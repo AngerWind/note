@@ -3721,21 +3721,224 @@ SELECT ... [FORMAT ...]
 
 在使用explain的时候, 可以显示4中结果, 分别通过AST, SYNTAX, PLAN, PIPELINE来选择
 
-- PLAN: 默认的选项, 如果你直接使用explain而不指定的话, 默认就等于`explian plan`
 
-  他的作用是显示详细的执行计划, 用户可以查看 ClickHouse 如何处理和执行 SQL 查询，具体包括查询的优化过程、表扫描方式、使用的索引、分区策略等。
 
-  ~~~sql
-  
-  ~~~
+## explain plan
 
-  
 
-  同时在`explain plan`的下面也有三个选项
 
-  - header 打印计划中各个步骤的 head 说明，默认关闭，默认值 0;
-  - description 打印计划中各个步骤的描述，默认开启，默认值 1
-  - actions 打印计划中各个步骤的详细信息，默认关闭，默认值 0
+PLAN: 默认的选项, 如果你直接使用explain而不指定的话, 默认就等于`explian plan`
+
+他的作用是显示详细的执行计划, 用户可以查看 ClickHouse 如何处理和执行 SQL 查询，具体包括查询的优化过程、表扫描方式、使用的索引、分区策略等。
+
+~~~sql
+seasqlplus_uc :) explain plan select * from run_log_local  where level = 'DEBUG' and method like '%getUser%' order by timestamp desc limit 100 offset 1000;
+
+EXPLAIN
+SELECT *
+FROM run_log_local
+WHERE (level = 'DEBUG') AND (method LIKE '%getUser%')
+ORDER BY timestamp DESC
+LIMIT 1000, 100
+
+Query id: 75f88fab-fd51-4df5-a9d0-12f143b01a44
+
+┌─explain────────────────────────────────────────────┐
+│ Expression (Projection)                            │
+│   Limit (preliminary LIMIT (without OFFSET))       │
+│     Sorting (Sorting for ORDER BY)                 │
+│       Expression (Before ORDER BY)                 │
+│         ReadFromMergeTree (log_test.run_log_local) │
+└────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.020 sec.
+~~~
+
+
+
+同时在`explain plan`的下面也有三个选项
+
+- header 打印计划中各个步骤的 head 说明，默认关闭，默认值 0;
+- description 打印计划中各个步骤的描述，默认开启，默认值 1
+- actions 打印计划中各个步骤的详细信息，默认关闭，默认值 0
+
+~~~sql
+seasqlplus_uc :) explain plan header=1, description=1, actions=1 select * from run_log_local  where level = 'DEBUG' and method like '%getUser%' order by timestamp desc limit 100 offset 1000;
+~~~
+
+<img src="img/image-20260205204301286.png" alt="image-20260205204301286" style="zoom:50%;" />
+
+<img src="img/image-20260205204357942.png" alt="image-20260205204357942" style="zoom:50%;" />
+
+<img src="img/image-20260205204430943.png" alt="image-20260205204430943" style="zoom:50%;" />
+
+
+
+## explain ast
+
+AST: 这个主要用来查看sql的语法树
+
+~~~sql
+seasqlplus_uc :) explain ast  select * from run_log_local  where level = 'DEBUG' and method like '%getUser%' order by timestamp desc limit 100 offset 1000;
+
+EXPLAIN AST
+SELECT *
+FROM run_log_local
+WHERE (level = 'DEBUG') AND (method LIKE '%getUser%')
+ORDER BY timestamp DESC
+LIMIT 1000, 100
+
+Query id: 1284c7ce-f8fc-4b39-bcd3-201b7536e98c
+
+┌─explain─────────────────────────────────────┐
+│ SelectWithUnionQuery (children 1)           │
+│  ExpressionList (children 1)                │
+│   SelectQuery (children 6)                  │
+│    ExpressionList (children 1)              │
+│     Asterisk                                │
+│    TablesInSelectQuery (children 1)         │
+│     TablesInSelectQueryElement (children 1) │
+│      TableExpression (children 1)           │
+│       TableIdentifier run_log_local         │
+│    Function and (children 1)                │
+│     ExpressionList (children 2)             │
+│      Function equals (children 1)           │
+│       ExpressionList (children 2)           │
+│        Identifier level                     │
+│        Literal 'DEBUG'                      │
+│      Function like (children 1)             │
+│       ExpressionList (children 2)           │
+│        Identifier method                    │
+│        Literal '%getUser%'                  │
+│    ExpressionList (children 1)              │
+│     OrderByElement (children 1)             │
+│      Identifier timestamp                   │
+│    Literal UInt64_1000                      │
+│    Literal UInt64_100                       │
+└─────────────────────────────────────────────┘
+
+24 rows in set. Elapsed: 0.001 sec.
+~~~
+
+
+
+## explain syntax
+
+SYNTAX: 这个主要用来查看clickhouse经过优化后的sql长什么样子
+
+~~~sql
+-- 执行三元运算符
+seasqlplus_uc :) EXPLAIN SYNTAX SELECT number = 1 ? 'hello' : (number = 2 ? 'world': 'atguigu') FROM numbers(10);
+
+EXPLAIN SYNTAX
+SELECT if(number = 1, 'hello', if(number = 2, 'world', 'atguigu'))
+FROM numbers(10)
+
+Query id: c134345a-fd9e-4c26-b348-95ad2f1e6f25
+
+┌─explain────────────────────────────────────────────────────────────┐
+│ SELECT if(number = 1, 'hello', if(number = 2, 'world', 'atguigu')) │
+│ FROM numbers(10)                                                   │
+└────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+
+-- 启用if chain 优化
+seasqlplus_uc :) SET optimize_if_chain_to_multiif = 1;
+
+SET optimize_if_chain_to_multiif = 1
+
+Query id: 7f0ece7b-fdae-4f1d-9884-c6ce04facd68
+
+Ok.
+
+0 rows in set. Elapsed: 0.001 sec.
+
+-- 查看优化后的sql
+seasqlplus_uc :) EXPLAIN SYNTAX SELECT number = 1 ? 'hello' : (number = 2 ? 'world': 'atguigu') FROM numbers(10);
+
+EXPLAIN SYNTAX
+SELECT if(number = 1, 'hello', if(number = 2, 'world', 'atguigu'))
+FROM numbers(10)
+
+Query id: 5cbde976-0cf7-4076-8caa-467cd25d4611
+
+┌─explain─────────────────────────────────────────────────────────────┐
+│ SELECT multiIf(number = 1, 'hello', number = 2, 'world', 'atguigu') │
+│ FROM numbers(10)                                                    │
+└─────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+~~~
+
+
+
+
+
+## explain pipeline
+
+`EXPLAIN PIPELINE` 用来展示查询执行过程中各个阶段的数据流和并行执行的详细信息。它不同于 `EXPLAIN`，后者主要展示查询的执行计划，而 `EXPLAIN PIPELINE` 更侧重于展示查询的执行管道（pipeline），尤其是在涉及复杂的查询或需要并行处理的情况下。通过使用 `EXPLAIN PIPELINE`，你可以查看查询在每个阶段的执行步骤以及各个阶段的资源使用情况。
+
+他和`EXPLIAN PLAN`一样, 还有一个可选的参数, 可以开启更详细的信息
+
+- header 打印计划中各个步骤的 head 说明，默认关闭 ;
+- graph 用 DOT图形语言描述管道图，默认关闭，需要查看相关的图形需要配合graphviz查看
+- actions 如果开启了 graph，紧凑打印打，默认开启。
+
+~~~sql
+explain pipeline header=1, graph=1, actions=1  select * from run_log_local  where level = 'DEBUG' and method like '%getUser%' order by timestamp desc limit 100 offset 1000;
+~~~
+
+
+
+~~~sql
+seasqlplus_uc :) explain pipeline   select * from run_log_local  where level = 'DEBUG' and method like '%getUser%' order by timestamp desc limit 100 offset 1000;
+
+EXPLAIN PIPELINE
+SELECT *
+FROM run_log_local
+WHERE (level = 'DEBUG') AND (method LIKE '%getUser%')
+ORDER BY timestamp DESC
+LIMIT 1000, 100
+
+Query id: 9de8e1a6-5595-42c8-944a-bb0e8578ff0c
+
+┌─explain──────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                             │
+│ ExpressionTransform                                                      │
+│   (Limit)                                                                │
+│   Limit                                                                  │
+│     (Sorting)                                                            │
+│     MergingSortedTransform 25 → 1                                        │
+│       (Expression)                                                       │
+│       ExpressionTransform × 25                                           │
+│         (ReadFromMergeTree)                                              │
+│         ReverseTransform × 2                                             │
+│           MergeTreeReverse × 2 0 → 1                                     │
+│             ReverseTransform × 2                                         │
+│               MergeTreeReverse × 2 0 → 1                                 │
+│                 ReverseTransform × 2                                     │
+│                   MergeTreeReverse × 2 0 → 1                             │
+│                     ReverseTransform                                     │
+│                       MergeTreeReverse 0 → 1                             │
+│                         ReverseTransform × 2                             │
+│                           MergeTreeReverse × 2 0 → 1                     │
+│                             ReverseTransform × 2                         │
+│                               MergeTreeReverse × 2 0 → 1                 │
+│                                 ReverseTransform × 2                     │
+│                                   MergeTreeReverse × 2 0 → 1             │
+│                                     ReverseTransform × 3                 │
+│                                       MergeTreeReverse × 3 0 → 1         │
+│                                         ReverseTransform × 2             │
+│                                           MergeTreeReverse × 2 0 → 1     │
+│                                             ReverseTransform × 7         │
+│                                               MergeTreeReverse × 7 0 → 1 │
+└──────────────────────────────────────────────────────────────────────────┘
+
+29 rows in set. Elapsed: 0.012 sec.
+~~~
+
+
 
 
 
