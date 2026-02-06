@@ -15477,7 +15477,7 @@ kubectl debug <pod-name> [options]
    # --image=busybox 指定使用netshoot 创建调试容器
    # -it 表示分配交互终端
    # --image-pull-policy 这个挺重要的, 默认情况下他会去拉镜像, 如果你本地已经有了, 那么可以加这个参数
-   kubectl debug -it -n ns mypod --image nicolaka/netshoot --target mycontainer --image-pull-policy IfNotPresent
+   kubectl debug -it -n ns mypod --image nicolaka/netshoot:latest --target mycontainer --image-pull-policy Never
    ~~~
 
    **这个新的调试容器, 与原来的容器共享同一个网络, 共享存储卷, 共享/tmp, /data目录**
