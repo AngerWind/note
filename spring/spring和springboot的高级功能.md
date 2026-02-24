@@ -1513,7 +1513,7 @@ SLF4J: See http://www.slf4j.org/codes.html#multiple_bindings for an explanation.
 
 而这个模块中, 帮我们引入了`logback`, `logback`又自动引入了`slf4j`
 
-同时他还帮我们引入了`jul-to-slf4j, log4j-to-slf4j`这两个偷梁换柱包, 这样的话如果有哪个框架使用到了jul和log4j2, 实际上底层都是使用的logback
+**同时他还帮我们引入了`jul-to-slf4j, log4j-to-slf4j`这两个偷梁换柱包, 这样的话如果有哪个框架使用到了jul和log4j2, 实际上底层都是使用的logback**
 
 ![image-20250423162111939](img/spring和springboot的高级功能/image-20250423162111939.png)
 

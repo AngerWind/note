@@ -64,6 +64,10 @@ $env:GOARCH="amd64"
 go build main.go
 ~~~
 
+> 可以通过-o 来指定要生成的程序的名字,  如果不是main.go的话, 那么可以直接指定main方法的文件的路径, 比如`go build -o hello_world  ./http/hello_world.go`
+
+
+
 
 
 ### dlv远程debug
