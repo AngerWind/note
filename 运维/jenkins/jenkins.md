@@ -324,3 +324,126 @@ https://www.bilibili.com/video/BV1bS4y1471A?p=20&vd_source=f79519d2285c777c4e2b2
 
    ![image-20231201152101046](img/jenkins/image-20231201152101046.png)
 
+
+
+
+
+# pipeline
+
+在使用jenkins执行构建的时候, 如果我们创建的是freestyle project这种类型的item的话, 所有的日志都会打印在同一个任务中
+
+![image-20260207173941968](img/jenkins/image-20260207173941968.png)
+
+![image-20260207173527706](img/jenkins/image-20260207173527706.png)
+
+为了能够将每个步骤的日志都打印在他当前步骤的任务中, 我们可以创建一个pipeline类型的item
+
+![image-20260207174103709](img/jenkins/image-20260207174103709.png)
+
+然后选择流水线, 在其中输入pipeline相关的代码, 这里的pipeline代码实际上就是groovy的dsl代码
+
+![image-20260207174207453](img/jenkins/image-20260207174207453.png)
+
+pipeline代码如下
+
+~~~groovy
+//所有的脚本命合都放在pipeline中
+pipeline{
+	//指定任务在哪个jenkins节点中执行, any表示随便哪个节点
+	agent any
+	// 声明全局变量，方便后面使用
+    environment {
+        key = 'value'
+    }
+    // stages定义每一个单独要执行的步骤
+	stages {
+	   stage('拉取git仓库代码'){
+            // 定义具体的步骤, 可以有多个命令
+			steps {
+            	echo '拉取git仓库代码 - SUCCESS'
+            }
+		}
+        stage('通过maven构建项目'){
+             steps {
+                 echo '通过maven构建项目 - SUCCESS'
+             }
+         }
+        stage('通过SonarQube做代码质量检测'){
+             steps {
+                 echo '通过SonarQube做代码质量检测 - SUCCESS'
+             }
+         }
+        stage('通过Docker制作自定义镜像'){
+             steps {
+                 echo '通过Docker制作自定义镜像 - SUCCESS'
+             }
+         }
+        stage('将自定义镜像推动到Harbor'){
+             steps {
+                 echo '将自定义镜像推动到Harbor - SUCCESS'
+             }
+         }
+        stage('通过Publish Over SSH 通知目标服务器'){
+             steps {
+                 echo '通过Publish Over SSH 通知目标服务器 - SUCCESS'
+             }
+         }
+    }
+}
+~~~
+
+将上面的代码粘贴到下面的位置中并进行构建
+
+![image-20260207175253256](img/jenkins/image-20260207175253256.png)
+
+![image-20260207175319657](img/jenkins/image-20260207175319657.png)
+
+通过上面的图片, 你可以看到每个步骤的名字, 他们执行了多久的时间, 就不需要和free style一样, 所有的日志都堆在一起了
+
+
+
+## pipiline语法
+
+实际上你根本不需要去记忆pipeline语法, Jenkins提供了pipeline代码生成器, 你只需要在界面上进行配置, 就可以生成对应的代码
+
+![image-20260207175606967](img/jenkins/image-20260207175606967.png)
+
+![image-20260207175627283](img/jenkins/image-20260207175627283.png)
+
+比如我现在要从gitlab上面checkout代码, 那么我只需要在片段生成器中选择`checkout: Check out from version controller`这个步骤, 然后填写gitlab的地址
+
+![image-20260207175842776](img/jenkins/image-20260207175842776.png)
+
+![image-20260207175910875](img/jenkins/image-20260207175910875.png)
+
+配置完毕之后, 点击生成pipeline语法, 即可出现对应的代码
+
+![image-20260207180002546](img/jenkins/image-20260207180002546.png)
+
+然后你只要把对应的代码, 放到pipeline代码中的`steps`代码片段中接口
+
+
+
+## jenkinsfile
+
+上面的案例中, pipeline的步骤实际上还是保存在jenkins的界面中, 我们要进行修改的时候, 实际上还是要在jenkins的界面上进行修改, 这样有点不太方便
+
+jenkins提供了一种方式, 你可以将pipeline的步骤保存在本地的`Jenkinsfile`文件中, 然后和你的代码一起上传到gitlab上面, 然后你可以在jenkins上面指定Jenkinsfile在gitlab上面的位置
+
+在构建的时候, jenkins会先去gitlab上面下载对应的Jenkinsfile, 然后再执行Jenkinsfile上面指定的步骤
+
+1. 首先在你本地的项目上创建一个`Jenkinsfile`文件, 保存到项目的根目录下, 类似`Dockerfile`
+
+2. 将这个文件和项目代码一起推送到gitlab上面
+
+   ![image-20260207183641035](img/jenkins/image-20260207183641035.png)
+
+3. 在jenkins上面配置这个文件的位置
+
+   ![image-20260207183428019](img/jenkins/image-20260207183428019.png)
+
+   ![image-20260207183515057](img/jenkins/image-20260207183515057.png)
+
+4. 然后在jenkins上面, 进行构建, 会多出来一个步骤, 这个步骤就是从gitlab上面拉取jenkinsfile的
+
+   ![image-20260207183931271](img/jenkins/image-20260207183931271.png)
