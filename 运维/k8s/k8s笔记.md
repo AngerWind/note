@@ -3059,7 +3059,13 @@ status的状态有如下几种
 
 
 
+## 镜像拉取策略
 
+在 Kubernetes 中，镜像拉取策略（**imagePullPolicy**）的默认值通常取决于镜像标签的类型：
+
+- **`imagePullPolicy: Always`**：如果镜像标签是 `latest`（或者没有指定标签时默认是 `latest`），Kubernetes 会每次启动 Pod 时都拉取镜像。
+- **`imagePullPolicy: IfNotPresent`**：如果镜像标签不是 `latest`，Kubernetes 会尝试从本地镜像缓存中查找镜像，如果没有找到才会从仓库拉取镜像。
+- **`imagePullPolicy: Never`**：Kubernetes **永不** 拉取镜像，只有在本地存在镜像时，才会使用。
 
 
 
@@ -10080,6 +10086,16 @@ NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,DefaultTolerat
 - ServiceAccount： 实现了自动化添加 ServiceAccount。
 - ResourceQuota：确保请求的资源不会超过资源的 ResourceQuota 限制。
 
+
+
+
+
+# Context上下文
+
+
+
+
+
 # Helm
 
 helm的作用是能让我们一键创建Deployment, Service等等东西,  他的作用就类似于Docker Compose
@@ -15659,3 +15675,187 @@ web-pdb   2               N/A               1
 ~~~
 
 `ALLOWED DISRUPTIONS`表示还有1个副本能够驱逐
+
+
+
+
+
+
+
+## kubectl port-forward
+
+`kubectl port-forward` 主要用于将本地的端口映射到pod或者svc上面
+
+port-forward主要解决的问题是,  你的k8s中有特别多的pod和svc, 但是这些pod和clusterIp类型的svc你都没有办法直接访问, 因为他们只在k8s的集群内部可用,  你只能通过访问nodePort类型的svc, 进而访问集群中的pod
+
+如果你想要在你的本地机器上面来访问这些没有开放的pod和svc的话, 那么就要使用port-forward功能, 他可以将你本地的一个端口映射到对应pod或者svc的特定的端口, 这样你只要访问本地机器的特定端口, 就可以访问对应的pod了
+
+
+
+想要使用port-forward功能, 首先你需要让你本地可以访问k8s集群, 我们这里假设你在windows进行开发, 那么你需要进行如下的步骤
+
+1. 在window上面安装kubectl命令, 并配置对应的kubeconfig文件, 这样你的windows就可以通过kubectl命令来访问远程的k8s集群了
+
+   这个步骤你可以根据上面的`Windows上使用kubectl和helm控制远程k8s集群`来实现
+
+2. 在windows上面的机器上执行port-forward命令, 将本地的端口映射到对应的pod或者svc上面
+
+   ~~~shell
+   # 将本地的9090端口, 映射到my-pod的8080端口上面
+   # -n 指定pod的namespace, 默认default
+   kubectl port-forward my-pod 9090:8080 [-n namespace]
+   ~~~
+
+   经过上面的配置之后, 你就可以访问localhost:9090来访问my-pod的8080端口了
+
+
+
+`kubectl port-forward`的使用案例
+
+1. 映射本地端口到pod
+
+   ~~~shell
+   kubectl port-forward pod/nginx-abc123 8080:80 [-n namespace]
+   curl http://localhost:8080
+   ~~~
+
+2. 映射本地端口到svc
+
+   ~~~shell
+   kubectl port-forward service/api-service 8080:80  [-n namespace]
+   curl http://localhost:8080/api/health
+   ~~~
+
+3. 映射到deployment
+
+   ~~~shell
+   kubectl port-forward deployment/myapp 8080:80 [-n namespace]
+   ~~~
+
+   这会将流量随机打到一个pod上面
+
+4. 绑定地址
+
+   默认情况下，端口转发仅绑定到本地主机。所以其他机器访问这个端口是无效的, 只有本机能使用
+
+   ~~~shell
+   kubectl port-forward --address 0.0.0.0 pod/nginx-abc123 8080:80
+   
+   # Bind to specific IP address
+   kubectl port-forward --address 192.168.1.100 pod/nginx-abc123 8080:80
+   
+   # Bind to multiple addresses
+   kubectl port-forward --address 0.0.0.0 --address :: pod/nginx-abc123 8080:80
+   ~~~
+
+   
+
+5. 一次性映射多个端口
+
+   ~~~shell
+   kubectl port-forward my-pod 9090:8080 3307:3306
+   kubectl port-forward svc/my-service 3000:80  4000:90 [-n namespace]
+   ~~~
+
+   
+
+需要注意的是, `kubectl port-forward`命令执行之后, 会卡住终端, 所以你还要让命令在后台执行
+
+~~~shell
+# bash
+# nohup之后会返回pid, 你可以通过kill pid来接受映射
+nohup kubectl port-forward my-pod 8080:80 > /dev/null 2>&1 &
+
+
+
+# powershell
+# -RedirectStandardOutput 和 -RedirectStandardError 表示重定向输出到文件, -PassThru表示返回进程对应, Select-Object表示从进程对象中获取他的pid并输出到终端上面
+# 之后你可以通过 Stop-Process -Id pid 来结束掉这个命令
+Start-Process kubectl -ArgumentList "port-forward", "my-pod", "8080:80" -RedirectStandardOutput "C:\path\to\output.log" -RedirectStandardError "C:\path\to\error.log" -PassThru | Select-Object -ExpandProperty Id
+~~~
+
+
+
+如果你是在powershell脚本中, 那么你可以使用如下的脚本
+
+~~~powershell
+# start-port-forward.ps1
+# 获取当前脚本目录
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# 设置 PID 文件的路径
+$pidFile = Join-Path $scriptDir "pid_list.txt"
+
+# pod 和 svc 列表（你可以根据实际情况修改）
+$portForwards = @(
+    @{Name = "my-pod1"; Port = "8080:80"; Namespace = "default"},
+    @{Name = "my-pod2"; Port = "8081:80"; Namespace = "default"},
+    @{Name = "my-pod3"; Port = "8082:80"; Namespace = "custom-namespace"},
+    @{Name = "my-service"; Port = "8083:80"; Namespace = "default"}
+)
+
+# 清空 PID 文件
+if (Test-Path $pidFile) {
+    Remove-Item $pidFile
+}
+
+# 执行 port-forward 命令
+foreach ($item in $portForwards) {
+    try {
+        # 构建 kubectl 命令
+        $arguments = @("port-forward", $item.Name, $item.Port)
+        
+        # 如果指定了 namespace，添加 -n 参数
+        if ($item.Namespace -ne "default") {
+            $arguments += "-n", $item.Namespace
+        }
+
+        # 启动 kubectl port-forward 并获取 PID
+        $process = Start-Process kubectl -ArgumentList $arguments -PassThru
+
+        # 将 PID 写入文件
+        $process.Id | Out-File -Append -FilePath $pidFile
+
+        Write-Host "Started port-forward for $($item.Name) on port $($item.Port) in namespace $($item.Namespace), PID: $($process.Id)"
+    } catch {
+        Write-Host "Failed to start port-forward for $($item.Name) on port $($item.Port) in namespace $($item.Namespace), skipping..."
+    }
+}
+
+Write-Host "All port-forward commands have been processed."
+~~~
+
+~~~powershell
+# stop-port-forward.ps1
+
+# 获取当前脚本目录
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# 设置 PID 文件的路径
+$pidFile = Join-Path $scriptDir "pid_list.txt"
+
+# 读取 PID 文件
+if (Test-Path $pidFile) {
+    $pids = Get-Content $pidFile
+
+    foreach ($pid in $pids) {
+        try {
+            # 停止进程
+            Stop-Process -Id $pid -Force
+            Write-Host "Successfully stopped process with PID: $pid"
+        } catch {
+            Write-Host "Failed to stop process with PID: $pid or process no longer exists."
+        }
+    }
+} else {
+    Write-Host "PID file not found."
+}
+~~~
+
+之后你可以通过如下的命令来开启转发和关闭转发
+
+~~~shell
+.\start-port-forward.ps1
+.\stop-port-forward.ps1
+~~~
+
