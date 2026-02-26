@@ -8669,12 +8669,14 @@ https://www.bilibili.com/video/BV15P4y1S7Jw/?spm_id_from=333.337.search-card.all
 
 https://www.bilibili.com/video/BV1KY411x7Jp/?spm_id_from=333.337.search-card.all.click&vd_source=f79519d2285c777c4e2b2513f5ef101a
 
+
+
 ## CA证书的详细信息
 
 证书的编码格式:  
 
 - PEM(Privacy Enhanced Mail)，通常用于CA机构，扩展名为`.pem`, `.crt`, `.cer`, 和 `.key`。内容为Base64编码的ASCII码文件，有类似`"-----BEGIN CERTIFICATE-----"` 和 `"-----END CERTIFICATE-----"`的头尾标记。服务器认证证书，中级认证证书和私钥都可以储存为PEM格式（认证证书其实就是公钥）
-- DER(Distinguished Encoding Rules)，与PEM不同之处在于其使用二进制而不是Base64编码的ASCII。扩展名为`.der`，但也经常使用`.cer`用作扩展名，所有类型的认证证书和私钥都可以存储为DER格式。Java使其典型使用平台。
+- DER(Distinguished Encoding Rules)，与PEM不同之处在于其使用二进制而不是Base64编码的ASCII。扩展名为`.der`，但也经常使用`.cer`用作扩展名，所有类型的认证证书和私钥都可以存储为DER格式。Java是其典型使用平台。
 
 证书签名请求:
 
@@ -9793,11 +9795,15 @@ metadata:
    cd /usr/local/install-k8s/ # 随便cd到一个目录下
    mkdir -p cert/devuser
    cd cert/devuser
-   touch devuser-csr.json # 这个文件可以随便命名
    
+   # 创建一个证书申请文件, 我们要用这个文件来向根证书申请一个当前devuser对应的证书
+   # 这个证书会在和api server通讯的时候作为双向加密使用
+   touch devuser-csr.json 
+   
+   # 指定证书申请文件的内容
    cat <<EOF > devuser-csr.json
    {
-     "CN": "devuser", // 这里是k8s用户的名字
+     "CN": "devuser", // k8s会将这个字段作为rbac中的用户的名字
      "hosts": [], // 可以使用证书的主机, 不写的话是所有
      "key": {
        "algo": "rsa",
@@ -9808,7 +9814,7 @@ metadata:
          "C": "CN",
          "ST": "BeiJing",
          "L": "BeiJing",
-         "O": "k8s", // 这是k8s的用户的组名
+         "O": "k8s", // k8s会将这个字段作为rbac中的用户所属的group
          "OU": "System"
        }
      ]
@@ -9832,14 +9838,20 @@ metadata:
 7. 通过证书生成工具生成证书
 
    ~~~shell
-   # 这个目录下都是k8s的秘钥信息
+   # 这个目录下都是k8s的秘钥信息, 保存k8s集群中的根证书, 以及生成根证书的私钥
+   # 这个是在安装k8s的过程中自动生成的
    cd /etc/kubernetes/pki 
    
-   # -ca表示指定生成的ca证书
-   # -ca-key表示生成的私钥
-   # ./devuser-csr.json表示根据整个文件来生成证书
+   # -ca 指定当前k8s中, 根证书对应的文件
+   # -ca-key 指定当前k8s中, 签发根证书对应的私钥文件
+   # -profile指定签发的证书的使用场景, 不同的使用场景有不同的配置, 比如过期时间, 证书类型等等, 这里直接指定kubernetes即可
+   # ./devuser-csr.json用于指定申请证书的json文件, 就是我们刚刚创建的json文件
    cfssl gencert -ca=ca.crt -ca-key=ca.key -profile=kubernetes /usr/local/install-k8s/cert/devuser/devuser-csr.json | cfssljson -bare devuser
    
+   
+   # 其中devuser.src是证书申请文件, 是我们在上面步骤中自己创建的
+   # devuser.pem这个文件包含了用户的 公钥 和 CA 对其签名的信息。CA 使用它来确认该证书的有效性，并可以确保该证书没有被篡改。之后和k8s api server通讯的过程中, 会使用这个证书来验证当前用户的身份, 避免中间人工具
+   # devuser-key.pem这是与 devuser.pem 公钥证书配对的 私钥 文件。私钥是保密的，不能泄露给任何人。它用于签名和解密操作，确保通信的安全性。通常情况下，私钥存储在本地，仅由用户自己掌握。
    ls
    devuser.csr  devuser.pem  devuser-key.pem
    ~~~
@@ -9849,17 +9861,23 @@ metadata:
    ~~~shell
    cd /usr/local/install-k8s/cert/devuser/
    
-   export KUBE_APISERVER="https://172.20.0.113:6443" # 通过环境变量指定api-server的地址
+   export KUBE_APISERVER="https://172.20.0.113:6443" # 通过环境变量指定当前k8s集群api-server的地址
    
+   # --kubeconfig表示要写入的kubeconfig文件, 如果这个文件不存在的话会自动创建
+   # set-cluster kubernete 表示往kubeconfig文件中添加一个名为kubernetes的cluster集群, 集群的名字可以随便指定, 之后可以使用这个名字来切换控制多个k8s集群
+   # --server用于指定这个k8s集群的的api-server的地址, 这样我们使用kubectl的时候, 就会操作这个api-server对应的k8s集群了
+   # --certificate-authority=/etc/kubernetes/pki/ca.crt指定创建kubeconfig过程中使用的公钥, 这里必须指定为k8s集群中的根的私钥, 因为这里是往一个kubeconfig中添加一个集群, 与用户无关
+   # --embed-certs=true指定是否要加密认证
    kubectl config \
-   set-cluster kubernetes \ # 指定集群的名字
-   --certificate-authority=/etc/kubernetes/pki/ca.crt \ #指定ca证书
+   set-cluster kubernetes \
+   --kubeconfig=devuser.kubeconfig \
+   --server=${KUBE_APISERVER} \
+   --certificate-authority=/etc/kubernetes/pki/ca.crt \
    --embed-certs=true \ # 指定是否要加密认证
-   --server=${KUBE_APISERVER} \ # 指定api-server的地址
-   --kubeconfig=devuser.kubeconfig # 创建出来的集群的信息文件
+   
    
    ls
-   devuser.kubeconfig # 这个就是创建出来的集群的文件
+   devuser.kubeconfig # 这个就是创建出来的kubeconfig文件, 这个文件中定义了一个名为kubernetes的k8s集群, 他的aip-server的地址为https://172.20.0.113:6443
    ~~~
 
 9. 将名为 `devuser` 的用户凭据（使用客户端证书）配置到 `devuser.kubeconfig` 文件中，用于在 kubeconfig 中定义一个基于证书认证的 Kubernetes 用户
@@ -9867,21 +9885,32 @@ metadata:
    ~~~shell
    cd /usr/local/install-k8s/cert/devuser/
    
+   # --kubeconfig=devuser.kubeconfig指定要写入信息的kubeconfig文件
+   # set-credentials devuser表示要往这个kubeconfig文件中添加一个名为devuser的用户, 这个名字可以随便填
+   # --client-certificate=/etc/kubernetes/pki/devuser.pem用于指定devuser这个用户使用的公钥和证书, 因为这个证书是我们之前使用csr文件生成的, 而我们在csr文件中指定了CN和names.O为devuser和k8s
+   # 所以在实际和k8s交互的过程中, 我们使用的是csr中指定的user和group
+   # --client-key=/etc/kubernetes/pki/devuser-key.pem用于指定pem证书对应的私钥, 用于身份验证
+   # --embed-certs=true指定将证书中的内容直接嵌入 kubeconfig 中，而不是使用引用外部路径的方式
    kubectl config set-credentials devuser \
-   --client-certificate=/etc/kubernetes/pki/devuser.pem \ # 客户端证书（用户身份）
-   --client-key=/etc/kubernetes/pki/devuser-key.pem \ # 客户端私钥（用于身份验证）
-   --embed-certs=true \ # 将证书内容直接嵌入 kubeconfig 中，而不是引用外部路径
-   --kubeconfig=devuser.kubeconfig # 写入的 kubeconfig 文件
+   --client-certificate=/etc/kubernetes/pki/devuser.pem \
+   --client-key=/etc/kubernetes/pki/devuser-key.pem \
+   --embed-certs=true \
+   --kubeconfig=devuser.kubeconfig
    ~~~
 
 10. 创建一个新的kubeconfig上下文, 并保存到`devuser.kubeconfig`文件中
 
     ~~~shell
-    kubectl config set-context kubernetes \ # 设置一个新的 context（上下文环境）名称为 kubernetes
-    --cluster=kubernetes \ # 指定关联的集群名字，必须之前通过 set-cluster 配置过
-    --user=devuser \ # 指定用于访问该集群的用户身份，必须之前通过 set-credentials 配置过
-    --namespace=dev \ # 设置默认命名空间为 dev，后续 kubectl 命令默认作用于此命名空间
-    --kubeconfig=devuser.kubeconfig # 将 context 写入到指定 kubeconfig 文件，而不是默认的 ~/.kube/config
+    # --kubeconfig=devuser.kubeconfig用于将信息写入到devuser.kubeconfig文件中, 而不是默认的 ~/.kube/config
+    # set-context kubernetes 表示创建一个名为kubernetes的上下文, 并写入到文件中
+    # --cluster=kubernetes 表示这个上下文要使用的k8s集群是kubernetes, 这个名字不是随便指定的, 而是我们在步骤8中通过set-cluster kubernetes来指定的集群的名字
+    # --namespace=dev设置默认命名空间为 dev，后续 kubectl 命令默认作用于此命名空间, 而不是通过-n来指定命名空间
+    # --user=devuser 用于指定我们要使用什么用户来操作这个k8s集群, 这个名字不是随便指定的, 而是我们在步骤9中通过set-credentials devuser来指定的
+    kubectl config set-context kubernetes \
+    --cluster=kubernetes \
+    --user=devuser \
+    --namespace=dev \
+    --kubeconfig=devuser.kubeconfig
     ~~~
 
 11. 将`devuser`绑定到admin角色上, 并设置限制的命名空间为dev
@@ -9889,7 +9918,12 @@ metadata:
     admin这个角色拥有所有命名空间的所有权限
 
     ~~~shell
-    kubectl create rolebinding devuser-admin-binding \ # 指定创建一个名为devuser-admin-binding的rolebinding
+    # 创建一个名为devuser-admin-binding的rolebinding
+    # 将devuser通过rolebinding绑定到admin角色上面
+    # 这样devuser拥有了admin角色对应的权限
+    # 这个admin角色是k8s中内置的角色
+    # --namespace和rolebinding一起限制了devuser的权限只在dev命名空间中生效, 而不是集群范围
+    kubectl create rolebinding devuser-admin-binding \
     --clusterrole=admin \ # 指定绑定的角色
     --user=devuser \ # 指定绑定的用户
     --namespace=dev # 指定限制的命名空间
@@ -9903,10 +9937,22 @@ metadata:
     chown devuser:devuser /home/devuser/.kube/config
     ~~~
 
+    拷贝到devuser的的家目录的指定的目录之后, 那么只要devuser在使用kubectl这个命令的时候, kubectl就会去家目录找这个文件
+
 13. 切换当前 kubeconfig 文件中的上下文（context）为 `kubernetes`，之后使用`kubectl`命令的时候, 都会使用这个配置文件中的信息
 
     ~~~shell
+    # --kubeconfig=/home/devuser/.kube/config用于指定要写入的kubeconfig文件
+    # use-context kubernetes表示在使用这个kubeconfig文件的时候, 默认使用kubernetes这个上下文, 这个上下文不是随便指定的, 而是我们在步骤10中通过set-context kubernetes来指定的
+    # 这样我们在使用kubetl 命令的时候默认会使用这个context, 而这个context又有对应的cluster和user, 而user我们又通过在步骤11中绑定到了对应的角色上面
+    # 那么k8s就知道我们在使用kubectl命令的时候, 要用什么角色去操作什么用户, 这个用户对应的权限是什么了
     kubectl config use-context kubernetes --kubeconfig=/home/devuser/.kube/config
+    ~~~
+
+14. 最后我们再来看看我们创建的kubeconfig的内容
+
+    ~~~shell
+    
     ~~~
 
     
@@ -15776,86 +15822,72 @@ Start-Process kubectl -ArgumentList "port-forward", "my-pod", "8080:80" -Redirec
 
 
 
-如果你是在powershell脚本中, 那么你可以使用如下的脚本
+> 如果你的kubectl port-forward 在转发请求的时候报错如下信息
+>
+> ~~~shell
+> an error occurred forwarding 9092 -> 9092: error forwarding port 9092 to pod e20096d470bd7db3827ef2ca712bd56c567bb3d0186e82ba6f22189a25e79e30, uid : exit status 127: /usr/bin/socat: error while loading shared libraries: libwrap.so.0: cannot open shared object file: No such file or directory
+> Handling connection for 9092
+> ~~~
+>
+> 那么你需要重新安装一下socat
+>
+> ~~~shell
+> yum upgrade -y
+> sudo yum remove socat -y
+> sudo yum install socat -y 
+> sudo ldconfig
+> ~~~
 
-~~~powershell
-# start-port-forward.ps1
-# 获取当前脚本目录
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# 设置 PID 文件的路径
-$pidFile = Join-Path $scriptDir "pid_list.txt"
 
-# pod 和 svc 列表（你可以根据实际情况修改）
-$portForwards = @(
-    @{Name = "my-pod1"; Port = "8080:80"; Namespace = "default"},
-    @{Name = "my-pod2"; Port = "8081:80"; Namespace = "default"},
-    @{Name = "my-pod3"; Port = "8082:80"; Namespace = "custom-namespace"},
-    @{Name = "my-service"; Port = "8083:80"; Namespace = "default"}
-)
 
-# 清空 PID 文件
-if (Test-Path $pidFile) {
-    Remove-Item $pidFile
-}
 
-# 执行 port-forward 命令
-foreach ($item in $portForwards) {
-    try {
-        # 构建 kubectl 命令
-        $arguments = @("port-forward", $item.Name, $item.Port)
-        
-        # 如果指定了 namespace，添加 -n 参数
-        if ($item.Namespace -ne "default") {
-            $arguments += "-n", $item.Namespace
-        }
+## kubectl proxy
 
-        # 启动 kubectl port-forward 并获取 PID
-        $process = Start-Process kubectl -ArgumentList $arguments -PassThru
+`kubectl proxy` 会在本地创建一个代理，将本地机器和 Kubernetes API 服务器之间的通信桥接起来。它允许你通过本地端口访问 Kubernetes 集群中的服务和资源，而无需直接连接到集群的内部网络或暴露集群 API。
 
-        # 将 PID 写入文件
-        $process.Id | Out-File -Append -FilePath $pidFile
+通过运行 `kubectl proxy`，你可以通过 HTTP 请求访问集群中的服务、Pod 或 API，而不需要担心集群内网或安全问题。它非常适合用于本地开发或调试，尤其是在没有暴露 Kubernetes API Server 的情况下。
 
-        Write-Host "Started port-forward for $($item.Name) on port $($item.Port) in namespace $($item.Namespace), PID: $($process.Id)"
-    } catch {
-        Write-Host "Failed to start port-forward for $($item.Name) on port $($item.Port) in namespace $($item.Namespace), skipping..."
-    }
-}
 
-Write-Host "All port-forward commands have been processed."
-~~~
 
-~~~powershell
-# stop-port-forward.ps1
-
-# 获取当前脚本目录
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-
-# 设置 PID 文件的路径
-$pidFile = Join-Path $scriptDir "pid_list.txt"
-
-# 读取 PID 文件
-if (Test-Path $pidFile) {
-    $pids = Get-Content $pidFile
-
-    foreach ($pid in $pids) {
-        try {
-            # 停止进程
-            Stop-Process -Id $pid -Force
-            Write-Host "Successfully stopped process with PID: $pid"
-        } catch {
-            Write-Host "Failed to stop process with PID: $pid or process no longer exists."
-        }
-    }
-} else {
-    Write-Host "PID file not found."
-}
-~~~
-
-之后你可以通过如下的命令来开启转发和关闭转发
+这在你调试http请求的时候非常有用, 因为不需要连接到集群的内部网络, 也不需要鉴权
 
 ~~~shell
-.\start-port-forward.ps1
-.\stop-port-forward.ps1
+# 这会启动一个程序, bind 127.0.0.1 listen 8001端口
+# 你也可以使用 --port 8888 来指定要占用的端口
+# 你也可以使用  --address='0.0.0.0'  --accept-hosts='^*$' 来让 api server处理来自所有主机的请求
+kubectl proxy
 ~~~
 
+之后你就可以通过如下的命令来获取k8s中指定的ns中的所有pod的信息
+
+~~~shell
+# 获取所有的pods
+curl -X GET http://localhost:8001/api/v1/pods
+
+# 获取某个pod的状态
+curl -X GET http://localhost:8001/api/v1/namespaces/default/pods/my-pod
+
+# 创建一个新的pod
+curl -X POST -H "Content-Type: application/json" -d '{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "nginx"
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "nginx",
+        "image": "nginx"
+      }
+    ]
+  }
+}' http://localhost:8001/api/v1/namespaces/default/pods
+~~~
+
+
+
+> 使用 Kubernetes API Server, 你可以创建/删除/查询/修改 对应的 pod/deployment/svc/cm等等资源
+>
+> 具体的调用api可以具体查询
