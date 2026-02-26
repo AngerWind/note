@@ -9773,28 +9773,40 @@ metadata:
 
    ~~~shell
    useradd devuser
-   passwd
+   passwd devuser
    ~~~
 
-3. 重新通过devuser用户来登录linux
+3. 创建一个目录, 用来作为我们当前操作的目录, 之后我们的操作都在这个目录下进行
+
+   ~~~shell
+   mkdir /usr/local/install-k8s/
+   chown devuser:devuser /usr/local/install-k8s/
+   ~~~
+
+4. 重新通过devuser用户来登录linux
 
    ~~~shell
    ssh devuser@192.168.1.100
    ~~~
 
-4. 这个时候我们通过`kubectl`命令来访问k8s, 肯定是会被拒绝访问的, 因为还没有为这个用户创建证书
+5. 这个时候我们通过`kubectl`命令来访问k8s, 肯定是会被拒绝访问的, 因为还没有为这个用户创建证书
 
    ```shell
-   kubect get pod
+   kubectl get pod
+   
+   E0226 23:19:29.753031   37211 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: Get \"http://localhost:8080/api?timeout=32s\": dial tcp [::1]:8080: connect: connection refused"
    The connection to the server localhost:8080 was refused - did you specify the right host or port?
    ```
 
-5. 为devuser这个用户创建相应的k8s证书, 使得这个用户可以通过kubectl来访问k8s集群
+6. 为devuser这个用户创建相应的k8s证书, 使得这个用户可以通过kubectl来访问k8s集群
 
    ~~~shell
-   cd /usr/local/install-k8s/ # 随便cd到一个目录下
+   cd /usr/local/install-k8s/ # cd到刚刚创建的目录
    mkdir -p cert/devuser
    cd cert/devuser
+   
+   pwd
+   /usr/local/install-k8s/cert/devuser
    
    # 创建一个证书申请文件, 我们要用这个文件来向根证书申请一个当前devuser对应的证书
    # 这个证书会在和api server通讯的时候作为双向加密使用
@@ -9822,7 +9834,7 @@ metadata:
    EOF
    ~~~
 
-6. 下载证书生成工具
+7. 下载证书生成工具(这一步记得使用`root`用户, 否则会权限拒绝)
 
    ~~~shell
    wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
@@ -9835,12 +9847,16 @@ metadata:
    mv cfssl-certinfo_linux-amd64 /usr/local/bin/cfssl-certinfo
    ~~~
 
-7. 通过证书生成工具生成证书
+8. 通过证书生成工具生成证书(这里使用`devuser`用户)
 
    ~~~shell
    # 这个目录下都是k8s的秘钥信息, 保存k8s集群中的根证书, 以及生成根证书的私钥
    # 这个是在安装k8s的过程中自动生成的
    cd /etc/kubernetes/pki 
+   ls
+   apiserver.crt apiserver.key ca.crt  front-proxy-ca.crt front-proxy-client.key
+   apiserver-etcd-client.crt  apiserver-kubelet-client.crt  ca.key  front-proxy-ca.key sa.key apiserver-etcd-client.key  apiserver-kubelet-client.key  etcd front-proxy-client.crt  sa.pub
+   
    
    # -ca 指定当前k8s中, 根证书对应的文件
    # -ca-key 指定当前k8s中, 签发根证书对应的私钥文件
@@ -9856,7 +9872,7 @@ metadata:
    devuser.csr  devuser.pem  devuser-key.pem
    ~~~
 
-8. 创建一个新的kubeconfig上下文文件, 并在其中添加一个名为`kubernetes`的k8s集群信息
+9. 创建一个新的kubeconfig上下文文件, 并在其中添加一个名为`kubernetes`的k8s集群信息
 
    ~~~shell
    cd /usr/local/install-k8s/cert/devuser/
@@ -9880,7 +9896,7 @@ metadata:
    devuser.kubeconfig # 这个就是创建出来的kubeconfig文件, 这个文件中定义了一个名为kubernetes的k8s集群, 他的aip-server的地址为https://172.20.0.113:6443
    ~~~
 
-9. 将名为 `devuser` 的用户凭据（使用客户端证书）配置到 `devuser.kubeconfig` 文件中，用于在 kubeconfig 中定义一个基于证书认证的 Kubernetes 用户
+10. 将名为 `devuser` 的用户凭据（使用客户端证书）配置到 `devuser.kubeconfig` 文件中，用于在 kubeconfig 中定义一个基于证书认证的 Kubernetes 用户
 
    ~~~shell
    cd /usr/local/install-k8s/cert/devuser/
@@ -9898,7 +9914,7 @@ metadata:
    --kubeconfig=devuser.kubeconfig
    ~~~
 
-10. 创建一个新的kubeconfig上下文, 并保存到`devuser.kubeconfig`文件中
+11. 创建一个新的kubeconfig上下文, 并保存到`devuser.kubeconfig`文件中
 
     ~~~shell
     # --kubeconfig=devuser.kubeconfig用于将信息写入到devuser.kubeconfig文件中, 而不是默认的 ~/.kube/config
@@ -9913,7 +9929,7 @@ metadata:
     --kubeconfig=devuser.kubeconfig
     ~~~
 
-11. 将`devuser`绑定到admin角色上, 并设置限制的命名空间为dev
+12. 将`devuser`绑定到admin角色上, 并设置限制的命名空间为dev
 
     admin这个角色拥有所有命名空间的所有权限
 
@@ -9929,7 +9945,7 @@ metadata:
     --namespace=dev # 指定限制的命名空间
     ~~~
 
-12. 将kubeconfig文件拷贝到devuser的家目录下
+13. 将kubeconfig文件拷贝到devuser的家目录下
 
     ~~~shell
     mkdir -p /home/devuser/.kube
@@ -9939,7 +9955,7 @@ metadata:
 
     拷贝到devuser的的家目录的指定的目录之后, 那么只要devuser在使用kubectl这个命令的时候, kubectl就会去家目录找这个文件
 
-13. 切换当前 kubeconfig 文件中的上下文（context）为 `kubernetes`，之后使用`kubectl`命令的时候, 都会使用这个配置文件中的信息
+14. 切换当前 kubeconfig 文件中的上下文（context）为 `kubernetes`，之后使用`kubectl`命令的时候, 都会使用这个配置文件中的信息
 
     ~~~shell
     # --kubeconfig=/home/devuser/.kube/config用于指定要写入的kubeconfig文件
@@ -9949,7 +9965,7 @@ metadata:
     kubectl config use-context kubernetes --kubeconfig=/home/devuser/.kube/config
     ~~~
 
-14. 最后我们再来看看我们创建的kubeconfig的内容
+15. 最后我们再来看看我们创建的kubeconfig的内容
 
     ~~~shell
     
