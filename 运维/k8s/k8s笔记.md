@@ -4801,8 +4801,6 @@ ipFamilyPolicy有如下的可选值
     ipFamilies: 
       - IPv4 # 使用ipv4
   ~~~
-~~~
-
 - PreferDualStack: 双栈优先, 在你的集群支持双栈的时候分配双栈, 如果你的k8s集群不支持双栈, 那么会分配单栈, 到底是ipv4还是ipv6取决于你的k8s集群哪个协议可用
 
   ~~~yaml
@@ -4819,7 +4817,7 @@ ipFamilyPolicy有如下的可选值
     ipFamilies:
       - IPv4 # ipv4作为主地址
       - IPv6 # ipv6为次地址
-~~~
+  ~~~
 
 - RequireDualStack: 强制双栈, 如果集群不支持双栈，那么svc创建失败
 
