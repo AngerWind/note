@@ -9761,35 +9761,47 @@ metadata:
 
 #### 实践：创建一个devuser用户, 只能管理 dev 空间
 
-1. 创建dev命名空间
+
+
+1. 首先使用`root`用户创建dev命名空间
 
    ~~~shell
    kubectl create ns dev
    ~~~
 
-2. 创建一个devuser用户, 并设置密码
+2. 使用`root`用户创建一个devuser用户, 并设置密码
 
    ~~~shell
    useradd devuser
    passwd devuser
    ~~~
 
-3. 创建一个目录, 用来作为我们当前操作的目录, 之后我们的操作都在这个目录下进行
+3. 创建一个目录, 用来作为我们当前操作的临时目录, 之后我们的操作都在这个目录下进行
 
    ~~~shell
    mkdir /usr/local/install-k8s/
-   chown devuser:devuser /usr/local/install-k8s/
+   chown devuser:devuser /usr/local/install-k8s/ # 切换权限, 这样devuser才有权限在这个目录下进行操作
    ~~~
 
-4. 重新通过devuser用户来登录linux
+4. 提前安装好证书生成工具, 后续需要使用这些工具来生成证书
 
    ~~~shell
-   ssh devuser@192.168.1.100
+   wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
+   mv cfssl_linux-amd64 /usr/local/bin/cfssl
+   
+   wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
+   mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
+   
+   wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
+   mv cfssl-certinfo_linux-amd64 /usr/local/bin/cfssl-certinfo
+   
+   chmod a+x /usr/local/bin/cfssl*   #添加执行权限
    ~~~
 
-5. 这个时候我们通过`kubectl`命令来访问k8s, 肯定是会被拒绝访问的, 因为还没有为这个用户创建证书
+5. 如果这个时候我们`kubectl`命令来访问k8s, 肯定是会被拒绝访问的, 因为还没有为这个用户创建证书
 
    ```shell
+   su - devuser
    kubectl get pod
    
    E0226 23:19:29.753031   37211 memcache.go:265] "Unhandled Error" err="couldn't get current server API group list: Get \"http://localhost:8080/api?timeout=32s\": dial tcp [::1]:8080: connect: connection refused"
@@ -9830,52 +9842,61 @@ metadata:
      ]
    }
    EOF
+   
+   ls
+   devuser-csr.json
    ~~~
 
-7. 下载证书生成工具(这一步记得使用`root`用户, 否则会权限拒绝)
-
-   ~~~shell
-   wget https://pkg.cfssl.org/R1.2/cfssl_linux-amd64
-   mv cfssl_linux-amd64 /usr/local/bin/cfssl
    
-   wget https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64
-   mv cfssljson_linux-amd64 /usr/local/bin/cfssljson
-   
-   wget https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64
-   mv cfssl-certinfo_linux-amd64 /usr/local/bin/cfssl-certinfo
-   ~~~
 
-8. 通过证书生成工具生成证书(这里使用`devuser`用户)
+7. 通过证书生成工具生成证书(使用root用户)
 
    ~~~shell
    # 这个目录下都是k8s的秘钥信息, 保存k8s集群中的根证书, 以及生成根证书的私钥
    # 这个是在安装k8s的过程中自动生成的
    cd /etc/kubernetes/pki 
    ls
-   apiserver.crt apiserver.key ca.crt  front-proxy-ca.crt front-proxy-client.key
-   apiserver-etcd-client.crt  apiserver-kubelet-client.crt  ca.key  front-proxy-ca.key sa.key apiserver-etcd-client.key  apiserver-kubelet-client.key  etcd front-proxy-client.crt  sa.pub
+   apiserver.crt  apiserver-etcd-client.key  apiserver-kubelet-client.crt  ca.crt  etcd                front-proxy-ca.key      front-proxy-client.key  sa.pub
+   apiserver-etcd-client.crt  apiserver.key              apiserver-kubelet-client.key  ca.key  front-proxy-ca.crt  front-proxy-client.crt  sa.key
    
    
    # -ca 指定当前k8s中, 根证书对应的文件
    # -ca-key 指定当前k8s中, 签发根证书对应的私钥文件
    # -profile指定签发的证书的使用场景, 不同的使用场景有不同的配置, 比如过期时间, 证书类型等等, 这里直接指定kubernetes即可
-   # ./devuser-csr.json用于指定申请证书的json文件, 就是我们刚刚创建的json文件
+   # devuser-csr.json用于指定申请证书的json文件, 就是我们刚刚创建的json文件
+   # cfssljson 是一个用于处理 cfssl 输出的工具。在这个命令中，-bare devuser 指示 cfssljson 生成一组证书文件，文件名将以 devuser 为基础。生成的文件通常包括：
+   #    devuser.pem：证书文件（公钥部分）。
+   #    devuser-key.pem：证书的私钥文件。
+   #    devuser.csr：证书签名请求文件（CSR）。
    cfssl gencert -ca=ca.crt -ca-key=ca.key -profile=kubernetes /usr/local/install-k8s/cert/devuser/devuser-csr.json | cfssljson -bare devuser
+   2026/02/28 15:12:54 [INFO] generate received request
+   2026/02/28 15:12:54 [INFO] received CSR
+   2026/02/28 15:12:54 [INFO] generating key: rsa-2048
+   2026/02/28 15:12:54 [INFO] encoded CSR
+   2026/02/28 15:12:54 [INFO] signed certificate with serial number 713574910664921085378252370956239743594879665652
+   2026/02/28 15:12:54 [WARNING] This certificate lacks a "hosts" field. This makes it unsuitable for
+   websites. For more information see the Baseline Requirements for the Issuance and Management
+   of Publicly-Trusted Certificates, v.1.1.6, from the CA/Browser Forum (https://cabforum.org);
+   specifically, section 10.2.3 ("Information Requirements").
    
    
    # 其中devuser.src是证书申请文件, 是我们在上面步骤中自己创建的
    # devuser.pem这个文件包含了用户的 公钥 和 CA 对其签名的信息。CA 使用它来确认该证书的有效性，并可以确保该证书没有被篡改。之后和k8s api server通讯的过程中, 会使用这个证书来验证当前用户的身份, 避免中间人工具
    # devuser-key.pem这是与 devuser.pem 公钥证书配对的 私钥 文件。私钥是保密的，不能泄露给任何人。它用于签名和解密操作，确保通信的安全性。通常情况下，私钥存储在本地，仅由用户自己掌握。
-   ls
-   devuser.csr  devuser.pem  devuser-key.pem
+   ls | grep devuser  # 查看生成的文件
+   devuser.csr
+   devuser-key.pem
+   devuser.pem
    ~~~
 
-9. 创建一个新的kubeconfig上下文文件, 并在其中添加一个名为`kubernetes`的k8s集群信息
+8. 创建一个新的kubeconfig上下文文件, 并在其中添加一个名为`kubernetes`的k8s集群信息
 
    ~~~shell
    cd /usr/local/install-k8s/cert/devuser/
    
-   export KUBE_APISERVER="https://172.20.0.113:6443" # 通过环境变量指定当前k8s集群api-server的地址
+   # 通过环境变量指定当前k8s集群api-server的地址
+   # ifconfig eth0 | grep inet | awk '{ print $2 }' | head -n 1 用于获取当前机器的ipv4地址
+   export KUBE_APISERVER="https://$(ifconfig eth0 | grep inet | awk '{ print $2 }' | head -n 1):6443" 
    
    # --kubeconfig表示要写入的kubeconfig文件, 如果这个文件不存在的话会自动创建
    # set-cluster kubernete 表示往kubeconfig文件中添加一个名为kubernetes的cluster集群, 集群的名字可以随便指定, 之后可以使用这个名字来切换控制多个k8s集群
@@ -9887,21 +9908,33 @@ metadata:
    --kubeconfig=devuser.kubeconfig \
    --server=${KUBE_APISERVER} \
    --certificate-authority=/etc/kubernetes/pki/ca.crt \
-   --embed-certs=true \ # 指定是否要加密认证
+   --embed-certs=true
    
    
    ls
-   devuser.kubeconfig # 这个就是创建出来的kubeconfig文件, 这个文件中定义了一个名为kubernetes的k8s集群, 他的aip-server的地址为https://172.20.0.113:6443
+   devuser-csr.json  devuser.kubeconfig # 这个devuser.kubeconfig就是创建出来的kubeconfig文件, 这个文件中定义了一个名为kubernetes的k8s集群, 他的aip-server的地址为https://172.20.0.113:6443
+   
+   cat devuser.kubeconfig 
+   apiVersion: v1
+   clusters:
+   - cluster:
+       certificate-authority-data: ...... # 这是访问集群的秘钥
+       server: https://172.20.0.113:6443 # 这里集群的api server的地址
+     name: kubernetes # 这是这个集群的名字
+   contexts: null
+   current-context: ""
+   kind: Config
+   users: null
    ~~~
 
-10. 将名为 `devuser` 的用户凭据（使用客户端证书）配置到 `devuser.kubeconfig` 文件中，用于在 kubeconfig 中定义一个基于证书认证的 Kubernetes 用户
+9. 将名为 `devuser` 的用户凭据（使用客户端证书）配置到 `devuser.kubeconfig` 文件中，用于在 kubeconfig 中定义一个基于证书认证的 Kubernetes 用户
 
    ~~~shell
    cd /usr/local/install-k8s/cert/devuser/
-   
+      
    # --kubeconfig=devuser.kubeconfig指定要写入信息的kubeconfig文件
    # set-credentials devuser表示要往这个kubeconfig文件中添加一个名为devuser的用户, 这个名字可以随便填
-   # --client-certificate=/etc/kubernetes/pki/devuser.pem用于指定devuser这个用户使用的公钥和证书, 因为这个证书是我们之前使用csr文件生成的, 而我们在csr文件中指定了CN和names.O为devuser和k8s
+   # --client-certificate=/etc/kubernetes/pki/devuser.pem用于指定devuser这个用户使用的公钥和证书, 因为这个证书是我们之前使用csr.json文件生成的, 而我们在cs.jsonr文件中指定了CN和names.O为devuser和k8s
    # 所以在实际和k8s交互的过程中, 我们使用的是csr中指定的user和group
    # --client-key=/etc/kubernetes/pki/devuser-key.pem用于指定pem证书对应的私钥, 用于身份验证
    # --embed-certs=true指定将证书中的内容直接嵌入 kubeconfig 中，而不是使用引用外部路径的方式
@@ -9910,9 +9943,33 @@ metadata:
    --client-key=/etc/kubernetes/pki/devuser-key.pem \
    --embed-certs=true \
    --kubeconfig=devuser.kubeconfig
+   User "devuser" set.
+   
+   ls
+   devuser-csr.json  devuser.kubeconfig
+   
+   cat devuser.kubeconfig 
+   apiVersion: v1
+   clusters:
+   - cluster:
+       certificate-authority-data: ...
+       server: https://172.20.0.113:6443
+     name: kubernetes
+   contexts: null
+   current-context: ""
+   kind: Config
+   users:
+   # 这里添加了一个名为devuser的用户, 他使用的证书和私钥是/etc/kubernetes/pki/devuser.pem和/etc/kubernetes/pki/devuser-key.pem
+   # 因为证书申请文件中的CN和names.O为devuser和k8s, 所以这里的devuser 对应的就是k8s中的用户devuser和group k8s
+   - name: devuser
+     user:
+       client-certificate-data: ... # 这里是证书的数据
+       client-key-data: ... # 这里是证书的私钥
    ~~~
 
-11. 创建一个新的kubeconfig上下文, 并保存到`devuser.kubeconfig`文件中
+   
+
+11. 创建一个新的上下文context, 并保存到`devuser.kubeconfig`文件中
 
     ~~~shell
     # --kubeconfig=devuser.kubeconfig用于将信息写入到devuser.kubeconfig文件中, 而不是默认的 ~/.kube/config
@@ -9925,11 +9982,74 @@ metadata:
     --user=devuser \
     --namespace=dev \
     --kubeconfig=devuser.kubeconfig
+    Context "kubernetes" created.
+    
+    cat devuser.kubeconfig 
+    apiVersion: v1
+    clusters:
+    - cluster:
+        certificate-authority-data: ...
+        server: https://172.20.0.113:6443
+      name: kubernetes
+    contexts:
+    # 这里添加了一个新的context, 他连接的集群是kubernetes, 他使用的用户是devuser用户
+    - context:
+        cluster: kubernetes
+        namespace: dev
+        user: devuser
+      name: kubernetes # 这个context在默认情况下会使用dev用户, 这样在使用kubectl的时候就不需要通过 -n 指令来指定ns了
+    current-context: ""
+    kind: Config
+    users:
+    - name: devuser
+      user:
+        client-certificate-data: ...
+        client-key-data: ...
     ~~~
 
-12. 将`devuser`绑定到admin角色上, 并设置限制的命名空间为dev
+12. 有了context之后, 因为在一个kubeconfig文件中, 可以有多个context, 所以我们还需要指定我们具体要使用哪个context
 
-    admin这个角色拥有所有命名空间的所有权限
+    这样我们使用kubect的时候, 就会使用这个context中关联的user去链接到关联的cluster
+
+    ~~~shell
+    # --kubeconfig=/home/devuser/.kube/config用于指定要写入的kubeconfig文件
+    # use-context kubernetes表示在使用这个kubeconfig文件的时候, 默认使用kubernetes这个上下文, 这个上下文不是随便指定的, 而是我们在步骤10中通过set-context kubernetes来指定的
+    # 这样我们在使用kubetl 命令的时候默认会使用这个context, 而这个context又有对应的cluster和user, 而user我们又通过在步骤11中绑定到了对应的角色上面
+    # 那么k8s就知道我们在使用kubectl命令的时候, 要用什么角色去操作什么用户, 这个用户对应的权限是什么了
+    kubectl config use-context kubernetes --kubeconfig=devuser.kubeconfig
+    Switched to context "kubernetes".
+    
+    cat devuser.kubeconfig 
+    apiVersion: v1
+    clusters:
+    - cluster:
+        certificate-authority-data: ...
+        server: https://172.20.0.113:6443
+      name: kubernetes
+    contexts:
+    - context:
+        cluster: kubernetes
+        namespace: dev
+        user: devuser
+      name: kubernetes
+    current-context: kubernetes # 这里指定了默认使用的context
+    kind: Config
+    users:
+    - name: devuser
+      user:
+        client-certificate-data: ...
+        client-key-data: ...
+    ~~~
+
+    
+
+13. 经过上面的步骤, kubeconfig文件就准备好了, 那么我们在使用这个kubeconfig的时候, 就会以`devuser`的身份来连接到`https://172.20.0.113:6443`这个k8s集群了
+
+    此时我们还需要将`devuser`赋予角色, 让他能够有一定的权限来访问k8s集群
+
+    这里我们就将`devuser`用户添加一个`admin`的角色, 并设置限制的命名空间为dev
+
+    admin他是k8s中内置的角色, 主要是面相用户, 这个角色拥有所有命名空间的所有权限
 
     ~~~shell
     # 创建一个名为devuser-admin-binding的rolebinding
@@ -9938,38 +10058,82 @@ metadata:
     # 这个admin角色是k8s中内置的角色
     # --namespace和rolebinding一起限制了devuser的权限只在dev命名空间中生效, 而不是集群范围
     kubectl create rolebinding devuser-admin-binding \
-    --clusterrole=admin \ # 指定绑定的角色
-    --user=devuser \ # 指定绑定的用户
-    --namespace=dev # 指定限制的命名空间
+    --clusterrole=admin \
+    --user=devuser \
+    --namespace=dev
+    rolebinding.rbac.authorization.k8s.io/devuser-admin-binding created
     ~~~
 
-13. 将kubeconfig文件拷贝到devuser的家目录下
+14. 将kubeconfig文件拷贝到devuser的家目录下
 
     ~~~shell
     mkdir -p /home/devuser/.kube
-    cp devuser.kubeconfig /home/devuser/.kube/config # 将devuser.kubeconfig拷贝到.kube目录下, 并重命名为config
+    mv devuser.kubeconfig /home/devuser/.kube/config # 将devuser.kubeconfig拷贝到.kube目录下, 并重命名为config
     chown devuser:devuser /home/devuser/.kube/config
     ~~~
 
-    拷贝到devuser的的家目录的指定的目录之后, 那么只要devuser在使用kubectl这个命令的时候, kubectl就会去家目录找这个文件
+    拷贝到devuser的的家目录的指定的目录之后, 那么只要我们在linux上面登录devuser, 并使用devuser来运行`kubectl`
 
-14. 切换当前 kubeconfig 文件中的上下文（context）为 `kubernetes`，之后使用`kubectl`命令的时候, 都会使用这个配置文件中的信息
+    那么`kubectl`命令就会查找`~/.kube/config`文件, 然后选择默认的context, 使用关联的用户连接到关联的集群, 并在集群中进行权限校验
 
-    ~~~shell
-    # --kubeconfig=/home/devuser/.kube/config用于指定要写入的kubeconfig文件
-    # use-context kubernetes表示在使用这个kubeconfig文件的时候, 默认使用kubernetes这个上下文, 这个上下文不是随便指定的, 而是我们在步骤10中通过set-context kubernetes来指定的
-    # 这样我们在使用kubetl 命令的时候默认会使用这个context, 而这个context又有对应的cluster和user, 而user我们又通过在步骤11中绑定到了对应的角色上面
-    # 那么k8s就知道我们在使用kubectl命令的时候, 要用什么角色去操作什么用户, 这个用户对应的权限是什么了
-    kubectl config use-context kubernetes --kubeconfig=/home/devuser/.kube/config
-    ~~~
-
-15. 最后我们再来看看我们创建的kubeconfig的内容
+15. 使用`devuser`来操作k8s
 
     ~~~shell
+    su - devuser
     
+    # 没有权限获取集群的信息
+    kubectl get nodes
+    Error from server (Forbidden): nodes is forbidden: User "devuser" cannot list resource "nodes" in API group "" at the cluster scope
+    
+    # 在默认的dev命名空间中创建configmap
+    kubectl create configmap my-config --from-literal=key1=value1 --from-literal=key2=value2
+    configmap/my-config created
+    
+    # 查看默认的命名空间, 即dev
+    kubectl get cm
+    NAME               DATA   AGE
+    kube-root-ca.crt   1      79m
+    my-config          2      4s
+    
+    # 手动指定查看的命名空间, dev
+    kubectl get cm -n dev
+    NAME               DATA   AGE
+    kube-root-ca.crt   1      79m
+    my-config          2      36s
+    
+    # 没有权限查看其他的命名空间
+    kubectl get pod -n default
+    Error from server (Forbidden): pods is forbidden: User "devuser" cannot list resource "pods" in API group "" in the namespace "default"
     ~~~
 
     
+
+16. 最后我们再来看看我们创建的kubeconfig的内容, 除了直接`cat ~/.kube/config`这种方式之外, 我们还可以使用如下的命令
+
+    ~~~shell
+    kubectl config view
+    apiVersion: v1
+    clusters:
+    - cluster:
+        certificate-authority-data: DATA+OMITTED
+        server: https://172.20.0.113:6443
+      name: kubernetes
+    contexts:
+    - context:
+        cluster: kubernetes
+        namespace: dev
+        user: devuser
+      name: kubernetes
+    current-context: kubernetes
+    kind: Config
+    users:
+    - name: devuser
+      user:
+        client-certificate-data: DATA+OMITTED
+        client-key-data: DATA+OMITTED
+    ~~~
+
+    他会显示当前使用的kubeconfig文件, 并省略掉敏感信息
 
 
 
@@ -10151,6 +10315,120 @@ NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,DefaultTolerat
 
 
 # Context上下文
+
+要想了解context是什么东西, 首先要了解我们在使用`kubectl`命令的时候
+
+- 他是怎么连接到Kubernetes API Server的, 他怎么知道Kubernetes API Server的地址
+- kubectl在执行的时候, 使用的到底是怎么样的用户, 我要怎么切换使用不同的用户
+
+答案就是,  kubectl命令行使用kubeconfig配置文件去连接k8s集群, 在这个kubeconfig中你
+
+- 可以配置多个k8s集群的api-server的地址
+- 可以配置多个用户
+- 可以配置多个context, 每个context对应了一个用户和k8s集群的关联关系
+- 可以配置一个默认使用的context
+
+kubeconfig的格式如下
+
+~~~yaml
+apiVersion: v1
+kind: Config # 这里表示这个文件是一个kubeconfig文件
+
+# 这个定义k8s集群, 可以定义多个集群
+clusters:
+
+- cluster: # 定义一个k8s集群, 名字为kubernetes1, 他的api-server地址是https://172.20.0.113:6443, 这个集群的证书在certificate-authority-data 中指定
+    certificate-authority-data: DATA+OMITTED
+    server: https://172.20.0.113:6443
+  name: kubernetes1
+  
+- cluster: # 这里定义了另外一个k8s集群, 名字为kubernetes2, 他的api-server地址是https://172.20.0.114:6443
+    certificate-authority-data: DATA+OMITTED
+    server: https://172.20.0.114:6443
+  name: kubernetes2
+
+# 这里定义连接到k8s集群的用户, 可以定义多个
+users:
+- name: devuser1 # 这里定义了一个devuse1r用户, 名字可以随便起, 并不是表示会使用devuser去访问k8s集群,而是使用申请证书的csr.json文件中定义的用户去访问k8s集群
+  user:
+    client-certificate-data: DATA+OMITTED # 证书
+    client-key-data: DATA+OMITTED # 私钥
+    
+- name: devuser2
+  user:
+    client-certificate-data: DATA+OMITTED # 证书
+    client-key-data: DATA+OMITTED # 私钥
+    
+
+# 这里定义context, 一个context可以关联一个k8s集群和一个用户, 可以定义多个context
+contexts:
+- context: # 这里定义了一个context, 名字为kubernetes1, 在使用这个context的时候, 他会使用devuser1中定义的用户去访问kubernetes1集群中定义的api-server
+    cluster: kubernetes1
+    namespace: dev # 这里指定默认使用的命名空间
+    user: devuser1 
+  name: kubernetes1
+  
+- context: # 这里定义了另外一个context
+    cluster: kubernetes2
+    namespace: dev # 这里指定默认使用的命名空间
+    user: devuser2
+  name: kubernetes2
+  
+# 这里定义了默认使用的context
+current-context: kubernetes1
+~~~
+
+所以context实际上就是一个集群和用户的关联关系
+
+
+
+我们在使用kubectl命令的时候, 会经历一下几个步骤
+
+1. 确定使用的kubeconfig文件
+   1. 如果通过`kubectl --kubeconfig=/path/to/config`指定了kubeconfig文件, 那么就使用这个kuneconfig文件
+   2. 查找环境变量`KUBECONFIG`, 看看他有没有指定kubeconfig文件的路径
+   3. 如果没有指定的话, 那么就使用`~/.kube/config`这个文件
+2. 确认使用的kubeconfig文件之后, 读取其中的`current-context`字段, 获取要使用的context上下文
+3. 获取context上下文关联的cluster和user和namespace
+4. 之后使用user对应的证书, 私钥, 去访问cluster中指定的kubernetes api-server地址, 如果没有在kubectl命令中通过-n指定要操作的命名空间, 那么就默认操作context中指定的命名空间
+5. kubernetes api-server获取到请求之后,  从user对应的证书中提取用户和group, 进行鉴权, 看看是否有权限执行对应的操作
+
+
+
+
+
+有了kubeconfig文件之后, 我们可以在一个文件中定义多个cluster和user, 并将他们绑定在不同的context中, 这样我们只需要切换使用的上下文context, 就可以管理不同的k8s集群了
+
+要想在kubeconfig中添加cluster, user, context, 可以使用如下的命令(**具体这些参数要怎么指定, 看上面的时间**)
+
+~~~shell
+# 定义cluster
+kubectl config \
+set-cluster kubernetes \
+--kubeconfig=devuser.kubeconfig \
+--server=${KUBE_APISERVER} \
+--certificate-authority=/etc/kubernetes/pki/ca.crt \
+--embed-certs=true
+
+# 定义user
+kubectl config set-credentials devuser \
+--client-certificate=/etc/kubernetes/pki/devuser.pem \
+--client-key=/etc/kubernetes/pki/devuser-key.pem \
+--embed-certs=true \
+--kubeconfig=devuser.kubeconfig
+
+# 定义context
+kubectl config set-context kubernetes \
+--cluster=kubernetes \
+--user=devuser \
+--namespace=dev \
+--kubeconfig=devuser.kubeconfig
+
+# 设置默认使用的context
+kubectl config use-context kubernetes --kubeconfig=devuser.kubeconfig
+~~~
+
+
 
 
 
@@ -15905,3 +16183,148 @@ curl -X POST -H "Content-Type: application/json" -d '{
 > 使用 Kubernetes API Server, 你可以创建/删除/查询/修改 对应的 pod/deployment/svc/cm等等资源
 >
 > 具体的调用api可以具体查询
+
+
+
+
+
+## kubectl exec
+
+`kubectl exec` 主要能够让你在一个容器中执行命令, 比如
+
+~~~shell
+# 创建一个文件夹
+kubectl exec -it -n service-software seamq-base-controller-0-0 -- mkdir -p /tmp1
+~~~
+
+当然最重要的还是, 我们可以创建一个bash来和容器进行交互
+
+~~~shell
+kubectl exec -it -n service-software seamq-base-controller-0-0 -- bash
+~~~
+
+
+
+但是在使用kubectl exec 的时候, 如果你的命令比较复杂, 那么就会出现一定的问题, 比如
+
+~~~shell
+# 创建目录
+[root@node173 ~]# kubectl exec -it -n service-software seamq-base-controller-0-0 --  mkdir -p /tmp1
+
+# 查看是否创建成功
+[root@node173 ~]# kubectl exec -it -n service-software seamq-base-controller-0-0 --  ls /
+Defaulted container "seamq" out of: seamq, seamq-init (init)
+srv  tmp1 bin        home  n    tmp  var
+
+# 两个命令同时执行
+[root@node173 ~]# kubectl exec -it -n service-software seamq-base-controller-0-0 --  mkdir -p /tmp1 && touch /tmp1/aa.yaml
+Defaulted container "seamq" out of: seamq, seamq-init (init)
+touch: 无法创建 '/tmp1/aa.yaml': No such file or directory
+~~~
+
+在上面你会发现, 我们创建在容器中创建了/tmp1命令, 但是在touch的时候却显示没有这个文件夹, 为什么会这样呢
+
+实际上这个命令在shell在解析命令的时候, 命令阶段的位置和我们预期的不一样, 我们以为的是先exec到容器中执行
+
+~~~shell
+mkdir -p /tmp1 && touch /tmp1/aa.yaml
+~~~
+
+但是实际上的解析结果是
+
+~~~shell
+# 先在宿主机上面执行
+kubectl exec -it -n service-software seamq-base-controller-0-0 --  mkdir -p /tmp1 
+# 然后在数组机器上面执行touch命令
+touch /tmp1/aa.yaml
+~~~
+
+上面两个命令都是在宿主机上面执行了, 所以会保持没有/tmp1这个命令
+
+
+
+包括如下的命令也是, 因为命令拆分的位置不一样而导致错误
+
+~~~shell
+kubectl exec -it -n service-software seamq-base-controller-0-0 -- cat > /tmp1/aa.yaml << 'EOF'
+hello world
+EOF
+
+-bash: /tmp1/aa.yaml: No such file or directory
+~~~
+
+我们以为他的执行步骤是先exec到容器中, 然后执行如下命令
+
+~~~shell
+cat > /tmp1/aa.yaml << 'EOF'
+hello world
+EOF
+~~~
+
+但是实际上他的执行步骤是
+
+~~~shell
+# 先执行
+kubectl exec -it -n service-software seamq-base-controller-0-0 -- cat
+
+# 然后将结果输出到 /tmp1/aa.yaml
+
+# 最后有一部分没用的
+ << 'EOF'
+hello world
+EOF
+~~~
+
+
+
+
+
+所以如果你的命令特别的复杂的话, 有很多乱七八糟的符号的话, 那么推荐你使用`bash -c`来执行
+
+~~~shell
+# 案例1
+kubectl exec -it -n service-software seamq-base-controller-0-0 -- bash -c "mkdir -p /tmp1 && touch /tmp1/aa.yaml"
+
+# 案例2
+kubectl exec -it -n service-software seamq-base-controller-0-0 -- bash -c "cat > /tmp1/aa.yaml << 'EOF'
+hello world
+EOF"
+
+# 案例3, 如果cat要输出的内容中有引号, 记得转义
+kubectl exec -it -n service-software seamq-base-controller-0-0 -- \
+bash -c "mkdir -p /tmp1 && cat > /tmp1/aa.yaml << 'EOF'
+username=\"admin\" password=\"a89TbYH_F_biv_6_4u\";
+EOF"
+~~~
+
+
+
+### kubectl exec和环境变量
+
+在上面我们使用`kubectl exec --it mypod -- bash -c "..."` 的时候, 如果我想要在命令中使用环境变量, 那么应该怎么办
+
+- 怎么样使用宿主机上面的变量替换
+- 怎么样使用pod 容器中的环境变量
+
+先说结论
+
+~~~shell
+# 在pod和宿主机上创建一个TZ的环境变量
+[root@node173 ~]# kubectl exec -it -n service-software seamq-base-controller-0-0 --  bash -c "env | grep TZ"
+TZ=Asia/Shanghai
+
+[root@node173 ~]# export TZ=Asia/Tokyo
+[root@node173 ~]# env | grep TZ
+TZ=Asia/Tokyo
+
+# 通过如下的方式获取宿主机上面的环境变量
+# 命令中的 $XX 会首先被宿主机进行解析, 然后发送给pod中的bash 进行执行
+[root@node173 ~]# kubectl exec -it -n service-software seamq-base-controller-0-0 --  bash -c "echo $TZ > /tmp/tz && cat /tmp/tz"
+Asia/Tokyo
+
+# 要想 $XX 不被宿主机解析, 那么纪要进行转移 \$XX
+# 然后他就会被发送到pod中的bash, 由pod中的bash进行解析
+[root@node173 ~]# kubectl exec -it -n service-software seamq-base-controller-0-0 --  bash -c "echo \$TZ > /tmp/tz && cat /tmp/tz"
+Asia/Shanghai
+~~~
+
