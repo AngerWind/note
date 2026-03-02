@@ -3009,6 +3009,8 @@ Query id: 1eef50c7-58ef-4fae-8f2d-63939421174b
 
 
 
+一般设置的排序字段都是在过滤条件中, 常用或者必选的一些字段
+
 
 
 ### 分区
@@ -3401,6 +3403,44 @@ ClickHouse中的Select与标准的SQL差别不大
 
 
 
+### join
+
+如果你的两个表join使用不同的字段, 那么可以使用和mysql一样的语法
+
+~~~sql
+SELECT
+    a.UserID,
+    b.VisitID,
+    a.URL
+FROM hits_v1 AS a
+LEFT JOIN visits_v1 AS b ON a.UserID = b.VisitorID
+~~~
+
+如果你的join的两个表字段名相同, 那么可以使用简化写法
+
+~~~sql
+SELECT
+    a.UserID,
+    a.URL,
+    b.VisitID
+FROM hits_v1 AS a
+LEFT JOIN visits_v1 AS b USING (UserID)
+
+-- 等效于
+SELECT
+    a.UserID,
+    a.URL,
+    b.VisitID
+FROM hits_v1 AS a
+LEFT JOIN visits_v1 AS b ON a.UserID = b.UserID
+~~~
+
+
+
+
+
+### 上卷
+
 比如下面的案例
 
 ~~~sql
@@ -3721,7 +3761,7 @@ SELECT ... [FORMAT ...]
 
 在使用explain的时候, 可以显示4中结果, 分别通过AST, SYNTAX, PLAN, PIPELINE来选择
 
-
+我们主要使用的就是 `explain plain`和`explain syntax`两个
 
 ## explain plan
 
@@ -3942,37 +3982,512 @@ Query id: 9de8e1a6-5595-42c8-944a-bb0e8578ff0c
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # 建表优化
+
+## 数据类型
+
+1. 时间字段
+
+   建表时能用数值型或日期时间型表示的字段就不要用字符串，全 String 类型在以 Hive为中心的数仓建设中常见, 但 ClickHouse 环境不应受此影响
+
+   虽然 ClickHouse 底层将 DateTime 存储为时间戳 Long 类型，但不建议存储 Long 类型，因为Clickhouse是强类型的, 很多地方都要使用时间类型,  使用Long的话需要经过转换。
+
+   ~~~sql
+   create table t_type2(
+       id UInt32,
+   	sku_id String,
+   	total_amount Decimal(16,2) ,
+   	create_time Int32
+   ) engine =ReplacingMergeTree(create_time)
+   partition by toYYYYMMDD(toDate(create_time)) –- 如果使用Int32类型的话, 需要经过转换一次, 所以还是推荐使用时间类型
+   primary key (id)
+   order by (id, sku_id);
+   ~~~
+
+2. 空置类型
+
+   官方已经指出 **Nullable 类型几乎总是会拖累性能**，因为存储 Nullable 列时需要创建一个额外的文件来存储 NULL 的标记，并且 Nullable 列无法被索引。
+
+   **因此除非极特殊情况，应直接使用字段默认值表示空，或者自行指定一个在业务中无意义的值**（例如用-1 表示没有商品ID）。
+
+   ~~~sql
+   CREATE TABLE t_null(
+       x Int8, 
+       y Nullable(Int8)
+   ) ENGINE TinyLog;
+   
+   INSERT INTO t_null VALUES (1, NULL), (2, 3);
+   SELECT x + y FROM t_null;
+   ~~~
+
+   然后查看对应的存储文件
+
+   ![image-20260302193254050](img/image-20260302193254050.png)
+
+
+
+## 分区和索引
+
+- 分区粒度根据业务特点决定，不宜过粗或过细。**一般选择按天分区**，也可以指定为 Tuple()表示不分区
+
+  以单表一亿数据为例，分区大小控制在 10-30 个为最佳。
+
+- **在建表的时候, 必须指定order by字段**, 指定的字段一般在查询条件中经常被用来充当筛选条件的属性, 可以是单一维度，也可以是组合维度的索引
+
+  通常需要满足高级列在前、查询频率大的在前原则；**还有基数特别大的不适合做索引列**, 如用户表的 userid 字段；
+
+  通常筛选后的数据满足在百万以内为最佳。
+
+  比如官方案例的 hits_v1 表和 visits_v1表：
+
+  ~~~sql
+  ……
+  PARTITION BY toYYYYMM(EventDate) -- 按天分区
+  ORDER BY (CounterID, EventDate, intHash32(UserID))
+  ……
+  
+  
+  ……
+  PARTITION BY toYYYYMM(StartDate) -- 按天分区
+  ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
+  ……
+  ~~~
+
+  
+
+  
+## 表参数
+
+- index_granularity 是用来控制索引粒度的，默认是 8192，如非必须不建议调整。
+
+- 如果表中不是必须保留全量历史数据，建议指定 TTL（生存时间值），可以免去手动过期历史数据的麻烦，
+
+  TTL 也可以通过 alter table 语句随时修改
+
+
+
+## 写入和删除优化
+
+- 尽量不要执行单条或小批量删除和插入操作，这样会产生小分区文件，给后台Merge 任务带来巨大压力
+
+- **不要一次写入太多分区，或数据写入太快，数据写入太快会导致 Merge 速度跟不上而报错，一般建议每秒钟发起 2-3 次写入操作，每次操作写入 2w~5w 条数据**（依服务器性能而定）
+
+  如果写入过快, 会报如下的错误
+
+  ~~~shell
+  # 这种错误是因为写入请求过多, 可以通过降低请求次数, 每个请求中多带一些数据来避免, 可以减少临时分区的个数
+  Code: 252, e.displayText() = DB::Exception: Too many parts(304).
+  Merges are processing significantly slower than inserts
+  
+  # 查询使用的内存超过了限制, 针对这种错误
+  # 在服务器内存充裕的情况下增加内存配额，一般通过 max_memory_usage 来实现
+  # 在服务器内存不充裕的情况下，建议将超出部分内容分配到系统硬盘上，但会降低执行速度
+  # 一般通过 max_bytes_before_external_group_by、max_bytes_before_external_sort 参数来实现。
+  
+  Code: 241, e.displayText() = DB::Exception: Memory limit (for query)
+  exceeded:would use 9.37 GiB (attempt to allocate chunk of 301989888
+  bytes), maximum: 9.31 GiB
+  ~~~
+
+
+
+
+
+## Server常见参数配置
+
+clickhosue-server的配置主要放在`/etc/clickhouse-server/config.xml`和`/etc/clickhouse-server/users.xml`中
+
+具体的设置可以查看https://clickhouse.com/docs/operations/settings/overview
+
+
+
+
+
+### CPU参数
+
+| 配置                                      | 描述                                                         |
+| ----------------------------------------- | ------------------------------------------------------------ |
+| background_pool_size                      | 后台线程池的大小 ，merge 线程 就是在该线程池中执行，该线程 池不仅仅是给 merge 线程用的，<br />默认值16，允许的前提下 建议改成 **cpu的线程个数(考虑超线程)** |
+| background_schedule_pool_size             | 执行后台任务（复制表、Kafka 流、DNS 缓存更新） 的线程数。 <br />默认 128，建议改 成**cpu的线程个数(考虑超线程)** |
+| background_distributed_schedule_pool_size | 设置为分布式发送执行后台任务 的线程数<br />默 认16，建议改成 **cpu的线程个数(考虑超线程)** |
+| max_concurrent_queries                    | 最大并发处理的请 求数(包 含 select,insert 等)，默认值 100，推 荐 150(不够再加)~300。 |
+| max_threads                               | 设置单个查询所能 使用的最大cpu 个数<br />默认是cpu核数, 不建议改 |
+
+ 
+
+
+
+### 内存参数
+
+| 配置                               | 描述                                                         |
+| ---------------------------------- | ------------------------------------------------------------ |
+| max_memory_usage                   | 此参数在 users.xml 中,表示单 次 Query 占用内存最大值 ，该值 可以设置的比较大， 这样可以提升 集群查询的上限。<br />保留一点给 OS，比 如 128G 内存 的机器，设置为 100GB |
+| max_bytes_before_external_group_by | group by能够使用的最大内存<br />一般按照 max_memory_usage 的一半设置内存<br />当 group by 使用内存超过阈值后会将结果刷新到磁盘进行 <br/>因为 clickhouse 聚合分两个阶 段: 查询并及建立中间数据、合并 中间数据，结合上一 项，建议 50GB。 |
+| max_bytes_before_external_sort     | sort排序能够使用的最大内存<br />当order by使用的内存超过阈值就进行溢写磁盘(基于磁盘排序 )<br />**如果不设置该值，那么当内存不够时直接抛**错<br />设置了该值order by 可以正常完成，但是速度相对存内存 来 说肯定要慢点(**实测慢的非常多 ， 无法接受** )。 <br /><font color=red>推荐不要设置值, 让他报错, 因为使用ck本来就是为了快, 使用磁盘的话慢的无法接受 </font> |
+| max_table_size_to_drop             | 此参数在 config.xml 中，应用于需要删除表或分区的情况，默认 是 50GB，意思是如果删除50GB以上的分区表会失败。建议修改为 0， 这样不管多大的分区表都可以删除 |
+
+
+
+### 存储
+
+在hive中, 可以将数据保存到多个目录中, 然后这些目录挂载不同的磁盘, 这样在并行处理数据的时候可以同时使用多个磁盘的读写, 提交读写能力
+
+但是在Clickhouse中是不行的, Clickhouse的所有数据都保存在`/var/lib/clickhouse`中, 所以为了提交clickhouse的数据读写能力, 可以使用raid技术, 将多个磁盘组合为一个磁盘来提高磁盘的数据读写能力, 多数据查询场景 SSD 会比普通机械硬盘快 2-3 倍。
+
+或者直接上固态
+
+
+
 
 
 
 # 语法优化规则
+
+ClickHouse 的 SQL 优化规则是基于 RBO(Rule Based Optimization)，下面是一些优化规则
+
+
+
+## 测试用的表准备
+
+1. 在官网https://clickhouse.com/docs/getting-started/example-datasets/metrica#import-the-hits-data上面下载数据集, 这个数据集是匿名化的网络分析数据, 包括点击量（ `hits_v1` ）和访问量（ `visits_v1` ）。
+
+   - 点击量表(hits_v1)包含八百万的数据, 130多个字段 : https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
+   - 访问量表(visits_v1)包含160万的数据量, 180多个字段: https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+
+   
+
+   除了上面的两个表之外, 还提供了一个全量的点击量表(hits_100m_obfuscated_v1), 他包含了一亿的数据, 大小为7.5GB: https://datasets.clickhouse.com/hits/tsv/hits_100m_obfuscated_v1.tsv.xz 。
+
+   
+
+2. 下载压缩后的点击量表的TSV文件
+
+   ~~~sql
+   curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
+   # Validate the checksum
+   md5sum hits_v1.tsv
+   # Checksum should be equal to: f3631b6295bf06989c1437491f7592cb
+   ~~~
+
+3. 创建数据库和表
+
+   ~~~shell
+   clickhouse-client --query "CREATE DATABASE IF NOT EXISTS datasets"
+   
+   # 针对1百万的visits表
+   clickhouse-client --query "CREATE TABLE datasets.hits_v1 ( WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16,  EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32,  UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String,  RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8,  FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16,  UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8,  MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32,  SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8,  FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32,  HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String,  HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32,  FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32,  LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32,  RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64,  URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String,  ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64),  IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID)"
+   
+   # 针对1亿数据量的visits表
+   clickhouse-client --query="CREATE TABLE default.hits_100m_obfuscated (WatchID UInt64, JavaEnable UInt8, Title String, GoodEvent Int16, EventTime DateTime, EventDate Date, CounterID UInt32, ClientIP UInt32, RegionID UInt32, UserID UInt64, CounterClass Int8, OS UInt8, UserAgent UInt8, URL String, Referer String, Refresh UInt8, RefererCategoryID UInt16, RefererRegionID UInt32, URLCategoryID UInt16, URLRegionID UInt32, ResolutionWidth UInt16, ResolutionHeight UInt16, ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8, FlashMinor2 String, NetMajor UInt8, NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2), CookieEnable UInt8, JavascriptEnable UInt8, IsMobile UInt8, MobilePhone UInt8, MobilePhoneModel String, Params String, IPNetworkID UInt32, TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String, AdvEngineID UInt8, IsArtifical UInt8, WindowClientWidth UInt16, WindowClientHeight UInt16, ClientTimeZone Int16, ClientEventTime DateTime, SilverlightVersion1 UInt8, SilverlightVersion2 UInt8, SilverlightVersion3 UInt32, SilverlightVersion4 UInt16, PageCharset String, CodeVersion UInt32, IsLink UInt8, IsDownload UInt8, IsNotBounce UInt8, FUniqID UInt64, OriginalURL String, HID UInt32, IsOldCounter UInt8, IsEvent UInt8, IsParameter UInt8, DontCountHits UInt8, WithHash UInt8, HitColor FixedString(1), LocalEventTime DateTime, Age UInt8, Sex UInt8, Income UInt8, Interests UInt16, Robotness UInt8, RemoteIP UInt32, WindowName Int32, OpenerName Int32, HistoryLength Int16, BrowserLanguage FixedString(2), BrowserCountry FixedString(2), SocialNetwork String, SocialAction String, HTTPError UInt16, SendTiming UInt32, DNSTiming UInt32, ConnectTiming UInt32, ResponseStartTiming UInt32, ResponseEndTiming UInt32, FetchTiming UInt32, SocialSourceNetworkID UInt8, SocialSourcePage String, ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3), ParamCurrencyID UInt16, OpenstatServiceName String, OpenstatCampaignID String, OpenstatAdID String, OpenstatSourceID String, UTMSource String, UTMMedium String, UTMCampaign String, UTMContent String, UTMTerm String, FromTag String, HasGCLID UInt8, RefererHash UInt64, URLHash UInt64, CLID UInt32) ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER  BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID)"
+   ~~~
+
+4. 导入数据
+
+   ~~~shell
+   # 针对100万的表
+   cat hits_v1.tsv | clickhouse-client --query "INSERT INTO datasets.hits_v1 FORMAT TSV" --max_insert_block_size=100000
+   
+   # 求和
+   clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
+   # 8873898
+   
+   # 针对1亿的表
+   cat hits_v1.tsv | clickhouse-client --query "INSERT INTO datasets.hits_100m_obfuscated FORMAT TSV" --max_insert_block_size=100000
+   clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_100m_obfuscated"
+   ~~~
+
+5. 下载压缩的访问量表
+
+   ~~~sql
+   curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
+   # Validate the checksum
+   md5sum visits_v1.tsv
+   # Checksum should be equal to: 6dafe1a0f24e59e3fc2d0fed85601de6
+   ~~~
+
+6. 创建对应的表结构
+
+   ~~~sql
+   clickhouse-client --query "CREATE TABLE datasets.visits_v1 ( CounterID UInt32,  StartDate Date,  Sign Int8,  IsNew UInt8,  VisitID UInt64,  UserID UInt64,  StartTime DateTime,  Duration UInt32,  UTCStartTime DateTime,  PageViews Int32,  Hits Int32,  IsBounce UInt8,  Referer String,  StartURL String,  RefererDomain String,  StartURLDomain String,  EndURL String,  LinkURL String,  IsDownload UInt8,  TraficSourceID Int8,  SearchEngineID UInt16,  SearchPhrase String,  AdvEngineID UInt8,  PlaceID Int32,  RefererCategories Array(UInt16),  URLCategories Array(UInt16),  URLRegions Array(UInt32),  RefererRegions Array(UInt32),  IsYandex UInt8,  GoalReachesDepth Int32,  GoalReachesURL Int32,  GoalReachesAny Int32,  SocialSourceNetworkID UInt8,  SocialSourcePage String,  MobilePhoneModel String,  ClientEventTime DateTime,  RegionID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RemoteIP UInt32,  RemoteIP6 FixedString(16),  IPNetworkID UInt32,  SilverlightVersion3 UInt32,  CodeVersion UInt32,  ResolutionWidth UInt16,  ResolutionHeight UInt16,  UserAgentMajor UInt16,  UserAgentMinor UInt16,  WindowClientWidth UInt16,  WindowClientHeight UInt16,  SilverlightVersion2 UInt8,  SilverlightVersion4 UInt16,  FlashVersion3 UInt16,  FlashVersion4 UInt16,  ClientTimeZone Int16,  OS UInt8,  UserAgent UInt8,  ResolutionDepth UInt8,  FlashMajor UInt8,  FlashMinor UInt8,  NetMajor UInt8,  NetMinor UInt8,  MobilePhone UInt8,  SilverlightVersion1 UInt8,  Age UInt8,  Sex UInt8,  Income UInt8,  JavaEnable UInt8,  CookieEnable UInt8,  JavascriptEnable UInt8,  IsMobile UInt8,  BrowserLanguage UInt16,  BrowserCountry UInt16,  Interests UInt16,  Robotness UInt8,  GeneralInterests Array(UInt16),  Params Array(String),  Goals Nested(ID UInt32, Serial UInt32, EventTime DateTime,  Price Int64,  OrderID String, CurrencyID UInt32),  WatchIDs Array(UInt64),  ParamSumPrice Int64,  ParamCurrency FixedString(3),  ParamCurrencyID UInt16,  ClickLogID UInt64,  ClickEventID Int32,  ClickGoodEvent Int32,  ClickEventTime DateTime,  ClickPriorityID Int32,  ClickPhraseID Int32,  ClickPageID Int32,  ClickPlaceID Int32,  ClickTypeID Int32,  ClickResourceID Int32,  ClickCost UInt32,  ClickClientIP UInt32,  ClickDomainID UInt32,  ClickURL String,  ClickAttempt UInt8,  ClickOrderID UInt32,  ClickBannerID UInt32,  ClickMarketCategoryID UInt32,  ClickMarketPP UInt32,  ClickMarketCategoryName String,  ClickMarketPPName String,  ClickAWAPSCampaignName String,  ClickPageName String,  ClickTargetType UInt16,  ClickTargetPhraseID UInt64,  ClickContextType UInt8,  ClickSelectType Int8,  ClickOptions String,  ClickGroupBannerID Int32,  OpenstatServiceName String,  OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String,  UTMMedium String,  UTMCampaign String,  UTMContent String,  UTMTerm String,  FromTag String,  HasGCLID UInt8,  FirstVisit DateTime,  PredLastVisit Date,  LastVisit Date,  TotalVisits UInt32,  TraficSource    Nested(ID Int8,  SearchEngineID UInt16, AdvEngineID UInt8, PlaceID UInt16, SocialSourceNetworkID UInt8, Domain String, SearchPhrase String, SocialSourcePage String),  Attendance FixedString(16),  CLID UInt32,  YCLID UInt64,  NormalizedRefererHash UInt64,  SearchPhraseHash UInt64,  RefererDomainHash UInt64,  NormalizedStartURLHash UInt64,  StartURLDomainHash UInt64,  NormalizedEndURLHash UInt64,  TopLevelDomain UInt64,  URLScheme UInt64,  OpenstatServiceNameHash UInt64,  OpenstatCampaignIDHash UInt64,  OpenstatAdIDHash UInt64,  OpenstatSourceIDHash UInt64,  UTMSourceHash UInt64,  UTMMediumHash UInt64,  UTMCampaignHash UInt64,  UTMContentHash UInt64,  UTMTermHash UInt64,  FromHash UInt64,  WebVisorEnabled UInt8,  WebVisorActivity UInt32,  ParsedParams    Nested(Key1 String,  Key2 String,  Key3 String,  Key4 String, Key5 String, ValueDouble    Float64),  Market Nested(Type UInt8, GoalID UInt32, OrderID String,  OrderPrice Int64,  PP UInt32,  DirectPlaceID UInt32,  DirectOrderID  UInt32,  DirectBannerID UInt32,  GoodID String, GoodName String, GoodQuantity Int32,  GoodPrice Int64),  IslandID FixedString(16)) ENGINE = CollapsingMergeTree(Sign) PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID) SAMPLE BY intHash32(UserID)"
+   ~~~
+
+7. 导入数据
+
+   ~~~sql
+   cat visits_v1.tsv | clickhouse-client --query "INSERT INTO datasets.visits_v1 FORMAT TSV" --max_insert_block_size=100000
+   
+   clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
+   1680609
+   ~~~
+
+
+
+
+## count优化
+
+在调用 count 函数时，如果使用的是 count() 或者 count(*)，且没有 where 条件，则会直接使用 `system.tables` 的 total_rows，例如:
+
+~~~sql
+EXPLAIN SELECT count()FROM datasets.hits_v1;
+
+Union
+	Expression (Projection)
+		Expression (Before ORDER BY and SELECT)
+			MergingAggregated
+				ReadNothing (Optimized trivial count)
+~~~
+
+注意 `Optimized trivial count` ，这是对 count 的优化。
+
+如果 count 具体的列字段，则不会使用此项优化：
+
+~~~sql
+EXPLAIN SELECT count(CounterID) FROM datasets.hits_v1;
+
+	Union
+		Expression (Projection)
+			Expression (Before ORDER BY and SELECT)
+				Aggregating
+					Expression (Before GROUP BY)
+						ReadFromStorage (Read from MergeTree)
+~~~
+
+
+
+
+
+## 消除子查询重复字段
+
+下面语句子查询中有两个重复的 id 字段，会被去重:
+
+~~~sql
+-- 这里先通过UserID对两张表进行join, 然后查询a.UserID, b.UserID, 这里经过join之后明显a.UserID和b.UserID都是一样的, 所以可以优化掉一个字段
+EXPLAIN SYNTAX SELECT
+	a.UserID,
+	b.VisitID,
+	a.URL,
+	b.UserID
+FROM
+	hits_v1 AS a
+LEFT JOIN (
+	SELECT
+	UserID,
+	UserID as HaHa,
+	VisitID
+	FROM visits_v1
+) AS b
+USING (UserID)
+limit 3;
+
+-- 返回优化后的语句：
+SELECT
+UserID,
+VisitID,
+URL,
+b.UserID
+FROM hits_v1 AS a
+ALL LEFT JOIN
+(
+	SELECT
+	UserID,
+	VisitID
+	FROM visits_v1
+) AS b USING (UserID)
+LIMIT 3
+~~~
+
+
+
+## 谓词下推
+
+**当 group by 有 having 子句，但是没有 `with cube`、`with rollup` 或者 `with totals` 修饰的时候，having 过滤会下推到 where 提前过滤。**
+
+例如下面的查询，HAVING name 变成了 WHERE name，在 group by 之前对数据进行过滤, 这样可以较少group by中聚合的数据的数量
+
+~~~sql
+EXPLAIN SYNTAX SELECT UserID FROM hits_v1 GROUP BY UserID HAVING UserID =
+'8585742290196126178';
+
+-- 优化后的sql
+SELECT UserID
+FROM hits_v1
+WHERE UserID = \'8585742290196126178\'
+GROUP BY UserID
+~~~
+
+
+
+子查询也支持谓词下推
+
+~~~sql
+EXPLAIN SYNTAX
+SELECT * FROM
+(
+	SELECT UserID
+	FROM visits_v1
+)
+WHERE UserID = '8585742290196126178'
+
+-- 返回优化后的语句, 这里将父查询的过滤条件放到了子查询中
+SELECT UserID
+FROM
+(
+	SELECT UserID
+	FROM visits_v1
+	WHERE UserID = '8585742290196126178'
+)
+WHERE UserID = '8585742290196126178'
+~~~
+
+
+
+
+
+下面是一个比较复杂的案例
+
+~~~sql
+EXPLAIN SYNTAX
+SELECT * FROM ( 
+    SELECT * FROM (
+		SELECT UserID FROM visits_v1
+    )
+	UNION ALL
+	SELECT * FROM (
+		SELECT UserID FROM visits_v1
+    )
+)
+WHERE UserID = '8585742290196126178'
+
+-- 返回优化后的语句
+SELECT UserID FROM (
+	SELECT UserID FROM (
+		SELECT UserID FROM visits_v1 WHERE UserID = '8585742290196126178'
+	) WHERE UserID = '8585742290196126178'
+	UNION ALL
+	SELECT UserID FROM (
+		SELECT UserID FROM visits_v1 WHERE UserID = '8585742290196126178'
+	) WHERE UserID = '8585742290196126178'
+)
+WHERE UserID = '8585742290196126178'  
+~~~
+
+
+
+
+
+## 聚合计算外推
+
+聚合函数内的计算，会外推，例如：
+
+~~~sql
+-- 这里先对每个UserId * 2, 然后求和
+EXPLAIN SYNTAX SELECT sum(UserID * 2) FROM visits_v1
+
+-- 返回优化后的语句, 先进行求和, 然后进行 * 2
+SELECT sum(UserID) * 2 FROM visits_v1
+~~~
+
+
+
+## 聚合函数消除
+
+如果对聚合键，也就是 group by key 使用 min、max、any 聚合函数，则将函数消除，
+
+~~~sql
+EXPLAIN SYNTAX
+	SELECT
+		sum(UserID * 2),
+		max(VisitID),
+		max(UserID)
+	FROM visits_v1
+	GROUP BY UserID
+
+-- 返回优化后的语句
+SELECT
+sum(UserID) * 2,
+max(VisitID),
+UserID -- 这里的max函数被消除了, 因为group by之后, 同一分组的所有数据的UserID都是一样的, 所以min, max, any的结果都是一样的
+FROM visits_v1
+GROUP BY UserID
+~~~
+
+
+
+## 删除重复的 order by 字段
+
+~~~sql
+EXPLAIN SYNTAX
+SELECT *
+FROM visits_v1
+ORDER BY
+UserID ASC,
+UserID ASC,
+VisitID ASC,
+VisitID ASC -- 这里重复的order by字段会被删除
+
+
+-- 返回优化后的语句：
+select
+……
+FROM visits_v1
+ORDER BY
+UserID ASC,
+VisitID ASC
+~~~
+
+
+
+## 删除重复的 limit by 字段
+
+~~~sql
+EXPLAIN SYNTAX
+SELECT *
+FROM visits_v1
+LIMIT 3 BY VisitID, VisitID LIMIT 10
+
+-- 优化后的sql
+-- LIMIT 3 BY VisitID  LIMIT 10 表示按照VisitID进行group by, 每个分组最多三行, 然后限制最后的结果集最多10行
+select
+……
+FROM visits_v1
+LIMIT 3 BY VisitID -- 这里去除了重复的VisitID字段
+LIMIT 10
+~~~
+
+
+
+### 标量替换
+
+如 果 子 查 询 只 返 回 一 行数 据 ， 在被引用的时候用标量替换 ， 例如下面语句中的 total_disk_usage 字段：
+
+~~~sql
+EXPLAIN SYNTAX
+WITH
+(
+SELECT sum(bytes)
+FROM system.parts
+WHERE active
+) AS total_disk_usage
+SELECT
+(sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
+table
+FROM system.parts
+GROUP BY table
+ORDER BY table_disk_usage DESC
+LIMIT 10;
+
+//返回优化后的语句：
+WITH CAST(0, \'UInt64\') AS total_disk_usage
+SELECT
+(sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
+table
+FROM system.parts
+GROUP BY table
+ORDER BY table_disk_usage DESC
+LIMIT 10
+~~~
+
+
 
 
 
