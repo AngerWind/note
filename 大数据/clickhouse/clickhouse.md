@@ -4456,7 +4456,7 @@ LIMIT 10
 
 
 
-### 标量替换
+## 标量替换
 
 如 果 子 查 询 只 返 回 一 行数 据 ， 在被引用的时候用标量替换 ， 例如下面语句中的 total_disk_usage 字段：
 
@@ -4464,20 +4464,20 @@ LIMIT 10
 EXPLAIN SYNTAX
 WITH
 (
-SELECT sum(bytes)
-FROM system.parts
-WHERE active
+	SELECT sum(bytes)
+	FROM system.parts
+	WHERE active
 ) AS total_disk_usage
 SELECT
-(sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
+	(sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
 table
 FROM system.parts
 GROUP BY table
 ORDER BY table_disk_usage DESC
 LIMIT 10;
 
-//返回优化后的语句：
-WITH CAST(0, \'UInt64\') AS total_disk_usage
+-- 返回优化后的语句：
+WITH CAST(0, 'UInt64') AS total_disk_usage -- 这里直接将select之后的内容转换为了标量
 SELECT
 (sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
 table
@@ -4486,6 +4486,276 @@ GROUP BY table
 ORDER BY table_disk_usage DESC
 LIMIT 10
 ~~~
+
+## 三元运算优化
+
+如果开启了 `optimize_if_chain_to_multiif` 参数，三元运算符会被替换成 `multiIf` 函数，例如：
+
+~~~sql
+EXPLAIN SYNTAX
+SELECT number = 1 ? 'hello' : (number = 2 ? 'world' : 'atguigu')
+FROM numbers(10)
+settings optimize_if_chain_to_multiif = 1;
+
+
+-- 返回优化后的语句：
+SELECT multiIf(number = 1, 'hello', number = 2, 'world', 'atguigu')
+FROM numbers(10)
+SETTINGS optimize_if_chain_to_multiif = 1  
+~~~
+
+
+
+# 查询优化
+
+## 单表查询
+
+### Prewhere 替代 where
+
+Prewhere 和 where 语句的作用相同， 用来过滤数据。不同之处在于 prewhere 只支持 **MergeTree** 族系列引擎的表
+
+
+
+prewhere 和 where 的区别在于他们的执行顺序不同: 
+
+在 `MergeTree` 系列表中，大致执行流程是：
+
+```
+读取prewhere列 → PREWHERE 过滤 → 再读取剩余select的列 → WHERE 过滤 → 后续处理
+```
+
+prewhere
+
+- 在**读取数据阶段**就参与过滤
+- 只读取 `PREWHERE` 中涉及的列
+- 过滤后才读取其它列
+- 目的是减少磁盘 IO
+
+WHERE
+
+- 在所有需要的列都读入之后执行
+- 只做逻辑过滤
+- 不会减少列读取
+
+
+
+当查询的列明显多余过滤的列的时候, 你可以先通过 prewhere 先进行过滤, 然后去读取剩余查询的列的数据, 这样可以做到精准命中, 使用 Prewhere 可十倍提升查询性能
+
+
+
+**当然你也可以不用在 sql 中写 prewhere, 在clickhouse的优化器中, 默认将` optimize_move_to_prewhere=1  `,  这会指示ck自动的将where 优化为 prewhere, 你可以使用`explain syntax`来查看优化后的sql**
+
+你可以使用如下sql来关闭where 到 prewhere的优化
+
+~~~sql
+set optimize_move_to_prewhere=0;
+~~~
+
+
+
+当然clickhouse的优化器还不是那么的智能, 在某些情况下即使设置了将prewhere优化为where, 他也不会帮你优化, 在这些情况下你需要手动来指定prewhere
+
+- 使用常量表达式
+- 使用默认值为 alias 类型的字段
+- 包含了 arrayJOIN， globalIn， globalNotIn 或者 indexHint 的查询
+- select 查询的列字段和 where 的谓词相同
+- 使用了主键字段  
+
+所有保守的情况下还是看一下sql优化后的样子是什么
+
+
+
+
+
+
+
+### 数据采样
+
+通过采样运算可极大提升数据分析的性能 ,  **但是他的使用场景只有在分析的场景下有用, 并且你的结果不需要很精准, 如果是精确查询的情况下就没有用了**
+
+~~~sql
+-- 表示先采样 10%的数据, 然后进行sql的查询
+-- 所以这里的采样是全量数据的10%
+-- 当然你也可以是具体的条数
+SELECT Title,count(*) AS PageViews
+FROM hits_v1
+SAMPLE 0.1
+WHERE CounterID =57
+GROUP BY Title
+ORDER BY PageViews DESC LIMIT 1000
+~~~
+
+> 采样修饰符只有在 MergeTree engine 表中才有效，且在创建表时需要指定采样策略。  
+
+
+
+
+
+### 列裁剪
+
+数据量太大时应避免使用 select * 操作，查询的性能会与查询的字段大小和数量成线性
+表换，字段越少，消耗的 io 资源越少，性能就会越高。  
+
+~~~sql
+-- 反例：
+select * from datasets.hits_v1;
+
+-- 正例：
+select WatchID,
+JavaEnable,
+Title,
+GoodEvent,
+EventTime,
+EventDate,
+CounterID,
+ClientIP,
+ClientIP6,
+RegionID,
+UserID
+from datasets.hits_v1;
+~~~
+
+
+
+### 分区裁剪
+
+分区裁剪就是只读取需要的分区， 在过滤条件中指定分区字段的过滤条件。  
+
+~~~sql
+select WatchID,
+JavaEnable,
+Title,
+GoodEvent,
+EventTime,
+EventDate,
+CounterID,
+ClientIP,
+ClientIP6,
+RegionID,
+UserID
+from datasets.hits_v1
+where EventDate='2014-03-23';
+~~~
+
+
+
+
+
+
+
+### order by 结合 where limit 
+
+千万以上数据集进行 order by 查询时需要搭配 where 条件和 limit 语句一起使用。  
+
+否则会非常的慢
+
+~~~sql
+-- 正例：
+SELECT UserID,Age
+FROM hits_v1
+WHERE CounterID=57
+ORDER BY Age DESC LIMIT 1000
+
+-- 反例：
+SELECT UserID,Age
+FROM hits_v1
+ORDER BY Age DESC
+~~~
+
+
+
+### 避免构建虚拟列
+
+**如非必须， 不要在结果集上构建虚拟列，虚拟列非常消耗资源浪费性能**，可以考虑在前端进行处理，或者在表中构造实际字段进行额外存储. 因为clickhouse本身就是大宽表的结构, 所以多一个列对clickhouse来说并没有很大的关系
+
+~~~sql
+反例：
+SELECT Income,Age,Income/Age as IncRate FROM datasets.hits_v1;
+
+正例：拿到 Income 和 Age 后， 考虑在前端进行处理，或者在表中构造实际字段进行额外存储
+SELECT Income,Age FROM datasets.hits_v1;
+~~~
+
+
+
+
+
+
+
+### uniqCombined 替代 distinct
+
+如果你希望执行count(distinct) 来进行去重求和, 在传统的实现算法上有HashSet和bitmap两种结构
+
+- 如果使用HashSet, 那么时间复杂度是log2N, 同时消耗的内存会非常的大, 并且在分布式合并的情况下性能也不好
+- 如果使用bitmap的话, 那么虽然性能会好一点, 但是内存的消耗还是蛮大的
+
+如果你的count(distinct)的结果能够要求不那么精确的话, 比如统计一个网站的日活用户, 可以不那么精确, 那么可以使用uniqCombined来实现去重求和, 他不是精确进行计算, 而是进行估计, 标准的误差大概在2%, 他的底层使用了类似HyperLogLog 算法实现来实现性能的提升
+
+
+
+
+
+
+
+不建议在千万级不同数据上执行 distinct 去重查询，改为近似去重 uniqCombined  
+
+~~~sql
+反例：
+select count(distinct rand()) from hits_v1;
+
+正例：
+SELECT uniqCombined(rand()) from datasets.hits_v1
+~~~
+
+
+
+
+
+
+
+### 使用物化视图
+
+
+
+### 其他注意事项
+
+
+
+
+
+## 多表关联查询
+
+
+
+### 准备数据
+
+
+
+### 用 in 替代 join
+
+
+
+### 大小表 join
+
+
+
+
+
+### 注意谓词下推
+
+
+
+### 分布式表使用 global
+
+
+
+### 使用字典表
+
+
+
+### 提前过滤
+
+
 
 
 
