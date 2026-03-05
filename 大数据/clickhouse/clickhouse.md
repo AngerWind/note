@@ -3349,7 +3349,94 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
    > 主键的作用仅仅是建立稀疏索引
 
-2. 
+2. 除了指定order by 字段, 你还可以指定一个ver列, 他一般的作用是用来表示数据的版本, 应该递增
+
+   - ver列的类型只能是UInt*, Date, DateTime, DateTime64
+
+   - 如果没有指定这个ver列, 那么在去重的时候会保留order by相同, 但是最后插入的那一行的数据
+
+   - 如果指定了这个ver列, 那么就会保留order by相同, 但是ver最大的那一行数据, 如果有多行数据的ver都是最大的并且相同, 那么还是保留最后插入的那一行数据
+
+     
+
+~~~sql
+-- without ver - the last inserted 'wins'
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+
+INSERT INTO myFirstReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO myFirstReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM myFirstReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ second  │ 2020-01-01 00:00:00 │
+└─────┴─────────┴─────────────────────┘
+
+
+-- with ver - the row with the biggest ver 'wins'
+CREATE TABLE mySecondReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree(eventTime)
+ORDER BY key;
+
+INSERT INTO mySecondReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO mySecondReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM mySecondReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ first   │ 2020-01-01 01:01:01 │
+└─────┴─────────┴─────────────────────┘
+~~~
+
+
+
+当然如果你想要迫切的看到去重后的效果, 那么你可以在sql的后面添加上final关键字
+
+~~~sql
+CREATE TABLE rmt_example
+(
+    `number` UInt16
+)
+ENGINE = ReplacingMergeTree
+ORDER BY number
+
+-- numbers生成一亿行数据的虚拟表, 然后floor(randUniform(0, 100))生成0-99之间的随机数
+-- 这个sql就是插入一亿条数据, number的取值从0-99
+INSERT INTO rmt_example SELECT floor(randUniform(0, 100)) AS number
+FROM numbers(1000000000)
+
+
+-- 如果不适用final 的话, count会有误差
+SELECT count()
+FROM rmt_example
+
+┌─count()─┐
+│     200 │
+└─────────┘
+
+-- 使用final的话可以看到准确的结果
+SELECT count()
+FROM rmt_example
+FINAL
+
+┌─count()─┐
+│     100 │
+└─────────┘
+~~~
+
+
 
 
 
