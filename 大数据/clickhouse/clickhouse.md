@@ -3313,6 +3313,46 @@ MODIFY TTL NULL;
 
 ## ReplacingMergeTree
 
+ReplacingMergeTree 是 MergeTree 的一个变种，它存储特性完全继承 MergeTree，只是多了一个**去重**的功能。
+
+1. 去重的时机
+
+   注意!!! ReplacingMergeTree的数据去重只会在合并的过程中进去,  而后台合并的的时机是无法预知的, 所有ReplacingMergeTree并不保证你查询出来的数据结果一定是完全去重的
+
+   如果你在查询的时候, 仍然有一部分数据没有合并, 那么是会查出相同的数据的, 他只会保持最终一致性
+
+2. 去重的范围
+
+   如果表经过的分区, 那么去重只会在分区的内部进行, 而不会跨分区执行
+
+因此，`ReplacingMergeTree` 适合在后台清除重复数据以节省空间，但并不保证没有重复数据。
+
+
+
+他的语法如下
+
+~~~sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = ReplacingMergeTree([ver [, is_deleted]])
+[PARTITION BY expr]
+[ORDER BY expr]
+[PRIMARY KEY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+~~~
+
+1. ReplacingMergeTree是将order by 字段来作为唯一键进行去重的, 而不是主键, 这一点非常重要
+
+   > 主键的作用仅仅是建立稀疏索引
+
+2. 
+
+
+
 
 
 ## SummingMergeTree
@@ -4693,10 +4733,6 @@ SELECT Income,Age FROM datasets.hits_v1;
 
 
 
-
-
-
-
 不建议在千万级不同数据上执行 distinct 去重查询，改为近似去重 uniqCombined  
 
 ~~~sql
@@ -4715,9 +4751,28 @@ SELECT uniqCombined(rand()) from datasets.hits_v1
 
 ### 使用物化视图
 
+查看后续章节
+
 
 
 ### 其他注意事项
+
+- 查询熔断
+  为了避免因个别慢查询引起的服务雪崩的问题，除了可以为单个查询设置超时以外，还
+  可以配置周期熔断，在一个查询周期内，如果用户频繁进行慢查询操作超出规定阈值后将无
+  法继续进行查询操作。
+- 关闭虚拟内存
+  物理内存和虚拟内存的数据交换，会导致查询变慢，资源允许的情况下关闭虚拟内存。
+- 配置 join_use_nulls
+  为每一个账户添加 join_use_nulls 配置，左表中的一条记录在右表中不存在，右表的相
+  应字段会返回该字段相应数据类型的默认值，而不是标准 SQL 中的 Null 值。
+- 批量写入时先排序
+  批量写入数据时，必须控制每个批次的数据中涉及到的分区的数量，在写入之前最好对
+  需要导入的数据进行排序。无序的数据或者涉及的分区太多，会导致 ClickHouse 无法及时对
+  新导入的数据进行合并，从而影响查询性能。
+- 关注 CPU
+  cpu 一般在 50%左右会出现查询波动，达到 70%会出现大范围的查询超时，cpu 是最关
+  键的指标，要非常关注
 
 
 
@@ -4729,13 +4784,71 @@ SELECT uniqCombined(rand()) from datasets.hits_v1
 
 ### 准备数据
 
+~~~sql
+-- 创建小表
+CREATE TABLE visits_v2
+ENGINE = CollapsingMergeTree(Sign)
+PARTITION BY toYYYYMM(StartDate)
+ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
+SAMPLE BY intHash32(UserID)
+SETTINGS index_granularity = 8192
+as select * from visits_v1 limit 10000;
 
-
-### 用 in 替代 join
+-- 创建 join 结果表：避免控制台疯狂打印数据
+CREATE TABLE hits_v2
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS index_granularity = 8192
+as select * from hits_v1 where 1=0;
+~~~
 
 
 
 ### 大小表 join
+
+多表 join 时要满足**小表在右**的原则，因为在join的时候会将右表加载到内存中, 然后和左表进行join, 所以需要小表在右, 如果大表在右的话可能会将内存打爆
+
+> ClickHouse 中无论是 Left join 、Right join 还是 Inner join 永远都是拿着右表中的每一条记录
+> 到左表中查找该记录是否存在，所以右表必须是小表。
+
+
+
+~~~sql
+-- 小表在右
+insert into table hits_v2
+select a.* from hits_v1 a left join visits_v2 b on a. CounterID=b.
+CounterID;
+-- 大表在右
+insert into table hits_v2
+select a.* from visits_v2 b left join hits_v1 a on a. CounterID=b.
+CounterID;
+~~~
+
+
+
+
+
+### 用 in 替代 join
+
+当多表联查时，查询的数据仅从其中一张表出时，可考虑用 IN 操作而不是 JOIN
+
+~~~sql
+-- 正例
+insert into hits_v2
+select a.* from hits_v1 a where a. CounterID in (select CounterID from
+visits_v1);
+
+-- 反例：使用 join
+insert into table hits_v2
+select a.* from hits_v1 a left join visits_v1 b on a. CounterID=b.
+CounterID;
+~~~
+
+
+
+
 
 
 
@@ -4743,19 +4856,41 @@ SELECT uniqCombined(rand()) from datasets.hits_v1
 
 ### 注意谓词下推
 
+ClickHouse 在 join 查询时不会主动进行谓词下推的优化，所以你需要手动在每个子查询中提前完成过滤, 减少数据io, 这个问题在新版本中已经不存在了, 但是为了以防万一你还是要看一下优化后的结果
+
+~~~sql
+-- 在老版本中你需要手动提前过滤
+insert into hits_v2
+select a.* from (
+select * from
+hits_v1
+where EventDate = '2014-03-17'
+) a left join visits_v2 b on a. CounterID=b. CounterID;
+
+-- 在新版本中不需要, 会进行谓词下推, 如果有可能的话, 将having转换为prewhere
+Explain syntax
+select a.* from hits_v1 a left join visits_v2 b on a. CounterID=b.
+CounterID
+having a.EventDate = '2014-03-17';
+~~~
+
+
+
 
 
 ### 分布式表使用 global
 
-
+两张分布式表上的 IN 和 JOIN 之前必须加上 GLOBAL 关键字，右表只会在接收查询请求的那个节点查询一次，并将其分发到其他节点上。如果不加 GLOBAL 关键字的话，每个节点
+都会单独发起一次对右表的查询，而右表又是分布式表，就导致右表一共会被查询 N²次（N
+是该分布式表的分片数量），这就是查询放大，会带来很大开销。
 
 ### 使用字典表
 
-
+将一些需要关联分析的业务创建成字典表进行 join 操作，前提是字典表不宜太大，因为字典表会常驻内存
 
 ### 提前过滤
 
-
+通过增加逻辑过滤可以减少数据扫描，达到提高执行速度及降低内存消耗的目的
 
 
 
@@ -4763,9 +4898,278 @@ SELECT uniqCombined(rand()) from datasets.hits_v1
 
 # 数据一致性
 
+查询 CK 手册发现，即便对数据一致性支持最好的 Mergetree，也只是保证最终一致性:
+
+![image-20260305132421954](img/image-20260305132421954.png)
+
+
+
+所以我们在使用 ReplacingMergeTree、SummingMergeTree 这类表引擎的时候，在插入数据之后, 会出现短暂数据不一致的情况。
+
+在某些对一致性非常敏感的场景，通常有以下几种解决方案。
+
+
+
+### 准备测试表和数据
+
+~~~sql
+CREATE TABLE test_a(
+	user_id UInt64,
+	score String,
+    -- deleted 是自定的一个标记位，比如 0 代表未删除，1 代表删除数据。
+	deleted UInt8 DEFAULT 0,
+    -- create_time 是版本号字段，每组数据中 create_time 最大的一行表示最新的数据
+	create_time DateTime DEFAULT toDateTime(0) 
+) ENGINE= ReplacingMergeTree(create_time)
+ORDER BY user_id; -- 根据user_id进行去重
+
+-- 写入1000万行数据
+INSERT INTO TABLE test_a(user_id,score)
+WITH(
+	SELECT ['A','B','C','D','E','F','G']
+)AS dict
+SELECT number AS user_id, dict[number%7+1] FROM numbers(10000000);
+
+-- 修改前50万行的数据, 因为是replacingMergeTree, 所以使用insert即可修改
+INSERT INTO TABLE test_a(user_id,score,create_time)
+WITH(
+	SELECT ['AA','BB','CC','DD','EE','FF','GG']
+)AS dict
+SELECT number AS user_id, dict[number%7+1], now() AS create_time FROM
+numbers(500000);
+
+-- 统计总数, 因为还没有触发分区合并, 所以还没有去重
+SELECT COUNT() FROM test_a;
+10500000
+~~~
+
+
+
+### 手动 optimize
+
+在写入数据后，立刻执行 OPTIMIZE 强制触发新写入分区的合并动作
+
+~~~sql
+OPTIMIZE TABLE test_a FINAL;
+
+-- 如果是分布式表的话, 那么要指定on cluster
+-- partition表示只合并特定的分区
+
+语法：OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition |
+PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE [BY expression]]
+~~~
+
+
+
+### 通过Group by 去重
+
+
+
+### 通过final 查询
+
+
+
+
+
 
 
 # 物化视图
+
+ClickHouse 的物化视图是一种查询结果的持久化，它确实是给我们带来了查询效率的提升。
+
+用户查起来跟表没有区别，它就是一张表，它也像是一张时刻在预计算的表，创建的过程它是用了一个特殊引擎，加上后来 as select，就是 create 一个 table as select 的写法。
+
+“查询结果集”的范围很宽泛，可以是基础表中部分数据的一份简单拷贝，也可以是多表 join 之后产生的结果或其子集，或者原始数据的聚合指标等等。所以，物化视图不会随着基础表的变化而变化，所以它也称为快照（snapshot）
+
+
+
+### 概述
+
+#### 物化视图和普通视图的区别
+
+**普通视图不保存数据，保存的仅仅是查询语句，查询的时候还是从原表读取数据，可以将普通视图理解为是个子查询。**
+
+**物化视图则是把查询的结果根据相应的引擎存入到了磁盘或内存中，对数据重新进行了组织，你可以理解物化视图是完全的一张新表。**
+
+
+
+
+
+### 优缺点
+
+优点：查询速度快，要是把物化视图这些规则全部写好，它比原数据查询快了很多，总的行数少了，因为都预计算好了。
+
+缺点：它的本质是一个流式数据的使用场景，是累加式的技术，所以要用历史数据做去重、去核这样的分析，在物化视图里面是不太好用的。在某些场景的使用也是有限的。而且如果一张表加了好多物化视图，在写这张表的时候，就会消耗很多机器的资源，比如数据带宽占满、存储一下子增加了很多。
+
+
+
+### 基本语法
+
+~~~sql
+-- 语法1
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
+[ENGINE = engine]
+[POPULATE] AS SELECT ...
+~~~
+
+1. MATERIALIZED指定我们创建的是物化视图, 而不是普通的视图
+
+2. 经过上面的sql之后, 会在物化视图相同的db下面创建一张隐藏的表来保存物化视图的数据, 默认情况下表名叫做`.inner.${materialized_view_name}`
+
+   在查询结果的时候, 你可以直接查询这个物化视图, 或者直接查询这个内部表也是可以的
+
+3. engine就是指定创建的内部表要使用的表引擎, order by, partition by, primary key这些
+
+4. populate 设置是否要处理历史数据
+
+   - 如果你不添加populate, 那么只有新增的数据会被添加到物化视图中
+   - 如果你添加了populate的话, 那么clickhouse会立即处理原表中的现有数据
+
+   要不要加这个关键字, 取决于你的数据量
+
+   - 如果你现在只有很少的数据量, 那么你可以使用这个关键字, 那么你创建好物化视图之后就已经有了计算好的结果
+   - 如果你就是不要处理历史数据, 那么也不需要添加这个关键字
+   - 如果你的表中已经有了很多的数据, 那么添加这个关键字会占用大量的资源, 可能会导致查询变慢
+
+
+
+~~~sql
+-- 语法2
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name
+to [db.]name
+[POPULATE] AS SELECT ...
+~~~
+
+
+
+1. 创建物化视图的限制
+
+   
+
+   1. TO [db].[table]语法的时候，不得使用 POPULATE。
+
+      
+
+   2. 物化视图的 alter 操作有些限制，操作起来不大方便。
+
+   3. 若物化视图的定义使用了 TO [db.]name 子语句，则可以将目标表的视图 卸载DETACH 再装载 ATTACH
+
+2. 物化视图的更新
+
+   1. 物化视图创建好之后，若源表被写入新数据则物化视图也会同步更新
+   2. POPULATE 关键字决定了物化视图的更新策略：
+      - 若有 POPULATE 则在创建视图的过程会将源表已经存在的数据一并导入，类似于create table ... as
+      - 若无 POPULATE 则物化视图在创建之后没有数据，只会在创建只有同步之后写入源表的数据
+      - clickhouse 官方并不推荐使用 POPULATE，因为在创建物化视图的过程中同时写入的数据不能被插入物化视图。
+      - 物化视图不支持同步删除，若源表的数据不存在（删除了）则物化视图的数据仍然保留
+      - 物化视图是一种特殊的数据表，可以用 show tables 查看
+      - 物化视图数据的删除：
+      - 物化视图的删除：
+
+
+
+## 案例实操
+
+对于一些确定的数据模型，可将统计指标通过物化视图的方式进行构建，这样可避免查询时重复计算的过程，物化视图会在有新数据插入时进行更新。
+
+
+
+### 准备数据
+
+~~~sql
+-- 建表
+CREATE TABLE hits_test
+(
+	EventDate Date,
+	CounterID UInt32,
+	UserID UInt64,
+	URL String,
+	Income UInt8
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS index_granularity = 8192;
+
+-- 导入一些数据
+INSERT INTO hits_test
+SELECT
+	EventDate,
+	CounterID,
+	UserID,
+	URL,
+	Income
+FROM hits_v1
+limit 10000;
+~~~
+
+
+
+### 创建物化视图
+
+~~~sql
+CREATE MATERIALIZED VIEW hits_mv
+ENGINE=SummingMergeTree
+PARTITION BY toYYYYMM(EventDate) ORDER BY (EventDate, intHash32(UserID))
+AS 
+-- 下面的sql
+SELECT
+	UserID,
+	EventDate,
+	count(URL) as ClickCount,
+	sum(Income) AS IncomeSum
+FROM hits_test
+-- 设置更新点,该时间点之前的数据可以另外通过insert into select …… 的方式进行插入
+WHERE EventDate >= '2014-03-20'
+GROUP BY UserID,EventDate;
+
+##或者可以用下列语法，表 A 可以是一张 mergetree 表
+CREATE MATERIALIZED VIEW 物化视图名 TO 表 A
+AS SELECT FROM 表 B;
+#不建议添加 populate 关键字进行全量更新
+~~~
+
+
+
+### 导入增量数据
+
+~~~sql
+#导入增量数据
+INSERT INTO hits_test
+SELECT
+EventDate,
+CounterID,
+UserID,
+URL,
+Income
+FROM hits_v1
+WHERE EventDate >= '2014-03-23'
+limit 10;
+#查询物化视图
+SELECT * FROM hits_mv;
+~~~
+
+
+
+### 导入历史数据
+
+~~~sql
+#导入增量数据
+INSERT INTO hits_mv
+SELECT
+UserID,
+EventDate,
+count(URL) as ClickCount,
+sum(Income) AS IncomeSum
+FROM hits_test
+WHERE EventDate = '2014-03-20'
+GROUP BY UserID,EventDate
+#查询物化视图
+SELECT * FROM hits_mv;
+~~~
+
+
 
 
 
