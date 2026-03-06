@@ -3438,11 +3438,168 @@ FINAL
 
 
 
+// todo finali字段, is_delete字段
+
+
+
+## CoalescingMergeTree
+
+CoalescingMergeTree继承自MegerTree, 并且和ReplacingMergeTree一样, 在数据合并的时候会对order by字段相同的行进行合并, 但是他和ReplacingMergeTree的合并规则是不一样的
+
+他的合并规则是将order by相同的数据进行合并, 合并后该行包含每列的最新的非 NULL 值。
+
+
+
+因为在合并的时候保留最新的非NULL值, 所以要想CoalescingMergeTree能够聚合你的数据并保留最新的非NULL值, 那么你的列就必须是Nullable的, 如果他不是Nullable, 那么就会按照ReplacingMergeTree的规则来, 只保留最后插入的那个值
+
+
+
+CoalescingMergeTree的主要用途在于, 你可以通过insert语句来插入特定字段的数据, 然后其他的字段设置为null, 这就相当于修改特定的列了, 虽然要在数据合并的时候才真正的生效
+
+
+
+ 他的建表语句如下:
+
+~~~sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = CoalescingMergeTree([columns])
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+~~~
+
+columns可以指定多个列, 这些列会在数据合并的时候进行合并, 只保留最新的非Null值
+
+如果你没有指定columns列, 那么clickhouse会将所有的非order by的列进行合并, 保留最新的非Null值
+
+
+
+### 使用案例
+
+~~~sql
+CREATE TABLE test_table
+(
+    key UInt64,
+    value_int Nullable(UInt32),
+    value_string Nullable(String),
+    value_date Nullable(Date)
+)
+ENGINE = CoalescingMergeTree()
+ORDER BY key;
+
+INSERT INTO test_table VALUES(1, NULL, NULL, '2025-01-01'), (2, 10, 'test', NULL);
+INSERT INTO test_table VALUES(1, 42, 'win', '2025-02-01');
+INSERT INTO test_table(key, value_date) VALUES(2, '2025-02-01');
+
+SELECT * FROM test_table ORDER BY key;
+┌─key─┬─value_int─┬─value_string─┬─value_date─┐
+│   1 │        42 │ win          │ 2025-02-01 │
+│   1 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-01-01 │
+│   2 │      ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ         │ 2025-02-01 │
+│   2 │        10 │ test         │       ᴺᵁᴸᴸ │
+└─────┴───────────┴──────────────┴────────────┘
+~~~
+
 
 
 
 
 ## SummingMergeTree
+
+SummingMergeTree集成了MergeTree的特点, 但是在合并数据的时候, 会将所有非order by的数字列进行聚合
+
+他的建表sql如下
+
+~~~sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = SummingMergeTree([columns])
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+~~~
+
+ 在column中, 你可以指定**多个**数字列, 之后在合并数据的时候表引擎会将他们进行求和聚合, 这些数字列不能是partition by或者order by中指定的列
+
+如果你不指定column的话, 那么clickhouse会自动的将所有partition by和order by之外的所有数字列进行聚合
+
+
+
+在聚合数据的时候, order by相同的数据会进行聚合
+
+**聚合只会在单独的分区中进行, 不会跨分区进行**
+
+
+
+比如下面的实例
+
+~~~sql
+CREATE TABLE summtt
+(
+    key UInt32,
+    value UInt32
+)
+ENGINE = SummingMergeTree()
+ORDER BY key; -- key在聚合的时候作为主键, value因为是数字列, 会自动聚合
+
+INSERT INTO summtt VALUES(1,1),(1,2),(2,1)
+
+SELECT key, sum(value) FROM summtt GROUP BY key
+┌─key─┬─sum(value)─┐
+│   2 │          1 │
+│   1 │          3 │
+└─────┴────────────┘
+~~~
+
+
+
+### 数据处理
+
+当数据插入到SummingMergeTree表引擎的时候, clickhouse会原样保持下来.  之后Clickhouse会定期合并从插入的数据, 这是就会将相同的order by的字段进行聚合
+
+但是因为数据合并的时机是无法预测的, 所以查询出来的数据并不保证是完全合并之后的结果, 所以在查询SummingMergeTree表中的数据的时候, 你还需要手动的对聚合字段进行group by 和 sum()聚合, 和上面的sql一样
+
+~~~sql
+SELECT key, sum(value) FROM summtt GROUP BY key
+~~~
+
+
+
+### 求和的规则
+
+在数据合并的过程中, 会将所有在建表语句中指定的column进行聚合, 如果没有指定column的话, 那么就是聚合所有的partition by, order by之外的数字列
+
+如果聚合完之后, 所有的聚合列的值都是0, 那么这一行数据会被删除掉
+
+
+
+如果在聚合的时候, 有一个字段他不是聚合列, 那么会从所有的聚合的行中随便取一个字, 比如下面的表
+
+~~~sql
+-- 这个表根据create_time进行分区
+-- 然后对相同的id, sku_id的行, 对total_count进行求和
+-- 因为create_time不会聚合列, 所以会这些聚合的数据中任意取一个值
+create table t_order_smt(
+	id UInt32,
+	sku_id String,
+	total_amount Decimal(16,2) ,
+	create_time Datetime
+) engine =SummingMergeTree(total_amount)
+partition by toYYYYMMDD(create_time)
+primary key (id)
+order by (id,sku_id );
+~~~
+
+
 
 
 
