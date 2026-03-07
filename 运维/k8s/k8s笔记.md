@@ -8376,6 +8376,748 @@ kubectl taint nodes Node-Name node-role.kubernetes.io/master=:PreferNoSchedule
 
 # Operator
 
+## 概述
+
+Kubernetes Operator 是一种封装、部署和管理复杂有状态应用的高级方法。它通过扩展 Kubernetes API 和控制器模式，将运维领域的知识（如备份、扩缩容、故障恢复）编码到自定义逻辑中，使应用可以像管理原生 Kubernetes 资源（如 Deployment、Service）一样自动化运行。
+
+Operator 的核心思想：**通过声明式 API + 控制循环（Control Loop）实现应用的全生命周期管理**。
+
+
+
+Operator = **自定义资源（Custom Resource, CR）** + **自定义控制器（Custom Controller）**
+
+
+
+## CRD和CR和自定义Controller
+
+上面我们说到operator实际上就是等于 CR + 自定义Controller, 但是这里有一个问题要解决的是, 就是这个CR到底是什么样子的, 他有什么属性, 他的属性能配置什么值, 这个就需要CRD来定义了
+
+CRD就是 Custom Resource Definition,  自定义资源的定义, CR ≈ Java对象, CRD ≈ Class
+
+
+
+CRD本质上来说就是一个yaml, 在这个yaml中定于CR有哪些属性, 类似如下
+
+~~~yaml
+apiVersion: apiextensions.k8s.io/v1 
+kind: CustomResourceDefinition 
+metadata:
+  name: widgets.example.com 
+spec:
+    ... # 定义有哪些属性
+~~~
+
+有了这个文件之后, 你就可以按照上面CRD文件中的的规则来编写对应的CR对应的yaml了, 类似如下
+
+~~~yaml
+apiVersion: mysql.example.com/v1
+kind: MySQLCluster
+metadata:
+  name: my-mysql
+spec:
+  replicas: 3
+  storageSize: 100Gi
+~~~
+
+
+
+CR就是你在k8s中创建的资源, 比如上面创建了一个名为`my-mysql`的类型为`MySQLCluster`的资源, 他和我们创建一个Deployment没什么两样, 都是创建了一个资源, 这个资源表示了对k8s中应用的期望状态
+
+比如我创建了一个Deployment, 那么我对k8s的状态的期望就是帮我创建对应的pod, 并且能够管理这些pod的数量, 如果少了就自动创建, 如果多了就自动删除掉
+
+但是对于k8s来说, 我们创建了一个`MySQLCluster`的资源, 这个时候k8s并不知道我们希望的状态, 所以我们就需要自定义Controller了, 我们自己通过go语言来编写一个Controller, 在内部实现对应的逻辑, 比如一旦监听到了k8s中关于MySQLCluster的（Create/Update/Delete）事件, 就执行对应的逻辑
+
+这样我们可以将我们的运维的知识也写到Controller的逻辑中, 就可以帮我们自动运维了
+
+
+
+
+
+## Operator 开发模式的好处
+
+1. 自动化复杂操作
+   - 自动处理备份、恢复、升级等运维任务（例如：Etcd Operator 自动处理节点故障恢复）。
+2. 封装领域知识
+   - 将运维经验编码到代码中，降低对人工操作的依赖。
+3. 统一管理界面
+   - 通过 `kubectl` 和 Kubernetes API 管理应用，与原生资源无缝集成。
+4. 减少人为错误
+   - 通过声明式配置和自动化控制，避免手动操作的失误。
+
+
+
+## DGKV
+
+在k8s中, 有非常多的资源, 特别我们在使用operator的时候, 每个人都可以创建自己的资源, 所以这个时候就要对这些资源进行分类管理了, 所以在k8s中就衍生出除了domain, group, kind, version这四个属性来关联不同的资源
+
+- domain主要用来区分不同公司创建的资源, 比如k8s中内置的资源的demain就是k8s.io等等, 那么我们自定义的资源可以叫做tiger.com等等
+
+- group用来区分不同功能的资源, 比如Pod, Service这些资源的分类是core, Deployment的分类是apps, Ingress的分类是networking
+
+- kind就是指定这个资源的具体的名字, 比如Deployment, Ingress, Service等等
+
+- version指定这个kind的版本, 常见的版本有
+
+  | 版本     | 含义     |
+  | -------- | -------- |
+  | v1alpha1 | 实验版本 |
+  | v1beta1  | 测试版本 |
+  | v1       | 稳定版本 |
+
+
+
+比如我有一个资源, 他的demain是tiger.com, group是app, kind是SimpleApp, version是v1alpha1, 那么我就需要使用如下的方式来定义创建这个资源
+
+~~~yaml
+apiVersion: apps.example.com/v1alpha1
+kind: SimpleApp
+~~~
+
+
+
+
+
+## 开发Operater的方式
+
+开发operator有两种方式
+
+1. 使用kubebuilder, kubebuilder 是由 Kubernetes SIG 维护的 Operator 框架，适合熟悉 Kubernetes API 结构的开发者。
+2. 使用Operator SDK, 他是 Red Hat 维护的工具，支持 Go/Ansible/Helm 多种开发方式（推荐使用 Go）。
+
+| 特性     | Kubebuilder                  | Operator SDK            |
+| :------- | :--------------------------- | :---------------------- |
+| 维护方   | Kubernetes SIG               | Red Hat                 |
+| 语言支持 | Go                           | Go/Ansible/Helm         |
+| 项目结构 | 更贴近 Kubernetes API 风格   | 提供更多脚手架工具      |
+| 适用场景 | 需要深度定制 Kubernetes 功能 | 快速构建标准化 Operator |
+
+
+
+## 使用Kubebuilder创建Operator
+
+
+
+### 安装kubebuilder
+
+安装kubebuilder, 注意kubebuilder只在linux下可用, 没有windows的安装包
+
+~~~shell
+version="v4.3.1" # 也可以指定latest
+curl -L -o kubebuilder "https://github.com/kubernetes-sigs/kubebuilder/releases/download/${version}/kubebuilder_$(go env GOOS)_$(go env GOARCH)"
+chmod +x kubebuilder && mv kubebuilder /usr/local/bin/
+kubebuilder version
+~~~
+
+> 你也可以在https://github.com/kubernetes-sigs/kubebuilder/releases查看有哪些版本, 或者手动下载
+
+
+
+
+
+### 创建项目
+
+~~~shell
+# 项目目录只能是小写字母, 数字, - 组成
+mkdir -p example4k8s-operation && cd example4k8s-operation 
+
+# --repo就是指定go.mod中module的名字, 也就是我们项目的名字
+# --domain用于指定我们的k8s资源所属的domain
+kubebuilder init --domain tiger.com --repo github.com/tiger/example4k8s-operation
+
+[root@cdh111 example4k8s-operation]# tree -a
+.
+├── cmd
+│   └── main.go # 程序的主入口
+├── config
+│   ├── default
+│   │   ├── kustomization.yaml
+│   │   ├── manager_metrics_patch.yaml
+│   │   └── metrics_service.yaml
+│   ├── manager
+│   │   ├── kustomization.yaml
+│   │   └── manager.yaml
+│   ├── network-policy
+│   │   ├── allow-metrics-traffic.yaml
+│   │   └── kustomization.yaml
+│   ├── prometheus
+│   │   ├── kustomization.yaml
+│   │   └── monitor.yaml
+│   └── rbac
+│       ├── kustomization.yaml
+│       ├── leader_election_role_binding.yaml
+│       ├── leader_election_role.yaml
+│       ├── metrics_auth_role_binding.yaml
+│       ├── metrics_auth_role.yaml
+│       ├── metrics_reader_role.yaml
+│       ├── role_binding.yaml
+│       ├── role.yaml
+│       └── service_account.yaml
+├── .devcontainer
+│   ├── devcontainer.json
+│   └── post-install.sh
+├── Dockerfile
+├── .dockerignore
+├── .github
+│   └── workflows
+│       ├── lint.yml
+│       ├── test-e2e.yml
+│       └── test.yml
+├── .gitignore
+├── .golangci.yml
+├── go.mod
+├── go.sum
+├── hack
+│   └── boilerplate.go.txt
+├── Makefile # 包含项目构建, 测试, 运行, 部署到k8s上面的规则
+├── PROJECT
+├── README.md
+└── test
+    ├── e2e
+    │   ├── e2e_suite_test.go
+    │   └── e2e_test.go
+    └── utils
+        └── utils.go
+~~~
+
+
+
+### 创建CRD
+
+下面我们使用kubebuilder中的命令来帮我们创建一个自定义资源
+
+~~~shell
+$kubebuilder create api --group webapp --version v1 --kind Guestbook
+INFO Create Resource [y/n]
+y
+INFO Create Controller [y/n]
+y
+INFO Writing kustomize manifests for you to edit...
+INFO Writing scaffold for you to edit...
+INFO api/v1/guestbook_types.go
+INFO api/v1/groupversion_info.go
+INFO internal/controller/suite_test.go
+INFO internal/controller/guestbook_controller.go
+INFO internal/controller/guestbook_controller_test.go
+INFO Update dependencies:
+$ go mod tidy
+INFO Running make:
+$ make generate
+mkdir -p /root/example4k8s-operation/bin
+Downloading sigs.k8s.io/controller-tools/cmd/controller-gen@v0.16.4
+go: downloading sigs.k8s.io/controller-tools v0.16.4
+go: downloading github.com/gobuffalo/flect v1.0.3
+go: downloading k8s.io/apiextensions-apiserver v0.31.1
+go: downloading k8s.io/apimachinery v0.31.1
+go: downloading golang.org/x/tools v0.26.0
+...
+/root/example4k8s-operation/bin/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
+Next: implement your new API and generate the manifests (e.g. CRDs,CRs) with:
+$ make manifests
+~~~
+
+可以从上面的命令行看出来
+
+- 会询问你要不要生成CRD, CR的模版文件
+- 会询问你要不要生成Controller的模版文件
+- 生成模版文件之后会自动帮你执行`go mod tidy, make generate, make manifests`命令
+
+上面的命令首先会现在一个叫做code-gen的工具, 用来生成对应的代码
+
+~~~shell
+bin/controller-gen
+controller-gen-v0.16.4
+~~~
+
+同时上面的命令会在`api/${version}`目录下生成自定义资源的相关文件
+
+~~~shell
+api/v1/guestbook_types.go # !!!这个文件保存的是crd资源对应的结构体
+api/v1/groupversion_info.go # 这个文件中保存的是guestbook的group, version等信息
+api/v1/zz_generated.deepcopy.go # 这是一个自动生成的关于deepcopy的工具类
+~~~
+
+同时会在如下的目录生成controller的模版文件
+
+~~~shell
+internal/controller/suite_test.go # 这是controller的测试类, go语言中的测试类都是以_test.go结尾的
+internal/controller/guestbook_controller.go # 这是编写controller逻辑的主要地方
+internal/controller/guestbook_controller_test.go # 这是controller的测试类
+~~~
+
+
+
+在上面我们创建创建了一个名为Guestbook的自定义资源, 接下来我们就需要来指定这个自定义资源到底有什么属性了, 这个逻辑我们主要编写在`api/v1/guestbook_types.go`文件中
+
+这个文件刚刚生成的时候是这样子的
+
+~~~go
+// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+// 这里的意思是叫你修改文件, 这个文件是你自己维护的
+
+// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// 这里的意思是所有字段必须有 json tag, 否则 Kubernetes API 无法序列化
+
+// GuestbookSpec defines the desired state of Guestbook.
+// 这里指定对Guestbook的期望的状态, 你需要删除掉Foo字段
+type GuestbookSpec struct {
+	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+    // 这里指示你要添加属于自己的属性
+    
+	// Important: Run "make" to regenerate code after modifying this file
+    // 这里指示你添加实现之后需要执行make, 来重新生成代码
+
+	// Foo is an example field of Guestbook. Edit guestbook_types.go to remove/update
+    // Foo是一个示例属性, 需要删除掉
+	Foo string `json:"foo,omitempty"`
+}
+
+// GuestbookStatus defines the observed state of Guestbook.
+// 这里定义k8s实际观测到的Guestbook的实际状态
+type GuestbookStatus struct {
+	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+    // 这里指示你需要添加实际观测到的属性
+    
+	// Important: Run "make" to regenerate code after modifying this file
+    // 这里指示你修改这个文件之后要重新执行make, 来重新生成代码
+}
+
+// +kubebuilder:object:root=true
+// 这里是controller-gen的注解, 表示Guestbook, GuestbookList是一个CRD的根对象, 是kubernetes api的顶级资源对象
+
+// +kubebuilder:subresource:status
+// 这里启用status子资源, 这样你可以在CRD的yaml中定义subresources
+
+// Guestbook is the Schema for the guestbooks API.
+// 这个Guestbook我们不需要动这里的代码, 他是Guestbook的完整的api, 这个对象的结构就对应的crd的yaml的结构
+/* 
+apiVersion:
+kind:
+metadata:
+spec:
+status:
+*/
+type Guestbook struct {
+    // 他对应了crd的yaml中的apiVersion和kind两个对象
+    /**
+      	apiVersion: webapp.tiger.com/v1
+	  	kind: Guestbook
+    */
+	metav1.TypeMeta   `json:",inline"`
+    // 这个对应yaml中的metadate字段
+    /**
+      	metadata:
+  		  name:
+  		  namespace:
+  		  labels:
+  		  annotations:
+    */
+	metav1.ObjectMeta `json:"metadata,omitempty"` 
+    // 这个对应yaml中的spec字段
+	Spec   GuestbookSpec   `json:"spec,omitempty"` 
+    // 这个对应了yaml中的status字段
+	Status GuestbookStatus `json:"status,omitempty"` 
+}
+
+// +kubebuilder:object:root=true
+
+// GuestbookList contains a list of Guestbook.
+// 这是保存所有创建的Guestbook的列表, kubectl get guestbooks的时候就会返回这个对象的结构体
+type GuestbookList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Guestbook `json:"items"`
+}
+
+
+// 这个函数将Guestbook注册到kubernetes runtime scheme中, 之后controller就可以解析Guestbook了
+func init() {
+	SchemeBuilder.Register(&Guestbook{}, &GuestbookList{})
+}
+~~~
+
+下面我们将GuestbookSpec和GuestbookStatus修改为如下的代码
+
+~~~go
+type GuestbookSpec struct {
+    // 定义用户期望状态（Operator YAML 中填写的字段）
+    Replicas  int32  `json:"replicas"`  // 对应 YAML 的 `spec.replicas`
+    Image     string `json:"image"`     // 对应 YAML 的 `spec.image`
+    Port      int32  `json:"port"`      // 应用监听的端口
+}
+
+type GuestbookStatus struct {
+    // 定义实际状态（由 Operator 控制器更新）
+    AvailableReplicas int32 `json:"availableReplicas"` // 实际运行的副本数
+    Conditions        []metav1.Condition `json:"conditions,omitempty"` 
+}
+~~~
+
+这样的话我们就可以通过如下的yaml来创建对应的Guestbook资源了
+
+~~~yaml
+apiVersion: webapp.example.com/v1
+kind: Guestbook
+metadata:
+  name: my-guestbook
+spec:
+  replicas: 3
+  image: nginx:latest
+  port: 8080
+~~~
+
+
+
+### 实现自定义Controller
+
+自定义controller的逻辑主要在生成的`internal/controller/guestbook_controller.go`中, 他的原始内容如下
+
+~~~go
+// GuestbookReconciler reconciles a Guestbook object
+// 这是一个Guestbook的调和器, 主要用来调整实际的状态到预期的状态
+type GuestbookReconciler struct {
+    client.Client // 继承自client.Client, 用于操作kubernetes api, 比如Get(),List(),Create(),Update()
+	Scheme *runtime.Scheme // 这个Schema对象中保存了kubernetes中资源的类型
+}
+
+// 这是controller-gen的注解, 他会根据下面的注解来生成对应的rbac
+
+// 这个rbac表示controller可以读取, 创建,更新,删除group为webapp.tiger.com的guestbooks资源
+// +kubebuilder:rbac:groups=webapp.tiger.com,resources=guestbooks,verbs=get;list;watch;create;update;patch;delete
+// 这个rbac表示controller可以get,update,patch group为webapp.tiger.com的guestbooks的status字段
+// +kubebuilder:rbac:groups=webapp.tiger.com,resources=guestbooks/status,verbs=get;update;patch
+// 这个rbac表示controller可以update group为webapp.tiger.com的guestbooks的finalizers字段
+// 这个finalizers用于资源删除前执行清理逻辑
+// +kubebuilder:rbac:groups=webapp.tiger.com,resources=guestbooks/finalizers,verbs=update
+
+
+// Reconcile 是 Kubernetes 调谐循环的一部分，它的目标是让当前集群状态逐渐接近用户期望的状态。
+// 这个函数会在CR创建/更新/删除等时候被调用
+// Reconcile is part of the main kubernetes reconciliation loop which aims to
+// move the current state of the cluster closer to the desired state.
+
+// 修改这个Reconcile函数, 比较Guestbook对象的期望的状态和实际的状态, 然后执行操作使得实际状态变为用户期望的状态
+// TODO(user): Modify the Reconcile function to compare the state specified by
+// the Guestbook object against the actual cluster state, and then
+// perform operations to make the cluster state reflect the state specified by
+// the user.
+//
+// For more details, check Reconcile and its Result here:
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.19.1/pkg/reconcile
+func (r *GuestbookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	_ = log.FromContext(ctx)
+
+    // 在这里编辑自己的逻辑
+	// TODO(user): your logic here
+
+	return ctrl.Result{}, nil
+}
+
+// 这个函数主要用于注册Controller
+// SetupWithManager sets up the controller with the Manager.
+func (r *GuestbookReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr). // mgr是controller manager, 这里创建一个controller, 并注册到mgr中
+		For(&webappv1.Guestbook{}). // 这里表示监听Guestbook的事件
+		Named("guestbook"). // 这是controller的名字
+		Complete(r) // 如果有事件就调用GuestbookReconciler.Reconcile 函数
+}
+~~~
+
+在上面的代码中, 实际上就定义了一个GuestbookReconciler, 他有一个Reconcile函数, 用来调整集群的状态到用户期望的状态
+
+
+
+实际上k8s对于Reconciler的处理是一个**无限循环 + 幂等操作**的操作
+
+~~~shell
+用户创建 CR
+        │
+        ▼
+kubectl apply -f guestbook.yaml
+        │
+        ▼
+Kubernetes API Server
+        │
+        ▼
+Controller Watch Guestbook
+        │
+        ▼
+触发 Reconcile()修正状态
+        │
+        ▼
+Controller 创建 Deployment
+        │
+        ▼
+集群状态达到 spec
+~~~
+
+
+
+下面我们将Reconcile修改为如下的代码
+
+~~~go
+func (r *GuestbookReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	logger := log.FromContext(ctx) // 获取logger对象, 用于日志输出
+	guestbook := webappv1.Guestbook{}
+    // req.NamespacedName表示请求的cr的ns和name, 这里就等效于kubectl get guestbook name -n namespace
+	if err := r.Get(ctx, req.NamespacedName, &guestbook); err != nil {
+         // 没有发现对应的guestbook, 资源已被删除，无需处理
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+        // 未知的错误, 直接抛异常出去
+		return ctrl.Result{}, err
+	}
+
+	labels := map[string]string{
+		"app": guestbook.Name,
+	}
+
+    // 这里创建一个Deployment, 并设置name和ns
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      guestbook.Name,
+			Namespace: guestbook.Namespace,
+		},
+	}
+
+    // 这里将这个deployment和正在处理的guestbook绑定在一起
+    // 这样kubectl delete guestbook xxx的时候, guestbook绑定的这个deployment也会被一起删除
+	if err := controllerutil.SetControllerReference(&guestbook, deployment, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+	
+    // 这里请求k8s创建对应deployment, 如果已经存在相同ns和name的deployment就进行更新
+	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, deployment, func() error {
+		// 这个根据guestbook的属性, 设置deployment的spec
+		deployment.Spec = appsv1.DeploymentSpec{
+			Replicas: &guestbook.Spec.Replicas, // 指定spec.replicas
+			Selector: &metav1.LabelSelector{ // 指定spec.selector
+				MatchLabels: labels,
+			},
+			Template: corev1.PodTemplateSpec{ // 指定spec.template
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: labels,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  guestbook.Name,
+							Image: guestbook.Spec.Image,
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: guestbook.Spec.Port,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		return nil
+	})
+
+    // 如果创建对应的deployment失败, 那么将guestbook的可用replicas设置为0
+	if err != nil {
+		logger.Error(err, "Failed to create or update Deployment")
+		guestbook.Status.AvailableReplicas = 0
+		return ctrl.Result{}, err
+	}
+
+	logger.Info("Deployment操作结果", "result", result)
+
+	return ctrl.Result{}, nil
+}
+~~~
+
+上面的Reconcile的逻辑就是, 如果你使用了`kubectl apply -f guestbook.yaml`的话
+
+~~~yaml
+apiVersion: webapp.tiger.com/v1
+kind: Guestbook
+metadata:
+  name: my-guestbook
+spec:
+  replicas: 3
+  image: nginx:latest
+  port: 8080
+~~~
+
+那么GuestbookReconciler就会创建出一个对应的deployment
+
+~~~yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-guestbook
+  namespace: default
+  labels:
+    app: my-guestbook
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: my-guestbook
+  template:
+    metadata:
+      labels:
+        app: my-guestbook
+    spec:
+      containers:
+      - name: my-guestbook
+        image: nginx:latest
+        ports:
+        - containerPort: 8080
+~~~
+
+并且如果你`kubectl delete guestbook my-guestbook`的话, 那么deployment也会被删除
+
+
+
+### 本地环境测试
+
+在项目的根目录下执行如下的命令
+
+~~~shell
+make manifests  # 生成 CRD YAML
+make install    # 部署 CRD 到本地集群
+make run        # 本地运行 Operator
+~~~
+
+然后我们通过如下的yaml来创建一个Guestbook
+
+~~~yaml
+apiVersion: webapp.example.com/v1
+kind: Guestbook
+metadata:
+  name: my-guestbook
+spec:
+  replicas: 3
+  image: nginx:latest
+  port: 8080
+~~~
+
+可以看到, 对应的deployment也创建了 // **todo**
+
+
+
+### 生产环境部署
+
+本地开发测试完成后，需将 Operator 打包为容器镜像并部署到集群：
+
+1. 构建镜像
+   修改 `Makefile` 中的 `IMG` 变量，指定镜像仓库地址：
+
+   ```
+   IMG = your-registry.example.com/my-operator:v1
+   ```
+
+   执行构建并推送镜像：
+
+   ```
+   make docker-build docker-push
+   ```
+
+2. 生成Operator Deploy文件
+
+   ~~~shell
+   make build-installer
+   ~~~
+
+3. 部署到集群
+
+   dist/install.yaml即可在任何k8s集群安装 **todo**
+
+   ~~~shell
+   kubectl apply -f dist/install.yaml
+   ~~~
+
+   
+
+### CRD文件解析
+
+**todo**
+
+
+
+
+
+
+
+### kubebuilder命令行
+
+在kubebuilder中, 有如下的几个命令
+
+- alpha: 这个命令下面包含了几个正在alpha阶段的子命令
+
+- completion: 生成一段shell, 用来自动补全的
+
+- init: 初始化一个operator的项目, 生成脚手架, 他有如下的几个选项
+
+  ~~~shell
+  --fetch-deps # 在初始化完operator项目之后, 执行go mod download和go mod tidy, 确保依赖存在, 默认为true
+  --domain xxx.xxx # 在生成operator项目的时候, 设置这个项目的domain, 默认为my.domain
+  --owner xxx # 添加owner到copyright中
+  --project-name xxx # 项目的名称
+  --project-version xxx # 脚手架的版本, 默认为3
+  --repo xxx # 在生成的go项目中, 指定go.mod中module的名字, 默认是当前目录的名字
+  ~~~
+
+- version: 显示kubebuilder的版本
+
+- edit: 修改kubebuilder对当前项目的设置, 就类似于`git config --set`设置git对当前项目的配置一样
+
+- create: 在当前项目下创建自定义资源的模版文件
+
+  - kubebuilder create api: 创建CRD和controller的脚手架文件, 他有如下的属性
+
+    ~~~shell
+    --group xxx # 指定自定义资源的group
+    --kind xxx # 指定自定义资源的kind
+    --version xxx # 指定自定义资源的版本
+    --namespaced # 自定义资源是不是命名空间级别的, 默认是, 如果--namespaced=false, 那么资源是集群资源
+    
+    --resource # 是否生成CRD脚手架文件, 默认为true, 如果--resource=false, 那么不会生成controller的脚手架文件
+    --controller # 是否生成controller脚手架文件, 默认为true, 如果--controller=false, 那么不生成controller脚手架文件
+    
+    
+    --force # 如果已经存在相同的自定义资源, 也强制生成
+    --skip-map-validation # 跳过map类型字段的验证生成, 比较少用
+    
+    --short-name xxx # 资源的简写, 比如Service资源的简写是svc, 之后可以通过kubectl get svc来获取对应的资源
+    --singular xxx # 指定资源的单数名称, 在很多地方会用到资源你的单数形式, 如果不指定会自动推断
+    --plural xxx # 指定资源的复数名称, 在很多地方会用到资源你的单数形式, 如果不指定会自动推断
+    
+    --make # 在初始化完脚手架之后自动帮你执行make generate命令
+    ~~~
+
+    
+
+    
+
+  - kubebuilder create webhook: 创建一个webhook资源
+
+    ~~~shell
+    --group xxx # 指定自定义资源的 API Group，例如 apps、cache 等。
+    --kind xxx # 指定自定义资源的 Kind，例如 Redis、SimpleApp、MySQL 等。
+    --version xxx # 指定自定义资源的版本，例如 v1alpha1、v1beta1、v1。
+    
+    --conversion # 生成 conversion webhook，用于不同 API 版本之间的自动转换（例如 v1alpha1 ↔ v1beta1）。
+    --defaulting # 生成 defaulting webhook，用于在创建或更新资源时自动填充默认字段值。
+    
+    --external-api-domain xxx # 指定外部 API 的 domain，用于生成正确的 RBAC 标记，例如 cert-manager.io。
+    --external-api-path xxx # 指定外部 API 的 Go 包路径，用于为项目外部定义的资源生成 controller/webhook 代码，例如 github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1。
+    
+    
+    --force # 如果资源已经存在仍然强制创建 webhook 相关代码。
+    --legacy # 使用旧的项目目录结构生成代码（已废弃，未来版本会删除）。
+    --make # 是否在生成代码后自动执行 `make generate`，用于生成 DeepCopy、CRD schema 等代码（默认 true）。
+    
+    --plural xxx # 指定资源复数形式（不规则复数时使用），例如 policy → policies。
+    --programmatic-validation # 生成 validating webhook，用于在资源创建或更新时执行自定义校验逻辑。
+    ~~~
+
+    
+
 ## CRD
 
 Kubernetes 内置资源有很多，比如Pod, Deployment, Service等等, 但这些资源**不可能覆盖所有业务场景**。
