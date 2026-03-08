@@ -8495,6 +8495,14 @@ kind: SimpleApp
 
 ## 使用Kubebuilder创建Operator
 
+https://www.cnblogs.com/rxg456/p/18746575
+
+https://www.lixueduan.com/posts/kubernetes/35-build-operator-by-kubebuilder/#%E5%AE%89%E8%A3%85-kubebuilder
+
+https://chatgpt.com/c/69abe489-737c-8321-a184-a358e7107820
+
+https://study-k8s.com/2025/01/06/kubernetes-operator-%E5%BC%80%E5%8F%91%E6%95%99%E7%A8%8B-%E4%BB%8E0%E5%88%B01%E5%AE%9E%E7%8E%B0%E7%AE%80%E5%8D%95%E7%9A%84%E5%BA%94%E7%94%A8%E9%83%A8%E7%BD%B2%E6%8E%A7%E5%88%B6%E5%99%A8/
+
 
 
 ### 安装kubebuilder
@@ -8514,7 +8522,9 @@ kubebuilder version
 
 
 
-### 创建项目
+### 案例1
+
+#### 创建项目
 
 ~~~shell
 # 项目目录只能是小写字母, 数字, - 组成
@@ -8581,12 +8591,12 @@ kubebuilder init --domain tiger.com --repo github.com/tiger/example4k8s-operatio
 
 
 
-### 创建CRD
+#### 创建CRD
 
 下面我们使用kubebuilder中的命令来帮我们创建一个自定义资源
 
 ~~~shell
-$kubebuilder create api --group webapp --version v1 --kind Guestbook
+$ kubebuilder create api --group webapp --version v1 --kind Guestbook
 INFO Create Resource [y/n]
 y
 INFO Create Controller [y/n]
@@ -8767,7 +8777,7 @@ spec:
 
 
 
-### 实现自定义Controller
+#### 实现自定义Controller
 
 自定义controller的逻辑主要在生成的`internal/controller/guestbook_controller.go`中, 他的原始内容如下
 
@@ -8971,36 +8981,13 @@ spec:
 
 并且如果你`kubectl delete guestbook my-guestbook`的话, 那么deployment也会被删除
 
-
-
-### 本地环境测试
-
-在项目的根目录下执行如下的命令
-
-~~~shell
-make manifests  # 生成 CRD YAML
-make install    # 部署 CRD 到本地集群
-make run        # 本地运行 Operator
-~~~
-
-然后我们通过如下的yaml来创建一个Guestbook
-
-~~~yaml
-apiVersion: webapp.example.com/v1
-kind: Guestbook
-metadata:
-  name: my-guestbook
-spec:
-  replicas: 3
-  image: nginx:latest
-  port: 8080
-~~~
-
-可以看到, 对应的deployment也创建了 // **todo**
+并且如果你是`kubectl apply -f guestbook.yaml`更新现有的资源的话, 那么对应的deployment也会更新
 
 
 
-### 生产环境部署
+
+
+#### 生产环境部署
 
 本地开发测试完成后，需将 Operator 打包为容器镜像并部署到集群：
 
@@ -9031,13 +9018,436 @@ spec:
    kubectl apply -f dist/install.yaml
    ~~~
 
+
+
+
+
+
+### 案例2
+
+1. 初始化项目
+
+   ~~~shell
+   mkdir i-operator && cd i-operator
+   kubebuilder init --domain crd.lixueduan.com --repo github.com/lixd/i-operator
+   ~~~
+
+2. 创建api
+
+   ~~~shell
+   kubebuilder create api --group core --version v1 --kind Application --namespaced=true
+   ~~~
+
+   这个时候会在`api/v1`目录下新增我们对应的CRD的go文件, 在`internal/controllers`目录下面新增自定义controller的相关模版代码
+
+3. 完善CRD
+
+   下面我们修改对应的`api/v1/application_types.go`文件如下
+
+   ~~~go
+   type ApplicationSpec struct {
+       Image   string `json:"image,omitempty"` // 当前Application资源使用的镜像, 用于部署pod
+       Enabled bool   `json:"enabled,omitempty"` // 是否启用当前这个Application资源
+   }
+   
+   type ApplicationStatus struct {
+       Ready bool `json:"ready,omitempty"` // 当前Application资源是否ready
+   }
+   ~~~
+
+   有了这个文件之后, 我们就可以通过如下的yaml来创建对应的Application资源了
+
+   ~~~yaml
+   apiVersion: core.crd.lixueduan.com/v1
+   kind: Application
+   metadata:
+     name: my-app
+     namespace: default
+   spec:
+     image: nginx:latest
+     enabled: true
+   ~~~
+
+4. 接下来我们来修改`internal/controller/application_controller.go`这个文件, 在Reconcile函数中来实现controller的主要逻辑
+
+   1. 使用 NamespacedName 查询 Item
+      - 获取不到如果是 NotFound 则正常返回，说明 Item 可能被删除了
+      - 如果是其他错误就返回 Error
+   2. 使用 DeletionTimestamp.IsZero 判断 Item 是否在删除中
+      - 如果否则说明 Item 不在删除中，当前为正常状态，接着判断是否有添加指定 Finalizer，有则跳过，没有则加上。
+      - 如果是则说明 Item 已经在删除中了，再次判断是否有指定 Finalizer，有则执行清理操作，清理完移除 Finalizer，如果没有则直接返回，说明清理工作也做完了，之后这个 Item 就会被删除
+   3. 接下来就是真正的调谐逻辑了，根据 App.Spec 信息维护 Deployment 对象，并根据 Deployment 状态更新 App.Status
+
+   ~~~go
+   func (r *ApplicationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+   
+   	logger := log.FromContext(ctx)
+   	log := logger.WithValues("application", req.NamespacedName)
+   
+   	log.Info("start reconcile")
+   	var app v1.Application
+   	err := r.Get(ctx, req.NamespacedName, &app) // 查询事件对应的Application资源
+   	if err != nil {
+   		log.Error(err, "unable to fetch application")
+   		// we'll ignore not-found errors, since they can't be fixed by an immediate
+   		// requeue (we'll need to wait for a new notification), and we can get them
+   		// on deleted requests.
+   		return ctrl.Result{}, client.IgnoreNotFound(err)
+   	}
+   
+   	// 判断Application资源是否正在被删除
+   	if app.ObjectMeta.DeletionTimestamp.IsZero() {
+           // 如果这个资源不是正在被删除, 那么看看他有没有Finalizer, 如果没有的话就给他添加一个Finalizer, 并更新资源
+   		if !controllerutil.ContainsFinalizer(&app, AppFinalizer) {
+   			controllerutil.AddFinalizer(&app, AppFinalizer)
+   			if err = r.Update(ctx, &app); err != nil {
+                   // 更新资源失败, 将err原样返回出去
+   				log.Error(err, "unable to add finalizer to application")
+   				return ctrl.Result{}, err
+   			}
+   		}
+   	} else {
+   		// 对象正在被删除, 判断是否有Finalizer
+   		if controllerutil.ContainsFinalizer(&app, AppFinalizer) {
+   			// 有Finalzier, 那么要删除外部资源
+   			if err = r.deleteExternalResources(&app); err != nil {
+   				log.Error(err, "unable to cleanup application")
+   				// 如果外部资源删除失败, 那么将失败原样返回出去
+   				return ctrl.Result{}, err
+   			}
+   
+   			// 删除外部资源成功, 从app中移除Finalizer并更新
+   			controllerutil.RemoveFinalizer(&app, AppFinalizer)
+   			if err = r.Update(ctx, &app); err != nil {
+   				return ctrl.Result{}, err
+   			}
+   		}
+   
+   		// Stop reconciliation as the item is being deleted
+   		return ctrl.Result{}, nil
+   	}
+   
+   	// 在这里编写真正的reconcile
+   	log.Info("run reconcile logic")
+       
+       // 重新同步app的状态
+   	if err = r.syncApp(ctx, app); err != nil {
+   		log.Error(err, "unable to sync application")
+   		return ctrl.Result{}, err
+   	}
+   	
+       // 获取对应的deployment
+   	deployName := deploymentName(app.Name)
+   	var deploy appsv1.Deployment
+   	objKey := client.ObjectKey{
+   		Namespace: app.Namespace,
+   		Name:      deployName,
+   	}
+   	err := r.Get(ctx, objKey, &deploy)
+       
+       // -------------------------------
+   	// 情况1：Application Enabled=true
+   	// -------------------------------
+   	if app.Spec.Enabled {
+   
+   		// Deployment 不存在 → 创建
+   		if apierrors.IsNotFound(err) {
+   			log.Info("deployment not found, creating deployment")
+   			newDeploy := appsv1.Deployment{
+   				ObjectMeta: metav1.ObjectMeta{
+   					Name:      deployName,
+   					Namespace: app.Namespace,
+   				},
+   				Spec: appsv1.DeploymentSpec{
+   					Replicas: pointer.Int32(1),
+   					Selector: &metav1.LabelSelector{
+   						MatchLabels: map[string]string{
+   							"app": app.Name,
+   						},
+   					},
+   					Template: corev1.PodTemplateSpec{
+   						ObjectMeta: metav1.ObjectMeta{
+   							Labels: map[string]string{
+   								"app": app.Name,
+   							},
+   						},
+   						Spec: corev1.PodSpec{
+   							Containers: []corev1.Container{
+   								{
+   									Name:  app.Name,
+   									Image: app.Spec.Image,
+   								},
+   							},
+   						},
+   					},
+   				},
+   			}
+   			// 设置 ownerReference
+   			if err := controllerutil.SetControllerReference(&app, &newDeploy, r.Scheme); err != nil {
+   				return ctrl.Result{}, err
+   			}
+   			if err := r.Create(ctx, &newDeploy); err != nil {
+   				log.Error(err, "unable to create deployment")
+   				return ctrl.Result{}, err
+   			}
+   			return ctrl.Result{}, nil
+   		}
+   
+   		// 其他错误
+   		if err != nil {
+   			return ctrl.Result{}, err
+   		}
+   
+   		// --------------------------
+   		// Deployment 存在 → 更新状态
+   		// --------------------------
+   
+   		copyApp := app.DeepCopy()
+           // 如果deployment只有有一个可用的replica, 那么Application的状态就是ready
+   		copyApp.Status.Ready = deploy.Status.ReadyReplicas >= 1
+   		// 判断copyApp和app的status是否修改, 如果没有修改说明Application本来的状态就是ready, 不用修改
+   		if !reflect.DeepEqual(app.Status, copyApp.Status) {
+   			log.Info("updating application status")
+   			// 否则修改Application的状态
+   			if err := r.Status().Update(ctx, copyApp); err != nil {
+   				log.Error(err, "unable to update application status")
+   				return ctrl.Result{}, err
+   			}
+   		}
+   		return ctrl.Result{}, nil
+   	}
+   
+   	// --------------------------------
+   	// 情况2：Application Enabled=false
+   	// --------------------------------
+   
+   	// Deployment 存在 → 删除
+   	if err == nil {
+   		log.Info("application disabled, deleting deployment")
+   		if err := r.Delete(ctx, &deploy); err != nil {
+   			log.Error(err, "unable to delete deployment")
+   			return ctrl.Result{}, err
+   		}
+   		return ctrl.Result{}, nil
+   	}
+   
+   	// Deployment 不存在 → 什么都不做
+   	if apierrors.IsNotFound(err) {
+   		return ctrl.Result{}, nil
+   	}
+   
+   	// 其他错误
+   	return ctrl.Result{}, err
+   }
+   ~~~
+
+5. 将operation部署到本地的集群上面进行测试
+
+   ~~~shell
+   make manifests #  生成crd对应的yaml文件
+   make install # 部署crd到本地集群上面, 等价于 kubectl apply -f config/crd/bases
+   make run # 在本地运行controller, 当然你也可以通过debug的模式运行main.go, 方便调试
+   ~~~
+
+   之后你`kubectl apply -f `如下的文件, 就会创建对应的deployment, 并且你通过`kubectl edit application`来修改`enable`为false之后, 又会删除对应的deployment
+
+   ~~~yaml
+   apiVersion: core.crd.lixueduan.com/v1
+   kind: Application
+   metadata:
+     name: my-app
+     namespace: default
+   spec:
+     image: nginx:latest
+     enabled: true
+   ~~~
+
+6. 之前是本地部署, 如果我们需要将operator部署到别的集群上面, 那么我们就需要现将我们的operation构建为镜像
+
+   ~~~shell
+   # IMG指定要构建的镜像的名称, PLATFORMS表示要分别生成两个架构的镜像
+   IMG=lixd96/controller:latest PLATFORMS=linux/arm64,linux/amd64 make docker-buildx 
+   ~~~
+
+7. 真正将operator部署到集群的时候, 一般是以Deployment的形式部署的, 所以我们这里还需要运行如下的命令来生成Deployment的yaml
+
+   ~~~shell
+   IMG=lixd96/controller:latest make build-installer
+   /Users/lixueduan/17x/projects/i-operator/bin/controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases14:48:30  
+   /Users/lixueduan/17x/projects/i-operator/bin/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
+   mkdir -p dist
+   cd config/manager && /Users/lixueduan/17x/projects/i-operator/bin/kustomize edit set image controller=lixd96/controller:latest
+   /Users/lixueduan/17x/projects/i-operator/bin/kustomize build config/default > dist/install.yaml
+   ~~~
+
+   最终生成的`dist/install.yaml`就包含了部署operator的所有资源文件了, 你在部署的时候直接apply这个文件就可以了
+
+
+
+### operator本地测试
+
+1. 在项目的根目录下执行如下的命令来生成crd的yaml文件
+
+   ~~~shell
+   make manifests  # 生成 CRD YAML
+   ~~~
+
+2. 然后通过如下命令来安装crd到k8s集群中
+
+   ~~~shell
+   make install
+   ~~~
+
+   上面的命令等效于`kubectl apply -f config/crd/bases`, 安装完成之后, 你就可以通过如下命令来查看安装好的crd了
+
+   ~~~shell
+   kubectl get crd
+   ~~~
+
+3. 通过如下命令在本地启动controller
+
+   ~~~shell
+   make run
+   ~~~
+
+   启动之后可以看到日志
+
+   ~~~shell
+   starting manager
+   starting controller
+   ~~~
+
+   **或者你也可以直接在goland中通过debug的方式来启动main.go, 方便调试**
+
+4. 之后就是要创建cr来测试我们的controller了, 这里我们以案例1为例, 使用如下的cr
+
+   ~~~yaml
+   apiVersion: webapp.tiger.com/v1
+   kind: Guestbook
+   metadata:
+     name: my-guestbook
+   spec:
+     replicas: 3
+     image: nginx:latest
+     port: 8080
+   ~~~
+
+   执行`kubetl apply -f application.yaml`, 之后你就可以通过如下的命令来查看对应的资源了
+
+   ~~~shell
+   kubectl get guestbook my-guestbook # 查看刚刚创建的cr
+   kubectl get deploy my-guestbook # 查看自定义controller创建的deploy
+   ~~~
+
+5. 测试完成之后, 我们可以通过如下的命令来卸载controller和crd
+
+   ~~~shell
+   make undeploy # 删除k8s集群中的controller, 本质上是执行kubectl delete -f config/default
+   make uninstall # 删除 CRD, 本质上是执行kubectl delete -f config/crd/bases, 会删除对应的CustomResourceDefinition
+   ~~~
+
    
 
-### CRD文件解析
+### operator生产部署
 
-**todo**
+之前是本地部署, 如果我们需要将operator部署到别的集群上面, 那么我们就需要现将我们的operation构建为镜像
+
+~~~shell
+IMG=your-dockerhub/operator:latest # 指定要生成的docker的镜像名称
+PLATFORMS=linux/arm64,linux/amd64 # 指定要生成的镜像的架构, 这里指定两个架构都要生成
+make docker-build # 生成docker镜像
+~~~
+
+生成好了镜像之后, 就要将镜像推送到docker仓库了
+
+~~~shell
+make docker-push # 如果推送到docker hub使用这个命令
+~~~
+
+如果要推送到harbor上面也是一样的
+
+~~~shell
+IMG=harbor.mycompany.com/project/controller:latest PLATFORMS=linux/arm64,linux/amd64 make docker-build
+make docker-push
+~~~
 
 
+
+真正将operator部署到集群的时候, 一般是以Deployment的形式部署的, 所以我们这里还需要运行如下的命令来生成Deployment的yaml
+
+~~~shell
+IMG=your-dockerhub/operator:latest make build-installer
+
+mkdir -p dist
+cd config/manager 
+kustomize edit set image controller=your-dockerhub/operator:latest # 修改config/manager/manager.yaml中的镜像为自己生成的镜像
+kustomize build config/default > dist/install.yaml
+~~~
+
+之后再`dist/install.yaml`文件中就会包含关于这个operator的所有资源了
+
+之后你就可以将这个install.yaml文件发布出去了, 别人想要使用你的operator的话, 就可以使用如下的命令来安装你的operator了, 并且会从docker hub上面自动下载controller的镜像
+
+~~~shell
+kubectl apply -f install.yaml
+~~~
+
+如果想要卸载operator的话, 那么可以使用如下的命令
+
+~~~shell
+kubectl delete -f install.yaml
+~~~
+
+
+
+
+
+
+
+### 多group
+
+在默认的情况下, 一个operator项目只能有一个group, 也就是你在`kubebuilder create api --group webapp --version v1 --kind Guestbook`的时候, 所有的api的group都是一样的, 如果不一样会报错
+
+并且你如果使用默认的配置的话, 那么生成的api的目录结构是这样的
+
+~~~shell
+# api下面直接是版本号, 没有group, 因为默认只有一个group
+project
+├── api
+│   └── v1
+│       ├── guestbook_types.go
+│       └── groupversion_info.go
+├── controllers
+│   └── guestbook_controller.go
+~~~
+
+
+
+如果你想要在项目中创建多个api, 并且这些api使用不同的group的话, 那么需要开启multigroup这个选项
+
+~~~shell
+kubebuilder edit --multigroup=true
+~~~
+
+之后你再通过`kubebuilder create api`就可以指定多个group了, 并且创建之后他们的目录结构是这样
+
+~~~shell
+# 现在结构变成了api/<group>/<version>
+project
+├── api
+│   └── webapp
+│       └── v1
+│           ├── guestbook_types.go
+│           └── groupversion_info.go
+├── controllers
+│   └── guestbook_controller.go
+~~~
+
+
+
+
+
+### webhook
 
 
 
@@ -9118,7 +9528,7 @@ spec:
 
     
 
-## CRD
+## CRD文件解析 // todo
 
 Kubernetes 内置资源有很多，比如Pod, Deployment, Service等等, 但这些资源**不可能覆盖所有业务场景**。
 于是 Kubernetes 提供了一套**扩展 API 的能力** —— **Custom Resource Definition（CRD）**。
