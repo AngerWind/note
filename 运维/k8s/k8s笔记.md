@@ -9540,6 +9540,7 @@ Webhook 在 Operator 中可以分为两类：
     --kind xxx # 指定自定义资源的 Kind，例如 Redis、SimpleApp、MySQL 等。
     --version xxx # 指定自定义资源的版本，例如 v1alpha1、v1beta1、v1。
     
+    --programmatic-validation # 生成 validating webhook，用于在资源创建或更新时执行自定义校验逻辑。
     --conversion # 生成 conversion webhook，用于不同 API 版本之间的自动转换（例如 v1alpha1 ↔ v1beta1）。
     --defaulting # 生成 defaulting webhook，用于在创建或更新资源时自动填充默认字段值。
     
@@ -9552,7 +9553,6 @@ Webhook 在 Operator 中可以分为两类：
     --make # 是否在生成代码后自动执行 `make generate`，用于生成 DeepCopy、CRD schema 等代码（默认 true）。
     
     --plural xxx # 指定资源复数形式（不规则复数时使用），例如 policy → policies。
-    --programmatic-validation # 生成 validating webhook，用于在资源创建或更新时执行自定义校验逻辑。
     ~~~
 
     
