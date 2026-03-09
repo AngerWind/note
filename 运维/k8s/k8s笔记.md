@@ -9449,6 +9449,35 @@ project
 
 ### webhook
 
+在k8s中, 除了自定义的cr, controller之后, 还提供了webhook, 允许你通过webhook来处理自定义资源的生命周期事件（如创建、更新和删除），并根据特定条件或逻辑验证或修改这些资源
+
+Webhook 在 Operator 中可以分为两类：
+
+1. Admission Webhooks（准入控制 Webhook）
+
+   这些 Webhook 用于在资源请求（如 `create`、`update`、`delete`）进入 Kubernetes 集群之前，验证或修改这些请求。
+
+   Kubernetes在将资源持久化到ETCD之前, 会调用Admission Webhooks 来对资源进行校验, 这些webhook返回的响应会指示k8s这些资源应拒绝还是接受并持久保存到数据存储。
+
+   - **Validation Webhook**：当资源被创建或更新时，Validation Webhook 会对请求进行验证，确保它们符合预定义的规则。若请求不符合规则，Webhook 会拒绝该请求并返回错误消息。
+   - **Mutation Webhook**：当资源被创建或更新时，Mutation Webhook 会对请求进行修改。它可以自动补充缺失的字段或修改字段值，以确保资源符合要求。这些修改会在请求进入 Kubernetes 集群之前发生。
+
+2. Conversion Webhooks（转换 Webhook）
+
+   对于不同版本的 CRD（自定义资源定义），如果想在不同版本之间转换，Conversion Webhook 可以在自定义资源转换时发挥作用。例如，你可以将一个 v1alpha1 版本的资源转换为 v1beta1 版本。
+
+
+
+#### Validation Webhook
+
+
+
+#### Mutation Webhook
+
+
+
+#### Conversion Webhook
+
 
 
 
