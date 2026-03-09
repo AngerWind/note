@@ -9470,13 +9470,296 @@ Webhook 在 Operator 中可以分为两类：
 
 #### Validation Webhook
 
+你可以使用如下的命令来生成ValidationWebhook的模版代码
 
+~~~shell
+kubebuilder create webhook --programmatic-validation --group aaa --kind bbb --version v1alpha
+~~~
+
+下面我们针对案例1中的Guestbook自定义资源来实现一个案例, 就是在`kubectl apply -f guestbook.yaml`的时候校验要创建的自定义资源
+
+1. replicas必须>=1
+2. image不能为空
+3. port必须在30000-40000之间
+4. 更新的时候禁止修改port
+
+下面是我们创建这个webhook的步骤
+
+1. 通过命令来创建对应的webhook
+
+   ~~~shell
+   # 这里的--kind必须指定你要校验的cr, 即Guestbook, 不能是随便起的名字
+   # --programmatic-validation 指定生成ValidationWebhook
+   kubebuilder create webhook \
+   --group webapp \
+   --version v1 \
+   --kind Guestbook \
+   --programmatic-validation
+   
+   INFO Writing kustomize manifests for you to edit...
+   INFO Writing scaffold for you to edit...
+   INFO internal/webhook/v1/guestbook_webhook.go
+   INFO internal/webhook/v1/guestbook_webhook_test.go
+   INFO internal/webhook/v1/webhook_suite_test.go
+   INFO Update dependencies:
+   $ go mod tidy
+   INFO Running make:
+   $ make generate
+   /root/example4k8s-operation/bin/controller-gen object:headerFile="hack/boilerpl
+   Next: implement your new Webhook and generate the manifests with:
+   $ make manifests
+   ~~~
+
+2. 上面的命令会自动的创建如下的文件
+
+   ~~~shell
+   internal/webhook/v1/guestbook_webhook.go
+   internal/webhook/v1/guestbook_webhook_test.go
+   internal/webhook/v1/webhook_suite_test.go
+   ~~~
+
+   我们主要的校验逻辑就是在`guestbook_webhook.go`文件中, 这个文件的原始内容如下
+
+   ~~~go
+   // 这里表示即使变量暂时没用，也不要被 lint 检查报错
+   // nolint:unused
+   // log is for logging in this package.
+   // 这里获取logger
+   var guestbooklog = logf.Log.WithName("guestbook-resource")
+   
+   // 这个函数不用修改, 这是针对Guestbook来注册一个GuestbookCustomValidator
+   // SetupGuestbookWebhookWithManager registers the webhook for Guestbook in the manager.
+   func SetupGuestbookWebhookWithManager(mgr ctrl.Manager) error {
+   	return ctrl.NewWebhookManagedBy(mgr) // 这里获取controller manager, 他会启动webhook server, 默认端口9443
+       	.For(&webappv1.Guestbook{}). // 这里指定要校验的资源
+   		WithValidator(&GuestbookCustomValidator{}). // 这里指定webhook
+   		Complete()
+   }
+   
+   // 这里表示叫你修改这个文件, 这个文件是你自己管理的
+   // TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
+   
+   // 这里表示默认修在create/update的时候调用webhook, 当然你也可以添加一个delete事件
+   // TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
+   // 这里表示path遵循特定的格式, 并且不应该执行在文本中修改path, 而是应该重新生成webhook
+   // 修改的path如果不合法, 会导致k8s调用webhook失败
+   // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.
+   // Modifying the path for an invalid path can cause API server errors; failing to locate the webhook.
+   
+   // 下面这一行是controller-gen的注释, 他会帮你针对当前的webhook生成一个ValidatingWebhookConfiguration的yaml
+   // apiVersion: admissionregistration.k8s.io/v1
+   // kind: ValidatingWebhookConfiguration
+   
+   // path表示生成当前webhook的rest api的路径, 之后k8s会调用https://operator-service:9443/validate-webapp-tiger-com-v1-guestbook来校验逻辑
+   // mutating为false表示这里ValidatingWebhook,而不是MutatingWebhook
+   // failurePolicy=fail表示kubectl apply的时候如果webhook挂了怎么办, fail表示apply失败, ignore表示成功
+   // sideEffects=None表示这个webhook没有副作用, 这样k8s才会调用
+   // group表示当前的webhook的group
+   // resources表示的是当前webhook作用的资源类型是guestbooks
+   // verbs表示当前webhook要在哪些事件中进行校验, 默认是create/update, 如果要支持删除可以深圳为verbs=create;update;delete
+   // version表示要校验的crd的版本
+   // name表示当前webhook的名字
+   // admissionReviewVersions表示在k8s调用webhook的时候, 发送的AdmissionReview的对象的版本
+   // +kubebuilder:webhook:path=/validate-webapp-tiger-com-v1-guestbook,mutating=false,failurePolicy=fail,sideEffects=None,groups=webapp.tiger.com,resources=guestbooks,verbs=create;update,versions=v1,name=vguestbook-v1.kb.io,admissionReviewVersions=v1
+   
+   
+   // 下面定义了GuestbookCustomValidator的校验器, 他负责校验Guestbook的create, update, delete
+   // GuestbookCustomValidator struct is responsible for validating the Guestbook resource
+   // when it is created, updated, or deleted.
+   
+   // 
+   // NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
+   // as this struct is used only for temporary operations and does not need to be deeply copied.
+   type GuestbookCustomValidator struct {
+       // 在这里添加校验器的属性, 如果没有就算了
+       // 你可以添加一个Client client.Client 用来查询k8s中的资源
+   	//TODO(user): Add more fields as needed for validation
+   }
+   
+   // 这里是go的编译器检查, 表示GuestbookCustomValidator 必须实现 CustomValidator 接口, 否则编译失败
+   var _ webhook.CustomValidator = &GuestbookCustomValidator{}
+   
+   // 在create的时候校验
+   // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Guestbook.
+   func (v *GuestbookCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+   	guestbook, ok := obj.(*webappv1.Guestbook)
+   	if !ok {
+   		return nil, fmt.Errorf("expected a Guestbook object but got %T", obj)
+   	}
+   	guestbooklog.Info("Validation for Guestbook upon creation", "name", guestbook.GetName())
+   
+   	// TODO(user): fill in your validation logic upon object creation.
+   
+   	return nil, nil
+   }
+   
+   // 在update的时候校验
+   // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Guestbook.
+   func (v *GuestbookCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+   	guestbook, ok := newObj.(*webappv1.Guestbook)
+   	if !ok {
+   		return nil, fmt.Errorf("expected a Guestbook object for the newObj but got %T", newObj)
+   	}
+   	guestbooklog.Info("Validation for Guestbook upon update", "name", guestbook.GetName())
+   
+   	// TODO(user): fill in your validation logic upon object update.
+   
+   	return nil, nil
+   }
+   
+   // 在delete的时候校验, 默认不调用这个函数, 需要在verbs中指定delete
+   // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type Guestbook.
+   func (v *GuestbookCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+   	guestbook, ok := obj.(*webappv1.Guestbook)
+   	if !ok {
+   		return nil, fmt.Errorf("expected a Guestbook object but got %T", obj)
+   	}
+   	guestbooklog.Info("Validation for Guestbook upon deletion", "name", guestbook.GetName())
+   
+   	// TODO(user): fill in your validation logic upon object deletion.
+   
+   	return nil, nil
+   }
+   ~~~
+
+3. 之后我们修改`guestbook_webhook.go`为如下的内容
+
+   ~~~go
+   import (
+   	"fmt"
+   	"k8s.io/apimachinery/pkg/runtime"
+   	ctrl "sigs.k8s.io/controller-runtime"
+   )
+   
+   func (r *Guestbook) ValidateCreate() error {
+   	return r.validateGuestbook(nil)
+   }
+   
+   func (r *Guestbook) ValidateUpdate(old runtime.Object) error {
+   	oldObj := old.(*Guestbook)
+   	return r.validateGuestbook(oldObj)
+   }
+   
+   func (r *Guestbook) ValidateDelete() error {
+   	return nil
+   }
+   func (r *Guestbook) validateGuestbook(old *Guestbook) error {
+   	// replicas >= 1
+   	if r.Spec.Replicas < 1 {
+   		return fmt.Errorf("replicas must be >= 1")
+   	}
+   	// image 不能为空
+   	if r.Spec.Image == "" {
+   		return fmt.Errorf("image cannot be empty")
+   	}
+   	// port 必须合法
+   	if r.Spec.Port <= 0 || r.Spec.Port > 65535 {
+   		return fmt.Errorf("port must be between 1 and 65535")
+   	}
+   	// 更新时禁止修改 port
+   	if old != nil {
+   		if old.Spec.Port != r.Spec.Port {
+   			return fmt.Errorf("port is immutable and cannot be updated")
+   		}
+   	}
+   	return nil
+   }
+   ~~~
+
+4. 编写完了逻辑之后, 我们来生成webhook对应的yaml文件配置
+
+   ~~~shell
+   make manifest
+   ~~~
+
+   这会生成`config/webhook/manifests.yaml`, 这个文件中会包含`ValidatingWebhookConfiguration`
+
+5. 之后我们需要将这个webhook部署到我们本地的k8s集群中
+
+   ~~~shell
+   # 这个命令会部署所有的资源到本地k8s中
+   make deploy
+   ~~~
+
+   之后你可以通过如下的命令来查看webhook
+
+   ~~~shell
+   kubectl get validatingwebhookconfigurations
+   # 你会看到vguestbook-v1.kb.io
+   ~~~
+
+6. 之后我们使用如下的yaml来测试看看replicas为0能不能拦截下来
+
+   ~~~shell
+   apiVersion: webapp.my.domain/v1
+   kind: Guestbook
+   metadata:
+     name: guestbook-demo
+   spec:
+     replicas: 0
+     image: ""
+     port: 8080
+   ~~~
+
+   如果在apply的时候返回
+
+   ~~~shell
+   Error from server: admission webhook "vguestbook-v1.kb.io" denied the request:
+   replicas must be >= 1
+   ~~~
+
+   那么就说明生效了
+
+7. 之后我们先创建一个合法的Guestbook资源, 然后修改他的port, 看看update流程是否能够拦截
+
+   ~~~shell
+   spec:
+     replicas: 2
+     image: nginx
+     port: 8080
+   ~~~
+
+   然后更新他的端口, 如果返回如下的内容说明生效了
+
+   ~~~shell
+   port is immutable and cannot be updated
+   ~~~
+
+   
 
 #### Mutation Webhook
+
+你可以使用如下的命令来生成MutatingWebhook的模版代码
+
+~~~shell
+# --kind指定要校验的资源, 不是随便指定的
+# --defaulting指定生成MutatingWebhook
+kubebuilder create webhook \
+--group webapp \
+--version v1 \
+--kind Guestbook \
+--defaulting
+~~~
+
+// todo 怎么使用问ai吧, 要用了再说
 
 
 
 #### Conversion Webhook
+
+你可以使用如下的命令来生成ConversionWebhook的模版代码
+
+~~~shell
+# --kind指定要转换的资源, 不是随便指定的
+# --conversion指定生成ConversionWebhook
+kubebuilder create webhook \
+--group webapp \
+--version v1 \
+--kind Guestbook \
+--conversion
+~~~
+
+// todo 怎么使用问ai吧, 要用了再说
 
 
 
@@ -9529,20 +9812,16 @@ Webhook 在 Operator 中可以分为两类：
     --make # 在初始化完脚手架之后自动帮你执行make generate命令
     ~~~
 
-    
-
-    
-
   - kubebuilder create webhook: 创建一个webhook资源
 
     ~~~shell
-    --group xxx # 指定自定义资源的 API Group，例如 apps、cache 等。
+  --group xxx # 指定自定义资源的 API Group，例如 apps、cache 等。
     --kind xxx # 指定自定义资源的 Kind，例如 Redis、SimpleApp、MySQL 等。
-    --version xxx # 指定自定义资源的版本，例如 v1alpha1、v1beta1、v1。
+  --version xxx # 指定自定义资源的版本，例如 v1alpha1、v1beta1、v1。
     
     --programmatic-validation # 生成 validating webhook，用于在资源创建或更新时执行自定义校验逻辑。
     --conversion # 生成 conversion webhook，用于不同 API 版本之间的自动转换（例如 v1alpha1 ↔ v1beta1）。
-    --defaulting # 生成 defaulting webhook，用于在创建或更新资源时自动填充默认字段值。
+    --defaulting # 生成 MutatingWebhook，用于在创建或更新资源时自动填充默认字段值。
     
     --external-api-domain xxx # 指定外部 API 的 domain，用于生成正确的 RBAC 标记，例如 cert-manager.io。
     --external-api-path xxx # 指定外部 API 的 Go 包路径，用于为项目外部定义的资源生成 controller/webhook 代码，例如 github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1。
@@ -9552,9 +9831,9 @@ Webhook 在 Operator 中可以分为两类：
     --legacy # 使用旧的项目目录结构生成代码（已废弃，未来版本会删除）。
     --make # 是否在生成代码后自动执行 `make generate`，用于生成 DeepCopy、CRD schema 等代码（默认 true）。
     
-    --plural xxx # 指定资源复数形式（不规则复数时使用），例如 policy → policies。
+    --plural xxx # 指定webhook复数形式（不规则复数时使用），例如 policy → policies。如果不指定那么k8s会自动推断
     ~~~
-
+  
     
 
 ## CRD文件解析 // todo
