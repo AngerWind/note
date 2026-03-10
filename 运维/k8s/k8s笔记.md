@@ -8435,9 +8435,504 @@ https://github.com/ChrisTheShark/sample-vwebhook
 
    我们要定义一个接口, 来接受k8s传递过来的数据, 然后返回特定的响应
 
-3. 首先为了能够接受
+3. 首先为了能够接受namespace这个资源的数据, 我们要创建对应的结构体
 
+   ~~~go
+   // Namespace struct for parsing
+   type Namespace struct {
+   	Metadata Metadata `json:"metadata"`
+   }
+   
+   // Metadata struct for parsing
+   type Metadata struct {
+   	Name   string            `json:"name"`
+   	Labels map[string]string `json:"labels"`
+   }
+   
+   func (m Metadata) isEmpty() bool {
+   	return m.Name == ""
+   }
+   ~~~
 
+4. 然后我们要实现对应的校验方法的逻辑
+
+   ~~~go
+   const (
+   	// InvalidMessage will be return to the user.
+   	InvalidMessage = "namespace missing required team label"
+   	requiredLabel  = "team"
+   	port           = ":8443"
+   )
+   
+   func Validate(w http.ResponseWriter, r *http.Request) {
+       // k8s传递过来的请求体, 固定就是AdmissionReview这个结构体, 所以这里的代码固定
+   	arReview := v1beta1.AdmissionReview{}
+   	if err := json.NewDecoder(r.Body).Decode(&arReview); err != nil {
+   		http.Error(w, err.Error(), http.StatusBadRequest)
+   		return
+   	} else if arReview.Request == nil {
+   		http.Error(w, "invalid request body", http.StatusBadRequest)
+   		return
+   	}
+   
+       // 我们从请求体中获取到对应的请求的具体数据, 也就是创建的ns的数据
+   	raw := arReview.Request.Object.Raw
+   
+       // 将数据反序列化为namespace结构体
+   	ns := Namespace{}
+   	if err := json.Unmarshal(raw, &ns); err != nil {
+           // 反序列化失败, 拒绝
+   		http.Error(w, err.Error(), http.StatusBadRequest)
+   		return
+   	} else if ns.Metadata.isEmpty() {
+           // namespace没有指定metadata, 拒绝
+   		http.Error(w, "invalid request body", http.StatusBadRequest)
+   		return
+   	}
+   
+       // 我们返回给k8s的响应体, 固定是AdmissionResponse 这个结构体
+   	arReview.Response = &v1beta1.AdmissionResponse{
+   		UID:     arReview.Request.UID,
+   		Allowed: true,
+   	}
+   
+       // 校验metadata.labels上面有没有team这个label, 如果没有就拒绝
+   	if len(ns.Metadata.Labels) == 0 || ns.Metadata.Labels[requiredLabel] == "" {
+   		arReview.Response.Allowed = false
+   		arReview.Response.Result = &metav1.Status{
+   			Message: InvalidMessage,
+   		}
+   	}
+   
+   	w.Header().Set("Content-Type", "application/json")
+   	json.NewEncoder(w).Encode(&arReview)
+   }
+   ~~~
+
+5. 实现完了之后我们再来实现我们的http服务器, 这样k8s才能请求我们的webhook
+
+   ~~~go
+   var (
+   	tlscert, tlskey string
+   )
+   
+   func main() {
+       // 因为k8s调用我们的webhook的时候, 会使用https, 所以我们必须要指定tls.crt和tls.key
+       // 这两个文件我们在后续会创建
+   	flag.StringVar(&tlscert, "tlsCertFile", "/etc/certs/tls.crt",
+   		"File containing a certificate for HTTPS.")
+   	flag.StringVar(&tlskey, "tlsKeyFile", "/etc/certs/tls.key",
+   		"File containing a private key for HTTPS.")
+   	flag.Parse()
+   	// 指定路由
+   	http.HandleFunc("/validate", Validate)
+       // 启动https服务器
+   	log.Fatal(http.ListenAndServeTLS(port, tlscert, tlskey, nil))
+   }
+   ~~~
+
+6. 有了上面的webhook代码之后, 我们可以来编写一个测试用例, 用来测试一个带有team label的ns能够创建成功
+
+   ~~~go
+   // main_test.go
+   func TestHappyPath(t *testing.T) {
+   	ns := Namespace{
+   		Metadata: Metadata{
+   			Name: "test-ns",
+   			Labels: map[string]string{
+   				"team": "avengers",
+   			},
+   		},
+   	}
+   
+   	bs, _ := json.Marshal(ns)
+   	admReview := v1beta1.AdmissionReview{
+   		Request: &v1beta1.AdmissionRequest{
+   			Object: runtime.RawExtension{
+   				Raw: bs,
+   			},
+   		},
+   	}
+   
+   	bs2, _ := json.Marshal(admReview)
+   	r := httptest.NewRequest(http.MethodPost, "/validate", bytes.NewReader(bs2))
+   	w := httptest.NewRecorder()
+   
+   	Validate(w, r)
+   	resp := w.Result()
+   
+   	bs3, _ := ioutil.ReadAll(resp.Body)
+   	rcvdAdmReview := v1beta1.AdmissionReview{}
+   	json.Unmarshal(bs3, &rcvdAdmReview)
+   
+   	assert.Equal(t, http.StatusOK, resp.StatusCode)
+   	assert.Equal(t, true, rcvdAdmReview.Response.Allowed)
+   }
+   ~~~
+
+7. 你也可以创建更多的测试用例, 这里就不一一列举了, 可以查看代码中的`main_test.go`文件
+
+8. 有了上面代码之后, 现在我们要做的就是将这个代码部署到k8s中, 并创建svc, 然后创建webhook configuration让k8s知道这个webhook
+
+9. 首先让我们来创建我们的webhook的镜像, 下面是dockerfile的内容
+
+   ~~~dockerfile
+   FROM golang:1.14-alpine3.12 AS build
+   
+   RUN mkdir -p /go/src/github.com/ChrisTheShark/simple-vwebhook
+   WORKDIR /go/src/github.com/ChrisTheShark/simple-vwebhook
+   
+   COPY . .
+   RUN apk --no-cache add build-base gcc && \
+       adduser -S 10001 golang && \
+       go test -mod=vendor ./... && \
+       GO111MODULE=on CGO_ENABLED=0 GOOS=linux go build -mod vendor -o main
+   
+   FROM alpine:3.12
+   COPY --from=build /go/src/github.com/ChrisTheShark/simple-vwebhook/main .
+   COPY --from=build /etc/passwd /etc/passwd
+   USER 10001
+   ENTRYPOINT [ "/main" ]
+   ~~~
+
+10. 接下来我们要创建一个helm的chart, 让我们的webhook能够通过helm install就部署上去, 这一步的流程比较复杂, 这里写一下主要的步骤
+
+    1. 我们要编写一个dockerfile文件, 来生成一个镜像, 这个镜像里面有kubectl, openssl这个工具, 我们会在这个镜像中生成https所需要的文件
+
+    2. 我们要创建helm 的 preinstall的job, 让他可以在安装webhook之前来生成这个https需要的文件
+
+    3. 我们需要一个sa文件, 让我们的这个preinstall的job有资格访问k8s来生成密钥
+
+    4. 我们需要一个deployment文件来启动我们的webhook
+
+    5. 我们需要一个service文件来创建webhook的svc
+
+    6. 我们需要一个webhook文件来让k8s知道我们的webhook
+
+       
+
+11. 首先我们来编写这个生成https所需要的镜像的dockerfile
+
+    ~~~dockerfile
+    FROM alpine:3.12
+    
+    ENV KUBECTL_VERSION=v1.19.4
+    
+    ADD . /predeploy/
+    WORKDIR /predeploy
+    
+    RUN apk update && \
+        apk add curl openssl && \
+        chmod u+x predeploy.sh && \ 
+        chmod u+x generate-secret.sh && \
+        curl -LO https://storage.googleapis.com/kubernetes-release/release/$KUBECTL_VERSION/bin/linux/amd64/kubectl && \
+        chmod u+x kubectl && mv kubectl /bin/kubectl
+    
+    ENTRYPOINT [ "./predeploy.sh" ]
+    ~~~
+
+12. 让我们编写一个preinstall的job, 在webhook启动之前生成http响应的文件
+
+    ~~~shell
+    apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: {{ .Chart.Name }}
+      namespace: {{ required "A valid .Values.namespace is required!" .Values.namespace }}
+      labels:
+        {{- include "nsvalidator.labels" . | nindent 4 }}
+      annotations:
+        "helm.sh/hook": "pre-install"
+        "helm.sh/hook-weight": "1"
+        "helm.sh/hook-delete-policy": "hook-succeeded"
+    spec:
+      template:
+        spec:
+          containers:
+            - name: {{ .Chart.Name }}
+              image: chrisdyer/simple-vwebhook-predeploy:v1.0.0
+              imagePullPolicy: Always
+              args: ["{{ include "nsvalidator.fullname" . }}", "webhooks", "tlssecret"]
+          serviceAccountName: {{ .Chart.Name }}-sa
+          restartPolicy: Never
+      backoffLimit: 4
+    ~~~
+
+13. 再生成一个sa文件, 让这个preinstall的job有足够的权限
+
+    ~~~yaml
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: "{{ .Chart.Name }}-sa"
+      namespace: {{ required "A valid .Values.namespace is required!" .Values.namespace }}
+      labels: 
+        {{- include "nsvalidator.labels" . | nindent 4 }}
+      annotations:
+        "helm.sh/hook": "pre-install"
+        "helm.sh/hook-weight": "0"
+        "helm.sh/hook-delete-policy": "hook-succeeded"
+    
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: "{{ .Chart.Name }}-sa-binding"
+      labels: 
+        {{- include "nsvalidator.labels" . | nindent 4 }}
+      annotations:
+        "helm.sh/hook": "pre-install"
+        "helm.sh/hook-weight": "0"
+        "helm.sh/hook-delete-policy": "hook-succeeded"
+    subjects:
+      - kind: ServiceAccount
+        name: "{{ .Chart.Name }}-sa"
+        namespace: {{ required "A valid .Values.namespace is required!" .Values.namespace }}
+    roleRef:
+      kind: ClusterRole
+      name: cluster-admin
+      apiGroup: rbac.authorization.k8s.io
+    ~~~
+
+14. 之后我们来编写这个`predeploy.sh`, 用他来生成https相关文件
+
+    ~~~shell
+    #!/bin/sh
+    
+    # Exit on error.
+    set -e
+    
+    usage() {
+        echo 'Usage: predeploy.sh <serviceName> <namespace> <secretName>'
+    }
+    
+    if [ "$#" -ne 3 ]; then
+        usage
+        exit 1
+    fi
+    
+    service=$1
+    namespace=$2
+    secret=$3
+    
+    # Create namespace if not exists.
+    kubectl create namespace $namespace || true
+    
+    # Locate the cluster Certificate Authority for population in webhook YAML.
+    CA_BUNDLE=`kubectl get configmap -n kube-system extension-apiserver-authentication -o=jsonpath='{.data.client-ca-file}' | base64 | tr -d '\n'`
+    
+    # Populate secrets from certificate file and key.
+    ./generate-secret.sh $service $namespace $secret # 生成具体的secrets文件
+    
+    # Replace static string with CA_BUNDLE contents.
+    # Add '' after -i to run this on Mac.
+    # sed -i '' "s/CA_BUNDLE/$CA_BUNDLE/g" webhook.yaml
+    sed -i "s/CA_BUNDLE/$CA_BUNDLE/g" webhook.yaml # 替换webhook.yaml中的CA_BUNDLE这个字符串为具体的私钥
+    
+    # Deploy webhook resource.
+    kubectl apply -f webhook.yaml # 创建webhook.yaml相关资源, 注意这里是在pod中调用kubectl, 他会读取sa, 这是可行的
+    ~~~
+
+15. 之后我们再编写`generate-secret.sh`文件, 生成具体的secrets文件
+
+    ~~~shell
+    #!/bin/sh
+    
+    usage() {
+        echo 'Usage: generate-secret.sh <serviceName> <namespace> <secretName>'
+    }
+    
+    if [ "$#" -ne 3 ]; then
+        usage
+        exit 1
+    fi
+    
+    service=$1
+    namespace=$2
+    secret=$3
+    
+    csrName=${service}.${namespace}
+    tmpdir=$(mktemp -d)
+                
+    echo "creating certs in tmpdir ${tmpdir} "
+    
+    cat <<EOF >> ${tmpdir}/csr.conf
+    [req]
+    req_extensions = v3_req
+    distinguished_name = req_distinguished_name
+    [req_distinguished_name]
+    [ v3_req ]
+    basicConstraints = CA:FALSE
+    keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+    extendedKeyUsage = serverAuth
+    subjectAltName = @alt_names
+    [alt_names]
+    DNS.1 = ${service}
+    DNS.2 = ${service}.${namespace}
+    DNS.3 = ${service}.${namespace}.svc
+    EOF
+    
+    openssl genrsa -out ${tmpdir}/key.pem 2048
+    openssl req -new -key ${tmpdir}/key.pem -subj "/CN=${service}.${namespace}.svc" -out ${tmpdir}/server.csr -config ${tmpdir}/csr.conf
+    
+    # clean-up any previously created CSR for our service. Ignore errors if not present.
+    kubectl delete csr ${csrName} 2>/dev/null || true
+    
+    # create  server cert/key CSR and  send to k8s API
+    cat <<EOF | kubectl create -f -
+    apiVersion: certificates.k8s.io/v1beta1
+    kind: CertificateSigningRequest
+    metadata:
+      name: ${csrName}
+    spec:
+      groups:
+      - system:authenticated
+      request: $(cat ${tmpdir}/server.csr | base64 | tr -d '\n')
+      usages:
+      - digital signature
+      - key encipherment
+      - server auth
+    EOF
+    
+    # verify CSR has been created
+    while true; do
+        kubectl get csr ${csrName}
+        if [ "$?" -eq 0 ]; then
+          break
+        fi
+    done
+    
+    # approve and fetch the signed certificate
+    kubectl certificate approve ${csrName}
+    # verify certificate has been signed
+    for x in $(seq 10); do
+      serverCert=$(kubectl get csr ${csrName} -o jsonpath='{.status.certificate}')
+      if [[ ${serverCert} != '' ]]; then
+        break
+      fi
+      sleep 1
+    done
+    if [[ ${serverCert} == '' ]]; then
+      echo "ERROR: After approving csr ${csrName}, the signed certificate did not appear on the resource. Giving up after 10 attempts." >&2
+      exit 1
+    fi
+    
+    echo ${serverCert} | openssl base64 -d -A -out ${tmpdir}/cert.pem
+    
+    
+    # create the secret with CA cert and server cert/key
+    kubectl create secret tls ${secret} \
+      --key=${tmpdir}/key.pem \
+      --cert=${tmpdir}/cert.pem \
+      --dry-run=client -o yaml |
+    kubectl -n ${namespace} apply -f -
+    ~~~
+
+16. 因为我们再创建我们的`webhook.yaml` , 这个资源告诉k8s怎么调用我们的webhook, 这个webhook会在`predeploy.sh`脚本中被apply
+
+    ~~~shell
+    apiVersion: admissionregistration.k8s.io/v1
+    kind: ValidatingWebhookConfiguration # 告诉k8s我们的k8s的资源类型
+    metadata:
+      name: "nsvalidator.webhooks.svc.cluster.local"
+    webhooks:
+      - name: "nsvalidator.webhooks.svc.cluster.local"
+        rules:
+          - apiGroups: [""] # 监听的资源的group, 因为是内置的ns资源, 所以没有group, 自定义资源的话有group
+            apiVersions: ["v1"] # 监听的资源的版本
+            operations: ["CREATE", "UPDATE"] # 要监听的事件
+            resources: ["namespaces"] # 要监听的资源
+            scope: "Cluster" # 监听当前ns的资源还是整个cluster的资源
+        clientConfig:
+          service:
+            # 指定webhook的svc, namespace, path
+            namespace: "webhooks"
+            name: "nsvalidator"
+            path: "/validate"
+          caBundle: "CA_BUNDLE" # 制定secrets, 这是一个占位符, 在predeploy.sh中会被sed命令替换
+        admissionReviewVersions: ["v1", "v1beta1"]
+        sideEffects: None # 调用这个webhook没有副作用
+        timeoutSeconds: 5 # 调用这个webhook的超时事件
+    ~~~
+
+17. 有了这个之后, 还需要创建一个deployment和svc来部署我们的webhook
+
+    ~~~yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: {{ .Chart.Name }}
+      namespace: {{ required "A valid .Values.namespace is required!" .Values.namespace }}
+      labels:
+        {{- include "nsvalidator.labels" . | nindent 4 }}
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          {{- include "nsvalidator.selectorLabels" . | nindent 6 }}
+      template:
+        metadata:
+          labels:
+            {{- include "nsvalidator.selectorLabels" . | nindent 8 }}
+        spec:
+          containers:
+            - name: {{ .Chart.Name }}
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              ports:
+                - name: http
+                  containerPort: 8443
+                  protocol: TCP
+              volumeMounts:
+              - name: certs
+                mountPath: "/etc/certs"
+                readOnly: true
+              resources:
+                {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 8 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 8 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 8 }}
+          {{- end }}
+          volumes:
+          - name: certs
+            secret:
+              secretName: tlssecret
+    ~~~
+
+    ~~~yaml
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: {{ include "nsvalidator.fullname" . }}
+      namespace: {{ required "A valid .Values.namespace is required!" .Values.namespace }}
+      labels: 
+        {{- include "nsvalidator.labels" . | nindent 4 }}
+    spec:
+      type: ClusterIP
+      ports:
+        - port: 443
+          targetPort: 8443
+          protocol: TCP
+          name: http
+      selector: 
+        {{- include "nsvalidator.selectorLabels" . | nindent 4 }}
+    ~~~
+
+18. 这样只要你执行helm install, 那么会执行如下的步骤
+
+    1. 先执行preinstall这个job
+    2. 这个job会执行predeploy.sh, 然后通过generate-secret.sh来生成密钥, 并且通过sed替换webhook.yaml中的CA_BUNDLE占位符, 然后apply这个webhook.yaml来创建webhook
+    3. 这个webhook.yaml会告诉k8s我们监听的资源, 操作, webhook的svc, 端口, 地址
+    4. 然后部署deployment.yaml和service.yaml来创建具体的webhook逻辑的https服务
+    5. 自此webhook就部署好了, 最麻烦的一部还是创建https的secret, 需要在pod中调用kubectl来生成
 
 
 
