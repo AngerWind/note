@@ -8372,6 +8372,73 @@ kubectl taint nodes Node-Name node-role.kubernetes.io/master=:PreferNoSchedule
 
 
 
+# Webhook
+
+在k8s中`Webhook` 是一种扩展 API 服务器功能的机制，它可以让你在资源的生命周期中执行自定义逻辑。
+
+说白了就是如果有资源创建/修改/删除/更新,  那么k8s在对资源进行操作之前会调用webhook来进行校验操作是否合法, 如果不合法可以拒绝操作
+
+webhook的使用过程如下
+
+1. 首先你需要编写一个程序, 使用什么语言无所谓, 他接受https的消息, 并且请求体和响应体的结构都符合k8s的规则
+
+   在这个请求的过程中你需要校验操作是否合法, 如果不合法要方向拒绝的响应
+
+2. 将这个程序打包为镜像, 然后部署为pod/Deployment
+
+3. 为你的服务pod创建对应的svc
+
+4. 在k8s中创建一个webhook资源,  在这个资源中你需要
+
+   - 指定你的pod对应的svc的地址, 端口, restapi path, 这样k8s就知道怎么调用你的程序了
+   - 指定你要处理什么类型的资源, 对应的什么事件, 这样当对应的事件发生之后就会调用你的程序了
+
+5. 如果k8s中有事件触发了, 那么k8s会找到能够处理这些事件的webhook, 然后调用这些webhook对应的svc, 然后根据响应体的内容来决定是否要执行这个操作, 或者拒绝操作
+
+
+
+在k8s中主要有两类webhook
+
+1.  **ValidatingWebhookConfiguration** 
+
+   使用这个webhook, 他可以让你对触发的事件进行校验, 比如创建ns必须指定特定的label, 否则拒绝创建等等
+
+2.  **MutatingWebhookConfiguration**
+
+   使用这个webhook, 他可以在事件触发的时候, 修改资源, 比如创建ns的时候, 如果没有设置特定的label, 那么就给他加上一个默认的
+
+
+
+下面根据两个文章来说明**ValidatingWebhookConfiguration** 的使用过程
+
+https://medium.com/swlh/kubernetes-validating-webhook-implementation-60f3352b66a
+
+https://cdyer1980.medium.com/kubernetes-validating-webhook-deployment-3b6787380ea2
+
+https://github.com/ChrisTheShark/sample-vwebhook
+
+具体的github的代码已经下载到了sample-webhook文件夹中, 下面具体阐述一下如下来使用ValidatingWebhookConfiguration的使用步骤
+
+
+
+1. 首先我们要实现一个功能就是, 在创建ns的时候, ns的labels上面必须带有一个名为team的label, 用来指示这个ns是属于哪个团队
+
+   下面这是一个合法的ns的yaml
+
+   ![](img/1_bdSBQjisb7vd86Rj5LPMOQ.webp)
+
+   下面是一个非法的ns的yaml
+
+   ![](img/1_n3ccZ_zQ101G1ulAxy3eZg.webp)
+
+2. 现在我们要使用go程序来实现我们的webhook,  当然你使用什么语言都无所谓, 只要能实现http服务就可以了
+
+   我们要定义一个接口, 来接受k8s传递过来的数据, 然后返回特定的响应
+
+3. 首先为了能够接受
+
+
+
 
 
 # Operator
