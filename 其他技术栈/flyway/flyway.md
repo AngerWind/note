@@ -1,3 +1,311 @@
+### 概述
+
+Flyway是一个数据库版本管理工具, 他支持一套数据库版本管理规则, 你可以使用多种方式来集成Flyway, 包括但不限于
+
+- Flyway Desktop https://documentation.red-gate.com/fd/quickstart-flyway-desktop-206602598.html
+- Flyway Cli https://documentation.red-gate.com/fd/quickstart-flyway-desktop-206602598.html
+- Java
+- Maven
+- Gradle
+- Docker
+- ...
+
+
+
+### Flyway支持的数据库
+
+https://documentation.red-gate.com/fd/supported-databases-and-versions-143754067.html
+
+
+
+
+
+### Flyway Cli的使用
+
+使用Flyway Cli之前你需要安装Flyway Desktop, 这样按照之后你就有了Flyway Cli的命令行了
+
+在windows上面安装Flyway Desktop还是比较简单的, 就是一个安装包直接安装就好了, 具体可以看`https://documentation.red-gate.com/fd/quickstart-flyway-desktop-206602598.html`
+
+
+
+这个命令行会在你Flyway Desktop的安装目录下, 如果你没有修改安装命令的话, 就是在`C:\Program Files\Red Gate\Flyway Desktop\flyway`
+
+
+
+有了`flyway`这个命令之后, 你就要来编写一个`flyway.toml`配置文件了, 内容如下
+
+~~~toml
+[flyway]
+locations = ["filesystem:migrations"] # 指定migrations脚本保存的位置
+     
+[environments.default]
+ url = "jdbc:sqlite:FlywayQuickStartCLI.db" # 指定要连接的数据库的账号密码
+user = ""
+password = ""
+~~~
+
+之后再你指定的migration目录下创建我们的数据库文件, 比如 `V1__Create_person_table.sql`
+
+~~~sql
+create table PERSON (
+    ID int not null,
+    NAME varchar(100) not null
+);
+~~~
+
+之后你只要执行如下的命令, 那么flyway就会连接到对应的数据库, 执行你的数据库脚本文件
+
+~~~shell
+flyway -configFiles=/path/to/your/flyway.conf migrate
+
+Database: jdbc:sqlite:FlywayQuickStartCLI.db (SQLite 3.41)
+Successfully validated 1 migration (execution time 00:00.008s)
+Creating Schema History table: "PUBLIC"."flyway_schema_history"
+Current version of schema "PUBLIC": << Empty Schema >>
+Migrating schema "PUBLIC" to version 1 - Create person table
+Successfully applied 1 migration to schema "PUBLIC" (execution time 00:00.033s)
+~~~
+
+之后假如你的数据库有变动, 需要进行更新, 那么你可以添加需要更新的sql, 比如`V2__Add_people.sql`
+
+~~~sql
+insert into PERSON (ID, NAME) values (1, 'Axel');
+insert into PERSON (ID, NAME) values (2, 'Mr. Foo');
+insert into PERSON (ID, NAME) values (3, 'Ms. Bar');
+~~~
+
+之后你只要再次执行下面的命令, flyway会知道你当前的数据库已经执行了之前的migration脚本文件, 那么下载他只会执行当前添加的`V2__Add_people.sql`这个migration
+
+~~~shell
+flyway -configFiles=/path/to/your/flyway.conf migrate
+
+Database: jdbc:sqlite:FlywayQuickStartCLI.db (SQLite 3.41)
+Successfully validated 2 migrations (execution time 00:00.018s)
+Current version of schema "PUBLIC": 1
+Migrating schema "PUBLIC" to version 2 - Add people
+Successfully applied 1 migration to schema "PUBLIC" (execution time 00:00.016s)
+~~~
+
+之后如果你又要更新数据库了, 那么你只要添加v3, v4的脚本文件, flyway会自动帮你执行
+
+
+
+
+
+### Flyway集成Maven
+
+
+
+在本教程中，我们将主要关注如何使用 Maven 插件执行数据库迁移。
+
+#### Flyway Maven 插件
+
+要安装 Flyway Maven 插件，让我们将以下插件定义添加到 *pom.xml 文件中：*
+
+~~~xml
+<plugin>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-maven-plugin</artifactId>
+    <version>11.17.0</version> 
+</plugin>
+~~~
+
+该插件的最新版本可在 [Maven Central](https://mvnrepository.com/artifact/org.flywaydb/flyway-maven-plugin) 获取。
+
+我们可以通过四种不同的方式配置这个 Maven 插件。在接下来的章节中，我们将逐一介绍这些选项。
+
+请参考[文档](https://flywaydb.org/documentation/usage/maven/migrate)以获取所有可配置属性的列表。
+
+
+
+#### Flyway Maven 插件的配置
+
+有四种方式不同的方式可以对这个插件进行配置
+
+1. 方式1, 通过 pom.xml 文件中插件定义里的 \<configuration>标签直接配置插件
+
+   ~~~xml
+   <plugin>
+       <groupId>org.flywaydb</groupId>
+       <artifactId>flyway-maven-plugin</artifactId>
+       <version>11.17.0</version>
+       <configuration>
+           <user>databaseUser</user>
+           <password>databasePassword</password>
+           <schemas>
+               <schema>schemaName</schema>
+           </schemas>
+           ...
+       </configuration>
+   </plugin>
+   ~~~
+
+2. 方式2, 在pom文件中定义properties来配置插件
+
+   ~~~xml
+   <project>
+       ...
+       <properties>
+           <flyway.user>databaseUser</flyway.user>
+           <flyway.password>databasePassword</flyway.password>
+           <flyway.schemas>schemaName</flyway.schemas>
+           ...
+       </properties>
+       ...
+   </project>
+   ~~~
+
+3. 方式3, 使用外部的`flyway.conf`文件来配置插件
+
+   flyway的maven插件默认会查找以下默认中的`flyway.conf`文件, 来作为他的配置, 优先级从上到下
+
+   - workingDir/flyway.conf
+   - userhome/flyway.conf 
+   - installDir/conf/flyway.conf
+
+   该文件的编码方式默认是utf-8, 当然你也可以使用`flyway.encoding`属性来指定
+
+   如果我们使用其他名称（例如 *customConfig.conf* ）作为配置文件，则在调用 Maven 命令时必须显式指定该文件
+
+   ~~~shell
+   $ mvn -Dflyway.configFiles=customConfig.conf
+   ~~~
+
+4. 方式4, 通过System Properties来指定插件的配置
+
+   ~~~shell
+   $ mvn -Dflyway.user=databaseUser -Dflyway.password=databasePassword 
+     -Dflyway.schemas=schemaName
+   ~~~
+
+如果你使用了多种方式来指定了同一个配置, 那么他们的优先级如下:
+
+1. 系统属性
+2. 外部配置文件
+3. Maven properties
+4. Plugin configuration 配置
+
+
+
+#### Migration案例
+
+在本节中， **我们将逐步介绍如何使用 Maven 插件将数据库模式迁移到内存中的 H2 数据库。** 我们将使用外部配置文件来配置 Flyway。
+
+
+
+1. 首先，我们添加 H2 作为依赖项：
+
+   ~~~xml
+   <dependency>
+       <groupId>com.h2database</groupId>
+       <artifactId>h2</artifactId>
+       <version>2.2.224</version>
+   </dependency>
+   ~~~
+
+   同样，我们可以查看 [Maven Central](https://mvnrepository.com/artifact/com.h2database/h2) 上提供的最新驱动程序版本。此外，我们还需要添加之前解释过的 Flyway 插件。
+
+2. 接下来，我们在 *$PROJECT_ROOT 目录*下创建 *myFlywayConfig.conf* 文件，内容如下：
+
+   ~~~xml
+   flyway.password=databasePassword
+   flyway.schemas=app-db
+   flyway.url=jdbc:h2:mem:DATABASE
+   flyway.locations=filesystem:db/migration
+   ~~~
+
+   上述配置指定我们的迁移脚本位于 *db/migration* 目录中。它使用 *databaseUser* 和 *databasePassword* 连接到内存中的 H2 实例。应用程序数据库schema为 *app-db* 。
+
+3. Migration
+
+   Flyway 对迁移脚本遵循以下命名约定：
+
+   ~~~shell
+   <Prefix><Version>__<Description>.sql
+   <Prefix><Version>__<Description> .sql
+   ~~~
+
+   *\<Prefix>* – 默认前缀为 *V* ，我们可以使用 *flyway.sqlMigrationPrefix* 属性在上面的配置文件中更改它。
+
+   *\<Version>* – 迁移版本号。主版本号和次版本号之间可以用*下划线*分隔。迁移版本号必须始终以 1 开头。
+
+   *\<Description>* – 迁移的文本描述。描述与版本号之间用双下划线分隔。
+
+   所以，让我们在 `$PROJECT_ROOT` 目录*下创建一个*名为 `db/migration` 的目录，并在其中创建一个名为 *V1_0__create_employee_schema.sql* 的迁移脚本，该脚本包含用于创建 employee 表的 SQL 指令：
+
+   ~~~sql
+   CREATE TABLE IF NOT EXISTS `employee` (
+   
+       `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+       `name` varchar(20),
+       `email` varchar(50),
+       `date_of_birth` timestamp
+   
+   )ENGINE=InnoDB DEFAULT CHARSET=UTF8;
+   ~~~
+
+4. 执行Migration
+
+   接下来，我们从 *$PROJECT_ROOT* 调用以下 Maven 命令来执行数据库迁移：
+
+   ~~~shell
+   $ mvn clean flyway:migrate -Dflyway.configFiles=myFlywayConfig.conf
+   ~~~
+
+   数据库架构现在应该如下所示：
+
+   ~~~shell
+   employee:
+   +----+------+-------+---------------+
+   | id | name | email | date_of_birth |
+   +----+------+-------+---------------+
+   ~~~
+
+5. 执行第二次Migration
+
+   让我们通过创建第二个迁移文件 *V2_0_create_department_schema.sql* 来看看第二个迁移是什么样的，该文件包含以下两个查询：
+
+   ```sql
+   CREATE TABLE IF NOT EXISTS `department` (
+   `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+   `name` varchar(20)
+   )ENGINE=InnoDB DEFAULT CHARSET=UTF8; 
+   ALTER TABLE `employee` ADD `dept_id` int AFTER `email`;Copy
+   ```
+
+   然后我们将执行与第一次类似的迁移。现在我们的数据库架构已更改，在 *employee 表*中添加了一个新列，并添加了一个新表：
+
+   ```plaintext
+   employee:
+   +----+------+-------+---------+---------------+
+   | id | name | email | dept_id | date_of_birth |
+   +----+------+-------+---------+---------------+
+   department:
+   +----+------+
+   | id | name |
+   +----+------+
+   ```
+
+   最后，我们可以通过调用以下 Maven 命令来验证两次迁移是否都成功：
+
+   ```shell
+   $ mvn flyway:info -Dflyway.configFiles=myFlywayConfig.conf
+   ```
+
+
+
+
+
+### Flyway的内部原理
+
+从上面的两个案例来看, 你可以在多个地方通过不同的方式来调用flyway, 比如maven, docker, gradle, cli等等
+
+不管你通过什么方式来调用flyway, 他都有共同的特点
+
+1. 你需要指定一个目录, 用来保存migration脚本
+2. 脚本需要按照一定的命名规则
+3. 你需要有一个配置, 用来指定要连接的数据库信息
+
 
 
 
@@ -242,203 +550,7 @@ https://www.baeldung.com/database-migrations-with-flyway
 
 **在单次迁移运行中，可重复迁移始终在待处理的版本化迁移执行完毕后最后执行。可重复迁移按照其描述顺序执行。对于单次迁移，所有语句都在单个数据库事务中运行。**
 
-在本教程中，我们将主要关注如何使用 Maven 插件执行数据库迁移。
 
-
-
-#### Flyway Maven 插件
-
-要安装 Flyway Maven 插件，让我们将以下插件定义添加到 *pom.xml 文件中：*
-
-~~~xml
-<plugin>
-    <groupId>org.flywaydb</groupId>
-    <artifactId>flyway-maven-plugin</artifactId>
-    <version>11.17.0</version> 
-</plugin>
-~~~
-
-该插件的最新版本可在 [Maven Central](https://mvnrepository.com/artifact/org.flywaydb/flyway-maven-plugin) 获取。
-
-我们可以通过四种不同的方式配置这个 Maven 插件。在接下来的章节中，我们将逐一介绍这些选项。
-
-请参考[文档](https://flywaydb.org/documentation/usage/maven/migrate)以获取所有可配置属性的列表。
-
-
-
-#### Flyway Maven 插件的配置
-
-有四种方式不同的方式可以对这个插件进行配置
-
-1. 方式1, 通过 pom.xml 文件中插件定义里的 \<configuration>标签直接配置插件
-
-   ~~~xml
-   <plugin>
-       <groupId>org.flywaydb</groupId>
-       <artifactId>flyway-maven-plugin</artifactId>
-       <version>11.17.0</version>
-       <configuration>
-           <user>databaseUser</user>
-           <password>databasePassword</password>
-           <schemas>
-               <schema>schemaName</schema>
-           </schemas>
-           ...
-       </configuration>
-   </plugin>
-   ~~~
-
-2. 方式2, 在pom文件中定义properties来配置插件
-
-   ~~~xml
-   <project>
-       ...
-       <properties>
-           <flyway.user>databaseUser</flyway.user>
-           <flyway.password>databasePassword</flyway.password>
-           <flyway.schemas>schemaName</flyway.schemas>
-           ...
-       </properties>
-       ...
-   </project>
-   ~~~
-
-3. 方式3, 使用外部的`flyway.conf`文件来配置插件
-
-   flyway的maven插件默认会查找以下默认中的`flyway.conf`文件, 来作为他的配置, 优先级从上到下
-
-   - workingDir/flyway.conf
-   - userhome/flyway.conf 
-   - installDir/conf/flyway.conf
-
-   该文件的编码方式默认是utf-8, 当然你也可以使用`flyway.encoding`属性来指定
-
-   如果我们使用其他名称（例如 *customConfig.conf* ）作为配置文件，则在调用 Maven 命令时必须显式指定该文件
-
-   ~~~shell
-   $ mvn -Dflyway.configFiles=customConfig.conf
-   ~~~
-
-4. 方式4, 通过System Properties来指定插件的配置
-
-   ~~~shell
-   $ mvn -Dflyway.user=databaseUser -Dflyway.password=databasePassword 
-     -Dflyway.schemas=schemaName
-   ~~~
-
-如果你使用了多种方式来指定了同一个配置, 那么他们的优先级如下:
-
-1. 系统属性
-2. 外部配置文件
-3. Maven properties
-4. Plugin configuration 配置
-
-
-
-#### Migration案例
-
-在本节中， **我们将逐步介绍如何使用 Maven 插件将数据库模式迁移到内存中的 H2 数据库。** 我们将使用外部配置文件来配置 Flyway。
-
-
-
-1. 首先，我们添加 H2 作为依赖项：
-
-   ~~~xml
-   <dependency>
-       <groupId>com.h2database</groupId>
-       <artifactId>h2</artifactId>
-       <version>2.2.224</version>
-   </dependency>
-   ~~~
-
-   同样，我们可以查看 [Maven Central](https://mvnrepository.com/artifact/com.h2database/h2) 上提供的最新驱动程序版本。此外，我们还需要添加之前解释过的 Flyway 插件。
-
-2. 接下来，我们在 *$PROJECT_ROOT 目录*下创建 *myFlywayConfig.conf* 文件，内容如下：
-
-   ~~~xml
-   flyway.password=databasePassword
-   flyway.schemas=app-db
-   flyway.url=jdbc:h2:mem:DATABASE
-   flyway.locations=filesystem:db/migration
-   ~~~
-
-   上述配置指定我们的迁移脚本位于 *db/migration* 目录中。它使用 *databaseUser* 和 *databasePassword* 连接到内存中的 H2 实例。应用程序数据库schema为 *app-db* 。
-
-3. Migration
-
-   Flyway 对迁移脚本遵循以下命名约定：
-
-   ~~~shell
-   <Prefix><Version>__<Description>.sql
-   <Prefix><Version>__<Description> .sql
-   ~~~
-
-   *\<Prefix>* – 默认前缀为 *V* ，我们可以使用 *flyway.sqlMigrationPrefix* 属性在上面的配置文件中更改它。
-
-   *\<Version>* – 迁移版本号。主版本号和次版本号之间可以用*下划线*分隔。迁移版本号必须始终以 1 开头。
-
-   *\<Description>* – 迁移的文本描述。描述与版本号之间用双下划线分隔。
-
-   所以，让我们在 `$PROJECT_ROOT` 目录*下创建一个*名为 `db/migration` 的目录，并在其中创建一个名为 *V1_0__create_employee_schema.sql* 的迁移脚本，该脚本包含用于创建 employee 表的 SQL 指令：
-
-   ~~~sql
-   CREATE TABLE IF NOT EXISTS `employee` (
-   
-       `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
-       `name` varchar(20),
-       `email` varchar(50),
-       `date_of_birth` timestamp
-   
-   )ENGINE=InnoDB DEFAULT CHARSET=UTF8;
-   ~~~
-
-4. 执行Migration
-
-   接下来，我们从 *$PROJECT_ROOT* 调用以下 Maven 命令来执行数据库迁移：
-
-   ~~~shell
-   $ mvn clean flyway:migrate -Dflyway.configFiles=myFlywayConfig.conf
-   ~~~
-
-   数据库架构现在应该如下所示：
-
-   ~~~shell
-   employee:
-   +----+------+-------+---------------+
-   | id | name | email | date_of_birth |
-   +----+------+-------+---------------+
-   ~~~
-
-5. 执行第二次Migration
-
-   让我们通过创建第二个迁移文件 *V2_0_create_department_schema.sql* 来看看第二个迁移是什么样的，该文件包含以下两个查询：
-
-   ```sql
-   CREATE TABLE IF NOT EXISTS `department` (
-   `id` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
-   `name` varchar(20)
-   )ENGINE=InnoDB DEFAULT CHARSET=UTF8; 
-   ALTER TABLE `employee` ADD `dept_id` int AFTER `email`;Copy
-   ```
-
-   然后我们将执行与第一次类似的迁移。现在我们的数据库架构已更改，在 *employee 表*中添加了一个新列，并添加了一个新表：
-
-   ```plaintext
-   employee:
-   +----+------+-------+---------+---------------+
-   | id | name | email | dept_id | date_of_birth |
-   +----+------+-------+---------+---------------+
-   department:
-   +----+------+
-   | id | name |
-   +----+------+
-   ```
-
-   最后，我们可以通过调用以下 Maven 命令来验证两次迁移是否都成功：
-
-   ```shell
-   $ mvn flyway:info -Dflyway.configFiles=myFlywayConfig.conf
-   ```
 
 
 
