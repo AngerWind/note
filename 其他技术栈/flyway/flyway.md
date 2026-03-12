@@ -94,6 +94,8 @@ Successfully applied 1 migration to schema "PUBLIC" (execution time 00:00.016s)
 
 ### Flyway集成Maven
 
+https://www.baeldung.com/database-migrations-with-flyway
+
 
 
 在本教程中，我们将主要关注如何使用 Maven 插件执行数据库迁移。
@@ -218,20 +220,7 @@ Successfully applied 1 migration to schema "PUBLIC" (execution time 00:00.016s)
 
 3. Migration
 
-   Flyway 对迁移脚本遵循以下命名约定：
-
-   ~~~shell
-   <Prefix><Version>__<Description>.sql
-   <Prefix><Version>__<Description> .sql
-   ~~~
-
-   *\<Prefix>* – 默认前缀为 *V* ，我们可以使用 *flyway.sqlMigrationPrefix* 属性在上面的配置文件中更改它。
-
-   *\<Version>* – 迁移版本号。主版本号和次版本号之间可以用*下划线*分隔。迁移版本号必须始终以 1 开头。
-
-   *\<Description>* – 迁移的文本描述。描述与版本号之间用双下划线分隔。
-
-   所以，让我们在 `$PROJECT_ROOT` 目录*下创建一个*名为 `db/migration` 的目录，并在其中创建一个名为 *V1_0__create_employee_schema.sql* 的迁移脚本，该脚本包含用于创建 employee 表的 SQL 指令：
+   让我们在 `$PROJECT_ROOT` 目录*下创建一个*名为 `db/migration` 的目录，并在其中创建一个名为 *V1_0__create_employee_schema.sql* 的迁移脚本，该脚本包含用于创建 employee 表的 SQL 指令：
 
    ~~~sql
    CREATE TABLE IF NOT EXISTS `employee` (
@@ -308,57 +297,101 @@ Successfully applied 1 migration to schema "PUBLIC" (execution time 00:00.016s)
 
 
 
-
-
-### Flyway和SrpingBoot集成
-
-https://medium.com/@AlexanderObregon/using-spring-boot-with-flyway-to-manage-database-migrations-8180ce0c9230
-
-管理数据库模式的长期变更，是后端系统开发中最棘手的部分之一。Flyway 通过 SQL 或基于 Java 的迁移脚本对模式变更进行版本控制，从而解决了这个问题。
-
-Spring Boot 则让 Flyway 能够轻松地集成到应用程序生命周期中。今天，我们将深入探讨 Flyway 如何与 Spring Boot 协同工作，如何组织迁移脚本，如何安全地对变更进行版本控制，以及如何让所有操作在启动时自动执行。您还将了解 API 密钥认证和完整用户授权之间的区别，以及如何确保数据库迁移过程的安全。
-
-
-
-#### Flyway如何在SpringBoot中自动运行Migrations
-
-要想使用flyway和springboot集成, 只需要添加对应的flyway的依赖, springboot就会将其集成到启动流程中, 从而正常的执行你的migrations脚本
-
-~~~xml
-<dependency>
-    <groupId>org.flywaydb</groupId>
-    <artifactId>flyway-core</artifactId>
-</dependency>
-~~~
-
-flyway会集成到springboot初始化的早期阶段, 当程序启动并从spring上下文开始加载bean的时候, springboot会通过classpath中是否存在`flyway-core`这个依赖来检测flyway,  这会触发flyway的自动配置
-
-Spring Boot 检测到 Flyway 后，会创建一个 `FlywayAutoConfiguration` bean, 并通过这个bean来实现自动配置. 迁移操作会在任何 `@PostConstruct` 方法、 `ApplicationRunner` 或 `CommandLineRunner` 代码执行之前运行。这种顺序是特意安排的，因为 Flyway 需要在任何程序尝试使用数据库之前更新数据库模式。
-
-默认情况下，Flyway 会在以下位置查找迁移脚本：
-
-~~~xml
-src/main/resources/db/migration
-~~~
-
-您可以使用 `application.properties` 或 `application.yml` 文件中的以下属性来更改此位置：
-
-~~~properties
-spring.flyway.locations=classpath:/custom-folder
-~~~
+#### migration脚本的命名
 
 Flyway 的migrations脚本遵循以下的命名格式
 
-~~~txt
+~~~shell
+<Prefix><Version>__<Description>.sql
+
+# 比如
 V1__init_schema.sql
 V2__add_index_to_table.sql
 ~~~
 
-Flyway 会解析这些文件名以确定其顺序。前缀 `V` 是版本号的缩写，双下划线将版本号与易于理解的描述分隔开。`migration`文件夹中任何其他不符合此格式的文件都将被忽略。
+1. `V` 表示这个脚本是 Versioned Migrations, 如果前缀是R表示这个脚本是Repeatable Migrations, 不同的脚本有不同的功能, 也有不同的前缀
 
-> Flyway 并不要求版本号必须连续，所以跳过一个版本本身不会造成任何问题。但是，如果您之后添加的脚本版本低于最新应用的版本，则会被视为乱序，除非启用了 `outOfOrder` 设置，否则 Flyway 将停止运行。
->
-> 更改已应用的脚本仍然会导致校验和不匹配，Flyway 会报错退出。
+2. V1中的数字这是第一个版本需要执行的sql, Flyway会解析这个文件名以确定在执行sql的时候他们的执行顺序
+
+   如果数字顺序错误或跳过，Flyway 将停止并报告验证错误。
+
+   > Flyway 并不要求版本号必须连续，所以跳过一个版本本身不会造成任何问题。但是，如果您之后添加的脚本版本低于最新应用的版本，则会被视为乱序，除非启用了 `outOfOrder` 设置，否则 Flyway 将停止运行。
+   >
+   > 更改已应用的脚本仍然会导致校验和不匹配，Flyway 会报错退出。
+
+3. **版本号必须始终以 1 开头。**
+
+4. 双下划线将版本号与易于理解的描述分隔开
+
+5. `migration`文件夹中任何其他不符合此格式的文件都将被忽略。
+
+6. 每个脚本都应该处理一个逻辑变更。这样更容易隔离问题并测试新的迁移。例如，与其将创建表和创建索引都塞进一个脚本中，不如将它们分开：
+
+   ~~~shell
+   V3__create_orders_table.sql
+   V4__add_index_to_orders.sql
+   ~~~
+
+   > 避免将临时笔记或实验文件放在迁移文件夹中。如果您要进行一些尝试，请使用 `db/migration` 之外的单独目录，这样 Flyway 就不会尝试解析或运行它们。
+
+   
+
+
+
+#### migrations的分类
+
+在flyway中, 不同的migrations的类型通过前缀区分, flyway在处理他们的时候也会有不同的方式, 主要的migrations脚本有两种
+
+- versioned migrations
+- repeatable migrations
+
+##### versioned migrations
+
+versioned migrations脚本的前缀是v, 也就是我们上面常用的脚本
+
+对于这类脚本, 每一个脚本flyway都会将他认为是数据库的changlog,  类似git中的commit, 这些脚本也是一个commit,  只要按照顺序来执行这些脚本, 那么就能复原出数据库的最终形态, 并且不同阶段的数据库也能更新到最新的版本
+
+对于这些脚本, flyway在执行了之后, 会在数据库中建立一个内部表, 这个内部表会记住当前这个数据库执行了哪些脚本, 这样下次migrate的时候就不会执行这些执行过的脚本了
+
+同时flyway在执行的时候还会进行校验已经执行过的脚本的内容(checksum)是否发生了改变, 如果发生了改变就会停止migrate, 报错出来 
+
+
+
+##### repeatable migrations
+
+Flyway 支持第二种脚本类型，称为可重复迁移(repeatable migrations)。
+
+**这类脚本以 `R__` 为前缀，每次文件内容(checksum)发生更改时都会运行**。
+
+它们不需要指定版本号。典型的用途包括刷新视图、重新加载种子数据或更新存储过程。
+
+~~~shell
+R__refresh_materialized_views.sql
+~~~
+
+**Flyway 会跟踪脚本内容的校验和。如果脚本内容发生任何更改，它会在启动时重新运行该脚本。这在需要进行更改但又不想增加版本号时非常有用**
+
+
+
+**在执行migrate的时候, 总是versioned migrations先执行, 然后执行repeatable migrations, 并且本次migrate中执行的所有sql都是在同一个事务中执行的, 以保证数据的一致性**
+
+
+
+但如果不小心，也可能造成混乱。如果您的可重复脚本删除并重新创建了一个视图，则可能会破坏删除和重新创建之间运行的任何代码。因此，最好避免将可重复脚本用于直接影响应用程序查询的操作。仅在安全操作或可以容忍短暂间隔的环境中才使用它们。
+
+此外，避免对同一对象混用可重复脚本和版本化脚本。这往往会导致冲突或意外变更，尤其是在跨团队协作时。如果某个功能最初是以版本化方式开发的，请持续使用新的版本化脚本对其进行迭代更新。
+
+以下是使用repeatable migrations管理视图的一种安全的方式：
+
+~~~sql
+-- R__update_sales_view.sql
+CREATE OR REPLACE VIEW sales_summary AS
+SELECT region, SUM(total_amount) AS total_sales
+FROM orders
+GROUP BY region;
+~~~
+
+`CREATE OR REPLACE` 子句有助于避免视图丢失并导致其暂时不可用。它只需一步即可替换现有定义。
 
 
 
@@ -402,6 +435,67 @@ spring.flyway.lock-retry-count=10
 这样可以让你调整 Flyway 在放弃之前重试获取锁的次数。这在处理集群部署或可能延迟其他节点启动的长时间迁移时非常有用。
 
 如果最后无法获取锁，Flyway 会快速失败。这可以防止部分状态迁移或重叠迁移。如果部署后应用程序无法启动，您应该始终检查日志。Flyway 会打印详细日志，说明哪个迁移失败、哪个迁移正在运行以及导致问题的 SQL 语句。
+
+
+
+#### 确保Migrations以正确的权限运行
+
+数据库迁移通常需要更高的权限。它们经常会创建表、添加索引、修改约束和更新种子数据。因此，运行迁移的帐户不应与应用程序在正常运行期间用于与数据库通信的帐户相同。
+
+为 Flyway 创建一个独立的数据库用户。该用户需要拥有运行模式更改的权限，但不应被其他任何程序使用。以下是一个示例设置：
+
+~~~properties
+spring.flyway.url=jdbc:postgresql://db.internal.company.net:5432/customerdata
+spring.flyway.user=flyway_migration_user
+spring.flyway.password=${FLYWAY_PASSWORD}
+~~~
+
+请记住，您的应用程序应该配置一个专门用于日常查询的不同用户。该用户不应拥有删除表或创建新表的权限。这种隔离机制可以降低因安全问题导致应用程序凭据泄露而造成的损失。
+
+
+
+
+
+
+
+### Flyway和SrpingBoot集成
+
+https://medium.com/@AlexanderObregon/using-spring-boot-with-flyway-to-manage-database-migrations-8180ce0c9230
+
+管理数据库模式的长期变更，是后端系统开发中最棘手的部分之一。Flyway 通过 SQL 或基于 Java 的迁移脚本对模式变更进行版本控制，从而解决了这个问题。
+
+Spring Boot 则让 Flyway 能够轻松地集成到应用程序生命周期中。今天，我们将深入探讨 Flyway 如何与 Spring Boot 协同工作，如何组织迁移脚本，如何安全地对变更进行版本控制，以及如何让所有操作在启动时自动执行。您还将了解 API 密钥认证和完整用户授权之间的区别，以及如何确保数据库迁移过程的安全。
+
+
+
+#### Flyway如何在SpringBoot中自动运行Migrations
+
+要想使用flyway和springboot集成, 只需要添加对应的flyway的依赖, springboot就会将其集成到启动流程中, 从而正常的执行你的migrations脚本
+
+~~~xml
+<dependency>
+    <groupId>org.flywaydb</groupId>
+    <artifactId>flyway-core</artifactId>
+</dependency>
+~~~
+
+flyway会集成到springboot初始化的早期阶段, 当程序启动并从spring上下文开始加载bean的时候, springboot会通过classpath中是否存在`flyway-core`这个依赖来检测flyway,  这会触发flyway的自动配置
+
+Spring Boot 检测到 Flyway 后，会创建一个 `FlywayAutoConfiguration` bean, 并通过这个bean来实现自动配置. 迁移操作会在任何 `@PostConstruct` 方法、 `ApplicationRunner` 或 `CommandLineRunner` 代码执行之前运行。这种顺序是特意安排的，因为 Flyway 需要在任何程序尝试使用数据库之前更新数据库模式。
+
+默认情况下，Flyway 会在以下位置查找迁移脚本：
+
+~~~xml
+src/main/resources/db/migration
+~~~
+
+您可以使用 `application.properties` 或 `application.yml` 文件中的以下属性来更改此位置：
+
+~~~properties
+spring.flyway.locations=classpath:/custom-folder
+~~~
+
+
 
 
 
@@ -474,18 +568,7 @@ V1__create_users_table.sql
 V2__add_email_index.sql
 ```
 
-`V` 表示版本化的Migrations, 这是一个固定的写法, 数字用于跟踪脚本的运行顺序, 双下划线将数字与描述分隔开。
 
-顺序至关重要, Flyway 按字母顺序加载文件，并根据数字版本应用它们。如果数字顺序错误或跳过，Flyway 将停止并报告验证错误。
-
-每个脚本都应该处理一个逻辑变更。这样更容易隔离问题并测试新的迁移。例如，与其将创建表和创建索引都塞进一个脚本中，不如将它们分开：
-
-```
-V3__create_orders_table.sql
-V4__add_index_to_orders.sql
-```
-
-> 避免将临时笔记或实验文件放在迁移文件夹中。如果您要进行一些尝试，请使用 `db/migration` 之外的单独目录，这样 Flyway 就不会尝试解析或运行它们。
 
 
 如果你的项目被拆分成多个部分，你也可以为不同的模块使用不同的文件夹。只需确保告诉 Flyway 这些文件夹的位置即可：
@@ -496,68 +579,11 @@ spring.flyway.locations=classpath:/db/main,classpath:/db/billing
 
 
 
-##### 可重复执行的Migrations脚本
-
-Flyway 支持第二种脚本类型，称为可重复迁移(repeatable migrations)。这类脚本以 `R__` 为前缀，每次文件内容发生更改时都会运行。它们不需要指定版本号。典型的用途包括刷新视图、重新加载种子数据或更新存储过程。
-
-~~~shell
-R__refresh_materialized_views.sql
-~~~
-
-**Flyway 会跟踪脚本内容的校验和。如果脚本内容发生任何更改，它会在启动时重新运行该脚本。这在需要进行更改但又不想增加版本号时非常有用**
-
-但如果不小心，也可能造成混乱。如果您的可重复脚本删除并重新创建了一个视图，则可能会破坏删除和重新创建之间运行的任何代码。因此，最好避免将可重复脚本用于直接影响应用程序查询的操作。仅在安全操作或可以容忍短暂间隔的环境中才使用它们。
-
-此外，避免对同一对象混用可重复脚本和版本化脚本。这往往会导致冲突或意外变更，尤其是在跨团队协作时。如果某个功能最初是以版本化方式开发的，请持续使用新的版本化脚本对其进行迭代更新。
-
-以下是使用repeatable migrations管理视图的一种安全的方式：
-
-~~~sql
--- R__update_sales_view.sql
-CREATE OR REPLACE VIEW sales_summary AS
-SELECT region, SUM(total_amount) AS total_sales
-FROM orders
-GROUP BY region;
-~~~
-
-`CREATE OR REPLACE` 子句有助于避免视图丢失并导致其暂时不可用。它只需一步即可替换现有定义。
 
 
-
-##### 确保Migrations以正确的权限运行
-
-数据库迁移通常需要更高的权限。它们经常会创建表、添加索引、修改约束和更新种子数据。因此，运行迁移的帐户不应与应用程序在正常运行期间用于与数据库通信的帐户相同。
-
-为 Flyway 创建一个独立的数据库用户。该用户需要拥有运行模式更改的权限，但不应被其他任何程序使用。以下是一个示例设置：
-
-~~~properties
-spring.flyway.url=jdbc:postgresql://db.internal.company.net:5432/customerdata
-spring.flyway.user=flyway_migration_user
-spring.flyway.password=${FLYWAY_PASSWORD}
-~~~
-
-请记住，您的应用程序应该配置一个专门用于日常查询的不同用户。该用户不应拥有删除表或创建新表的权限。这种隔离机制可以降低因安全问题导致应用程序凭据泄露而造成的损失。
-
-
-
-
-
-### Maven集成Flyway
+### 在IDEA中生成 Versioned Migrations
 
 https://www.baeldung.com/database-migrations-with-flyway
 
-迁移可以分为版本控制型(versioned migrations)和可重复型(repeatable migrations)两种。前者具有唯一版本，并且只应用一次。后者没有版本号，而是每次校验和发生变化时都会重新应用。
+如果需要手动来编写migrations, 那么需要耗费导量的时间, 这个时候我们可以使用idea 的`jpa buddy`这个插件来生成migrations,  他会根据我们的jpa实体类来生成
 
-**在单次迁移运行中，可重复迁移始终在待处理的版本化迁移执行完毕后最后执行。可重复迁移按照其描述顺序执行。对于单次迁移，所有语句都在单个数据库事务中运行。**
-
-
-
-
-
-
-
-#### 在IDEA中生成 Versioned Migrations
-
-todo
-
-https://www.baeldung.com/database-migrations-with-flyway
