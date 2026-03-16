@@ -92,6 +92,18 @@ Successfully applied 1 migration to schema "PUBLIC" (execution time 00:00.016s)
 
 
 
+#### 其他的命令
+
+除了上面提到的migrate这个命令, flyway cli还支持其他的一些命令
+
+- info: 打印数据库模式的当前状态/版本。它会打印哪些迁移正在等待执行、哪些迁移已经应用、已应用迁移的状态以及应用时间。
+- baseline: 将现有数据库设置为基线，排除所有迁移，包括 *baselineVersion* 。基线有助于在现有数据库中启动 Flyway。之后，可以正常应用新的迁移。
+- validate: 根据可用的迁移验证当前数据库架构。
+- repair: 修复元数据表。
+- clean: 删除已配置模式中的所有对象。当然，我们绝不应该在任何生产数据库上使用 *clean 命令* 。
+
+
+
 ### Flyway集成Maven
 
 https://www.baeldung.com/database-migrations-with-flyway
@@ -454,7 +466,20 @@ spring.flyway.password=${FLYWAY_PASSWORD}
 
 
 
+#### history表
 
+Flyway 会将应用程序及其校验和、时间戳和执行时间记录在 `flyway_schema_history` 表中。如果您之后更改了已运行文件的内容，Flyway 会检测到校验和不匹配，并在启动时抛出错误。
+
+这是设计使然。更改已应用的migration文件被视为危险操作，未经人工干预是不允许的。
+
+您可以通过直接查询元数据表来查看已应用的迁移：
+
+~~~sql
+SELECT version, description, installed_on, success
+FROM flyway_schema_history;
+~~~
+
+这可以提供完整的迁移历史记录，包括已运行的迁移、应用时间和迁移是否成功。这有助于调试和审核生产环境中的模式变更。
 
 
 
@@ -492,46 +517,29 @@ src/main/resources/db/migration
 您可以使用 `application.properties` 或 `application.yml` 文件中的以下属性来更改此位置：
 
 ~~~properties
-spring.flyway.locations=classpath:/custom-folder
+spring.flyway.locations=classpath:/db/main,classpath:/db/billing
 ~~~
 
 
 
-
-
-#### flyway的默认行为
-
-使用 Spring Boot 集成 Flyway 时，无需编写任何 Java 代码。只要添加依赖, 并编写对应的migrations脚本，Flyway 就会处理一切。
-
-以下是仅包含依赖项和几个迁移文件的默认行为：
-
-~~~xml
-<!-- pom.xml -->
-<dependency>
-    <groupId>org.flywaydb</groupId>
-    <artifactId>flyway-core</artifactId>
-</dependency>
-~~~
-
-将脚本放在 `src/main/resources/db/migration` 目录中，并按如下方式命名：
-
-~~~xml
-V1__create_users.sql
-V2__add_email_index.sql
-~~~
-
-仅此而已。Spring Boot 会检测到 Flyway，在上下文加载期间初始化它，找到migration脚本，并按版本顺序应用它们。每个脚本只会应用一次。Flyway 会将应用程序及其校验和、时间戳和执行时间记录在 `flyway_schema_history` 表中。如果您之后更改了已运行文件的内容，Flyway 会检测到校验和不匹配，并在启动时抛出错误。
-
-这是设计使然。更改已应用的migration文件被视为危险操作，未经人工干预是不允许的。
-
-您可以通过直接查询元数据表来查看已应用的迁移：
+你需要在`src/amin/resources/db/migrations`下创建如下的migrations格式的文件
 
 ~~~sql
-SELECT version, description, installed_on, success
-FROM flyway_schema_history;
+V1__init_schema.sql
+V2__add_index_to_table.sql
 ~~~
 
-这可以提供完整的迁移历史记录，包括已运行的迁移、应用时间和迁移是否成功。这有助于调试和审核生产环境中的模式变更。
+Spring Boot 会检测到 Flyway，在上下文加载期间初始化它，找到migration脚本，并按版本顺序应用它们。每个脚本只会应用一次
+
+
+
+为了防止你同是启动多个实例, 同时flyway执行migrations脚本, Flyway 使用 `SELECT ... FOR UPDATE` （或数据库的等效语句）对 `flyway_schema_history` 表进行加锁, 如果其中有一个实例抢锁失败, 那么会抛出异常, 此时你可以设置flyway的重试次数, 这在处理集群部署或可能延迟其他节点启动的长时间迁移时非常有用。
+
+~~~shell
+spring.flyway.lock-retry-count=10
+~~~
+
+如果部署后应用程序无法启动，您应该始终检查日志。Flyway 会打印详细日志，说明哪个迁移失败、哪个迁移正在运行以及导致问题的 SQL 语句。
 
 
 
@@ -547,37 +555,51 @@ spring.flyway.enabled=false
 
 Flyway 的默认行为开箱即用，并且能够直接融入 Spring Boot 的启动生命周期。这种设计经过精心考量，确保数据库更改始终在代码执行任何其他操作之前运行，从而降低应用程序所依赖的表或列缺失或配置错误的风险。
 
-#### 编写和管理安全可靠的Migrations脚本
+
+
+#### 手动触发migrations
+
+如果你禁用了springboot中的flyway 的自动migrations, 那么你还可以通过代码来手动实现, 自己想要什么时候执行migrations就什么时候执行
+
+如果你设置了`spring.flyway.enabled=false`, 那么就不会自动配置`Flyway`这个bean了, 所以我们需要自己来提供, 但是这非常的不方便, 所以其实我们可以设置`spring.flyway.enabled=true`, 然后通过如下的代码来关闭自动migrations
+
+~~~java
+@Configuration
+public class EmptyMigrationStrategyConfig {
+
+    @Bean
+    public FlywayMigrationStrategy flywayMigrationStrategy() {
+        return flyway -> {
+            // do nothing  
+        };
+    }
+}
+~~~
+
+上面的代码会在springboot启动的时候禁用自动migrations, 之后如果我们想要手动migrations的话, 只需要调用`flyway.migrate()`这个方法就可以了
+
+~~~java
+@RunWith(SpringRunner.class)
+@SpringBootTest
+public class ManualFlywayMigrationIntegrationTest {
+
+    @Autowired
+    private Flyway flyway;
+
+    @Test
+    public void skipAutomaticAndTriggerManualFlywayMigration() {
+        flyway.migrate();
+    }
+}
+~~~
 
 
 
-##### 目录结构和文件命名
-
-Flyway 要求迁移脚本遵循非常特定的结构。这种结构有助于它理解版本历史记录并确定需要运行哪些脚本。
-
-默认情况下，Spring Boot 和Flyway集成的时候会在以下文件夹中查找Migrations脚本
-
-```
-src/main/resources/db/migration
-```
-
-放在migration文件夹中的Migrations脚本应该遵循以下格式：
-
-```
-V1__create_users_table.sql
-V2__add_email_index.sql
-```
 
 
+### baseline
 
-
-如果你的项目被拆分成多个部分，你也可以为不同的模块使用不同的文件夹。只需确保告诉 Flyway 这些文件夹的位置即可：
-
-```properties
-spring.flyway.locations=classpath:/db/main,classpath:/db/billing
-```
-
-
+todo
 
 
 
@@ -585,5 +607,54 @@ spring.flyway.locations=classpath:/db/main,classpath:/db/billing
 
 https://www.baeldung.com/database-migrations-with-flyway
 
-如果需要手动来编写migrations, 那么需要耗费导量的时间, 这个时候我们可以使用idea 的`jpa buddy`这个插件来生成migrations,  他会根据我们的jpa实体类来生成
+如果需要手动来编写migrations, 那么需要耗费导量的时间, 这个时候我们可以使用idea 的`jpa buddy`这个插件来生成migrations,  他会根据我们的jpa实体类来生成对应的migration脚本
 
+
+
+**你可以直接使用当前md同目录中的项目来测试**
+
+
+
+首先你可以跳转到entity对应的类, 然后选择查看他的结构(alt+7), 然后选择Logical, 然后右键, 就可以看到flyway相关选项了
+
+![image-20260316232344472](img/flyway/image-20260316232344472.png)
+
+Flyway Init Migration表示生成初始的Migrations脚本, 就相当于你的数据库中还没有创建对应的表, 现在完全根据entity来生成migration
+
+scope选择`Project`, 表示为整个项目的entity都生成对应的migration脚本, `Selected Entities`表示只为当前选中的entity生成对应的migration
+
+![image-20260316232912009](img/flyway/image-20260316232912009.png)
+
+![image-20260316232823382](img/flyway/image-20260316232823382.png)
+
+之后就会生成对应的sql脚本, 以及脚本的版本号, 然后你需要输入脚本的名称, 保存到的地址
+
+![image-20260316233119835](img/flyway/image-20260316233119835.png)
+
+
+
+当然你可以选择你二种方式`Flyway Migration`, 这种就是使用当前的entity和数据中的表进行对比, 生成对应的Migration脚本
+
+![image-20260316233216321](img/flyway/image-20260316233216321.png)
+
+使用这种方式你需要指定当前版本的结构, 也就是Source, 然后要选择上个版本的结构, 也就是Target
+
+这样的话插件就会进行对比, 然后生成对应的Migration脚本
+
+![image-20260316233333980](img/flyway/image-20260316233333980.png)
+
+之后的话也会为你生成对应的Migration脚本
+
+
+
+
+
+
+
+当然还有一种方式就是你把鼠标悬浮在entity类的表名上面,  会自动提示你是否要创建对应的migration脚本
+
+![image-20260316233541984](img/flyway/image-20260316233541984.png)
+
+![image-20260316233553812](img/flyway/image-20260316233553812.png)
+
+之后选择source和target, 也可以生成对应的migration脚本
