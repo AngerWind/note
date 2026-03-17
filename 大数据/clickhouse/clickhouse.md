@@ -2787,6 +2787,39 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON AS json, JSONAllPaths(
 
 ## AggregateFunction
 
+在clickhouse中, 所有的[聚合函数](https://clickhouse.com/docs/sql-reference/aggregate-functions)都实现了一个功能, 就是可以将聚合的中间状态序列化为AggregateFunction数据类型, 并保存到表中, 说大白话就是聚合函数可以将聚合的中间状态转换为AggregateFunction类型并保存到表中
+
+
+
+这种数据类型一般都是配合AggregateMergeTree一起使用的
+
+
+
+你可以通过如下的语法来定义一个AggregateFunction类型的列
+
+~~~sql
+AggregateFunction(aggregate_function_name, types_of_arguments...)
+~~~
+
+- `aggregate_function_name` - 聚合函数的名称。如果该函数具有参数, 那么你也可以指定
+
+  典型的聚合函数有 uniq(就是mysql中的count), sum, max, min, anyIf, quantiles
+
+- `types_of_arguments` - 聚合函数的参数的类型
+
+比如下面的例子
+
+~~~sql
+CREATE TABLE t
+(
+    column1 AggregateFunction(uniq, UInt64),
+    column2 AggregateFunction(anyIf, String, UInt8),
+    column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
+) ENGINE = ...
+~~~
+
+
+
 
 
 
@@ -3601,7 +3634,31 @@ order by (id,sku_id );
 
 
 
+## AggregatingMergeTree
 
+这个表引擎继承自MergeTree, 也是会将order by相同的行进行聚合, 在聚合的时候, 他会处理order by以外的所有类型为AggregateFunction, SimpleAggregateFunction的列, 并将聚合的中间状态保存到表中
+
+
+
+您可以使用 `AggregatingMergeTree` 表进行增量数据聚合，包括聚合物化视图。
+
+
+
+你可以使用如下的sql来创建AggregatingMergeTree的表
+
+~~~sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = AggregatingMergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[TTL expr]
+[SETTINGS name=value, ...]
+~~~
 
 
 
