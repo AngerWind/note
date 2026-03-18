@@ -13134,7 +13134,7 @@ data:
   compress: "{{ .Values.compress }}"
 ~~~
 
-这个时候你想要在install父chart的时候, 来设置这个compress字段, 那么你可以使用`b.compress`来指定这个值, 这里的`b`是子chart的命令
+**这个时候你想要在install父chart的时候, 来设置这个compress字段, 那么你可以使用`b.compress`来指定这个值, 这里的`b`是子chart的名字, 也就是你在`Chart.yaml`中指定的`dependencies.name`中指定的**
 
 - 比如下父chart的values.yaml文件中指定这个值
 
