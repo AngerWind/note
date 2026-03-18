@@ -2807,24 +2807,152 @@ AggregateFunction(aggregate_function_name, types_of_arguments...)
 
 - `types_of_arguments` - 聚合函数的参数的类型
 
-比如下面的例子
-
-~~~sql
-CREATE TABLE t
-(
-    column1 AggregateFunction(uniq, UInt64),
-    column2 AggregateFunction(anyIf, String, UInt8),
-    column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
-) ENGINE = ...
-~~~
 
 
+具体的使用案例可以查看AggregateMergeTree中的案例
 
 
 
 
 
 ## SimpleAggregateFunction
+
+这种数据类型和AggregateFunction类似, 也是用来储存聚合函数的中间状态的, 但是和AggregateFunction的区别在于他不保存所有的状态, 而AggregateFunction会保存所有的状态
+
+
+
+所以根据上面的特性, 并不是所有的聚合函数都可以使用SimpleAggregateFunction, 只有满足如下的计算的函数才可以
+
+~~~shell
+f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))
+~~~
+
+比如sum这个函数就满足如下的公式
+
+~~~sql
+sum(1,2,3 union all 4,5,6) = sum(sum(1,2,3) union all sum(4,5,6))
+~~~
+
+但是对于avg这个函数就不满足, 所以他没有办法使用SimpleAggregateFunction
+
+
+
+你可以通过如下的形式来创建SimpleAggregateFunction 的列
+
+~~~sql
+SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
+~~~
+
+- `aggregate_function_name` - 聚合函数的名称
+- `Type` - 聚合函数参数的类型
+
+
+
+https://clickhouse.com/docs/examples/aggregate-function-combinators/sumSimpleState#see-also
+
+让我们来看一个实际例子，使用一个跟踪帖子投票的表格。对于每个帖子，我们希望维护点赞数、踩数和总分的累计总数。使用带有求和函数的 `SimpleAggregateFunction` 类型非常适合此用例，因为我们只需要存储累计总数，而无需存储完整的聚合状态。因此，它会更快，并且不需要合并部分聚合状态。
+
+首先，我们创建一个用于存储原始数据的表格：
+
+```sql
+CREATE TABLE raw_votes
+(
+    post_id UInt32,
+    vote_type Enum8('upvote' = 1, 'downvote' = -1)
+)
+ENGINE = MergeTree()
+ORDER BY post_id;
+```
+
+接下来，我们创建一个目标表来存储聚合数据：
+
+```sql
+CREATE TABLE vote_aggregates
+(
+    post_id UInt32,
+    upvotes SimpleAggregateFunction(sum, UInt64),
+    downvotes SimpleAggregateFunction(sum, UInt64),
+    score SimpleAggregateFunction(sum, Int64)
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY post_id;
+```
+
+然后，我们创建一个包含 `SimpleAggregateFunction` 类型列的物化视图：
+
+```sql
+CREATE MATERIALIZED VIEW mv_vote_processor TO vote_aggregates
+AS
+SELECT
+  post_id,
+  -- Initial value for sum state (1 if upvote, 0 otherwise)
+  toUInt64(vote_type = 'upvote') AS upvotes,
+  -- Initial value for sum state (1 if downvote, 0 otherwise)
+  toUInt64(vote_type = 'downvote') AS downvotes,
+  -- Initial value for sum state (1 for upvote, -1 for downvote)
+  toInt64(vote_type) AS score
+FROM raw_votes;
+```
+
+插入示例数据：
+
+```sql
+INSERT INTO raw_votes VALUES
+    (1, 'upvote'),
+    (1, 'upvote'),
+    (1, 'downvote'),
+    (2, 'upvote'),
+    (2, 'downvote'),
+    (3, 'downvote');
+```
+
+使用 `SimpleState` 组合器查询物化视图：
+
+```sql
+SELECT
+  post_id,
+  sum(upvotes) AS total_upvotes,
+  sum(downvotes) AS total_downvotes,
+  sum(score) AS total_score
+FROM vote_aggregates -- Query the target table
+GROUP BY post_id
+ORDER BY post_id ASC;
+```
+
+```response
+┌─post_id─┬─total_upvotes─┬─total_downvotes─┬─total_score─┐
+│       1 │             2 │               1 │           1 │
+│       2 │             1 │               1 │           0 │
+│       3 │             0 │               1 │          -1 │
+└─────────┴───────────────┴─────────────────┴─────────────┘
+```
+
+
+
+
+
+SimpleAggregateFunction支持一下的聚合函数
+
+- [`any`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/any)
+- [`any_respect_nulls`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/any)
+- [`anyLast`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/anylast)
+- [`anyLast_respect_nulls`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/anylast)
+- [`min`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/min)
+- [`max`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/max)
+- [`sum`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/sum)
+- [`sumWithOverflow`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/sumwithoverflow)
+- [`groupBitAnd`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitand)
+- [`groupBitOr`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitor)
+- [`groupBitXor`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupbitxor)
+- [`groupArrayArray`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/grouparrayarray)
+- [`groupUniqArrayArray`](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/groupuniqarray)
+- [`groupUniqArrayArrayMap`](https://clickhouse.com/docs/sql-reference/aggregate-functions/combinators#-map)
+- [`sumMap` (`sumMappedArrays`)
+  `sumMap` （ `sumMappedArrays` ）](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/summap)
+- [`minMap` (`minMappedArrays`)
+  `minMap` （ `minMappedArrays` ）](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/minmap)
+- [`maxMap` (`maxMappedArrays`)
+  `maxMap` （ `maxMappedArrays` ）](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/maxmap)
 
 
 
@@ -3659,6 +3787,248 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [TTL expr]
 [SETTINGS name=value, ...]
 ~~~
+
+
+
+### 使用案例1
+
+下面是一个例子, 展示如何使用AggregatingMergeTree
+
+1. 建表
+
+   ~~~sql
+   -- 创建网站访问统计表，使用多种聚合函数
+   CREATE TABLE web_analytics
+   (
+       event_date    Date,
+       user_id       UInt32,
+       page_views    AggregateFunction(sum, UInt32),        -- 总浏览量
+       session_time  AggregateFunction(avg, Float64),       -- 平均会话时长（秒）
+       unique_pages  AggregateFunction(uniq, String),       -- 访问的唯一页面数
+       max_scroll    AggregateFunction(max, UInt8),         -- 最大滚动深度（百分比）
+       last_action   AggregateFunction(argMax, DateTime, String)  -- 最后操作及时间
+   )
+   ENGINE = AggregateMergeTree()
+   PARTITION BY toYYYYMM(event_date)
+   ORDER BY (event_date, user_id)
+   SETTINGS index_granularity = 8192;
+   ~~~
+
+2. 插入数据
+
+   ~~~sql
+   -- 用户A在2026-03-18的行为数据
+   INSERT INTO web_analytics
+   SELECT
+       toDate('2026-03-18') AS event_date,
+       1001 AS user_id,
+       sumState(5) AS page_views,
+       avgState(120.5) AS session_time,
+       uniqState('/home') AS unique_pages,
+       maxState(75) AS max_scroll,
+       argMaxState(toDateTime('2026-03-18 10:30:00'), 'click_button') AS last_action;
+   
+   -- 同一用户同一天更多行为
+   INSERT INTO web_analytics
+   SELECT
+       toDate('2026-03-18') AS event_date,
+       1001 AS user_id,
+       sumState(3) AS page_views,
+       avgState(45.2) AS session_time,
+       uniqState('/product') AS unique_pages,
+       maxState(90) AS max_scroll,
+       argMaxState(toDateTime('2026-03-18 14:20:00'), 'submit_form') AS last_action;
+   
+   -- 用户B的数据
+   INSERT INTO web_analytics
+   SELECT
+       toDate('2026-03-18') AS event_date,
+       1002 AS user_id,
+       sumState(8) AS page_views,
+       avgState(180.0) AS session_time,
+       uniqState('/home') AS unique_pages,
+       maxState(60) AS max_scroll,
+       argMaxState(toDateTime('2026-03-18 09:15:00'), 'view_page') AS last_action;
+   ~~~
+
+   > 对于AggregateFunction类型的列, 比必须使用`${aggFunc}State`函数来插入数据
+
+3. 查询结果
+
+   ~~~sql
+   -- 查询每个用户的聚合统计
+   SELECT
+       event_date,
+       user_id,
+       sumMerge(page_views) AS total_views,
+       round(avgMerge(session_time), 2) AS avg_session_seconds,
+       uniqMerge(unique_pages) AS distinct_pages_visited,
+       maxMerge(max_scroll) AS max_scroll_depth,
+       argMaxMerge(last_action) AS last_action_info
+   FROM web_analytics
+   GROUP BY event_date, user_id
+   ORDER BY event_date, user_id;
+   ~~~
+
+   > 对于AggregateFunction类型的列, 在查询的时候必须使用`${aggFunc}Merge`函数才能获取具体的值
+
+4. 上面的sql是针对每个用户每天的网站使用的情况,  他使用了所以的order by字段进行group by
+
+   但是AggregateMergeTree支持再次聚合, 比如下面的sql
+
+   ~~~sql
+   -- 按日期统计全站数据
+   SELECT
+       event_date,
+       sumMerge(page_views) AS site_total_views,
+       countMerge(unique_pages) AS total_unique_pages,  -- 注意：uniq不能跨用户直接合并
+       maxMerge(max_scroll) AS site_max_scroll
+   FROM web_analytics
+   GROUP BY event_date;
+   ~~~
+
+   上面的sql就相当于roll up,  在初步聚合的基础上再次聚合
+
+5. 你甚至可以在AggregatingMergeTree上面建立物化视图
+
+   ~~~sql
+   CREATE MATERIALIZED VIEW daily_stats_mv
+   ENGINE = SummingMergeTree()
+   PARTITION BY toYYYYMM(event_date)
+   ORDER BY (event_date)
+   AS SELECT
+       event_date,
+       sumMerge(page_views) AS daily_views,
+       uniqMerge(unique_pages) AS daily_unique_pages
+   FROM web_analytics
+   GROUP BY event_date;
+   ~~~
+
+
+
+### 案例2
+
+上面的案例1中的AggregatingMergeTree只是作为一个普通的表来进行插入, 查询
+
+但是在更多的时候, 更常用的情况下我们并不会讲数据直接插入到AggregatingMergeTree中进行聚合, 因为这样原始数据会被直接聚合掉
+
+我们会先保存到一个普通的MergeTree的表中,作为我们的基础数据 然后通过物化视图, 将数据插入到AggregatingMergeTree中进行聚合
+
+1. 建立保存数据的基础表
+
+   ~~~sql
+   CREATE DATABASE test;
+   
+   CREATE TABLE test.visits
+    (
+       StartDate DateTime64 NOT NULL, -- 访问网站的时间
+       CounterID UInt64, -- 访问来源的国家
+       Sign Nullable(Int32),  -- 访问网站的次数
+       UserID Nullable(Int32) -- 访问的用户id
+   ) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
+   ~~~
+
+2. 然后我们建立一个AggregateMergeTree的表, 来作为物化视图保存数据的表
+
+   **我们使用这个表来提前聚合每天, 每个国家有多少个独立用户, 一共访问了多少次网站**
+
+   ~~~sql
+   CREATE TABLE test.agg_visits (
+       StartDate DateTime64 NOT NULL,
+       CounterID UInt64,
+       Visits AggregateFunction(sum, Nullable(Int32)),
+       Users AggregateFunction(uniq, Nullable(Int32)) -- uniq就是distinct count
+   )
+   ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
+   ~~~
+
+3. 之后我们建立物化视图, 这样就会使用`test.visits`中的数据填充到`test.agg_visits`中了
+
+   ~~~sql
+   CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+   AS SELECT
+       StartDate,
+       CounterID,
+       sumState(Sign) AS Visits,
+       uniqState(UserID) AS Users
+   FROM test.visits
+   GROUP BY StartDate, CounterID;
+   ~~~
+
+4. 插入数据
+
+   ~~~sql
+   INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+    VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+   ~~~
+
+5. 如果要从物化视图中查询数据的话, 我们要执行group by 操作
+
+   ~~~sql
+   SELECT
+       StartDate,
+       sumMerge(Visits) AS Visits,
+       uniqMerge(Users) AS Users
+   FROM test.visits_mv
+   GROUP BY StartDate
+   ORDER BY StartDate;
+   
+   ┌───────────────StartDate─┬─Visits─┬─Users─┐
+   │ 2022-11-03 03:27:11.000 │      9 │     2 │
+   └─────────────────────────┴────────┴───────┘
+   ~~~
+
+6. 之后我们再次插入数据, 并进行查询
+
+   ~~~sql
+   INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+    VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+    
+    ┌───────────────StartDate─┬─Visits─┬─Users─┐
+   │ 2022-11-03 03:27:11.000 │     16 │     3 │
+   │ 2022-11-26 07:00:31.000 │      5 │     1 │
+   └─────────────────────────┴────────┴───────┘
+   ~~~
+
+   
+
+### 延迟聚合
+
+在上面的案例2中, 如果我们插入数据到`visits`中, 那么就会物化视图中的sql, 查询当前批次的数据, 然后进行聚合, 然后插入到AggregatingMergeTree中
+
+~~~sql
+SELECT
+    StartDate,
+    CounterID,
+    sumState(Sign) AS Visits,
+    uniqState(UserID) AS Users
+FROM test.visits
+GROUP BY StartDate, CounterID;
+~~~
+
+其实这就相当于我们在插入的时候针对当前批次的数据做了一次group by 聚合, 这会增加我们插入数据的成本
+
+那么延迟聚合就可以避免这种状态, 你可以使用如下的sql来创建物化视图
+
+~~~sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+~~~
+
+这个物化视图在一个批次插入的时候, 不需要进行group by,  他会将当前批次的每一行数据, 直接都生成一个中间状态, 插入到AggregatingMergeTree中, 然后在AggregateMergeTree后台合并的时候, 真正的去将相同的order by 的行的中间状态进行一个聚合, 减少数据量
+
+
+
+### 案例3
+
+
+
+
 
 
 
