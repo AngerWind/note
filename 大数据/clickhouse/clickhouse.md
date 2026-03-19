@@ -4028,6 +4028,16 @@ FROM test.visits;
 
 
 
+## CollapsingMergeTree
+
+CollapsingMergeTree和之前的MergeTree类似, 都是会合并数据, 但是合并数据的逻辑不同
+
+
+
+
+
+
+
 
 
 
