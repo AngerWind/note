@@ -16673,7 +16673,7 @@ nindent和indent主要用来给yaml换行使用的
     c
 
 # 和上面的indent一样, 给每一行都添加一个指定的空格, 但是区别在于会在第一行添加一个换行
-{{ list "a" "b" "c" | indent 4}} 
+{{ list "a" "b" "c" | nindent 4}} 
 
     a
     b

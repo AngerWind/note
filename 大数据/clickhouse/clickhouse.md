@@ -4032,9 +4032,283 @@ FROM test.visits;
 
 CollapsingMergeTree和之前的MergeTree类似, 都是会合并数据, 但是合并数据的逻辑不同
 
+CollapsingMergeTree能够处理的数据类似Flink SQL中的回撤流,   在建表的时候你必须指定一个Sign列, 他的值可以是-1或者1. 这个值表示的是回撤状态, 或者插入当前状态
+
+**在合并数据的时候, 两个其他列相同, 但是Sign相反的前一个状态行和后一个回撤行会抵消掉, 类似Flink SQL的回撤** 
+
+**CollapsingMergeTree可以用来更新和删除数据, 他和CoalescingMergeTree的区别在于, 他们都可以更新数据, 但是CollapsingMergeTree可以删除数据 但是CoalescingMergeTree不行**
 
 
 
+假设你需要保持一个对象不断变化的数据, 那么在oltp数据库中, 你可以为每个对象单独创建一个行, 并在数据变化的时候更新他, 但是在olap数据库中更新操作成本高昂并且速度很慢, 所以如果要快速写入数据, 大量的更新操作显然是不可行的, 所以我们可以利用Sign列来按顺序写入对象的更新
+
+- 如果 `Sign` = `1` 则表示该行是“状态”行： *包含表示当前有效状态的字段的行* 。
+- 如果 `Sign` = `-1` 则表示该行是“取消”行： *用于取消具有相同属性的对象的状态的行* 。
+
+例如，我们想要计算用户在某个网站上浏览了多少个页面以及他们在每个页面上停留了多长时间。在某个特定时刻，我们会记录以下一行用户活动状态：
+
+~~~sql
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+~~~
+
+稍后，用户的数据发生了变化，我们会将如下的两行数据写入到表中
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+第一行取消对象的先前状态。它应该复制“已取消”行的所有排序键字段，但“签名” `Sign` 除外。上面的第二行包含当前状态。
+
+由于我们只需要用户活动的最后状态，因此可以删除原始的“状态”行和我们插入的“取消”行，如下所示，从而折叠对象的无效（旧）状态：
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │ -- old "state" row can be deleted
+│ 4324182021466249494 │         5 │      146 │   -1 │ -- "cancel" row can be deleted
+│ 4324182021466249494 │         6 │      185 │    1 │ -- new "state" row remains
+└─────────────────────┴───────────┴──────────┴──────┘
+```
+
+`CollapsingMergeTree` 在合并数据部分时，正是执行这种*折叠*行为。
+
+> 使用这个方法来更新数据有两个特别需要注意的点
+>
+> - 你的程序应该记住当前对象的状态,  以便能够发送回撤的行
+> - 在做聚合的时候, 你不能直接select数据, 而是要使用特定的sql来处理这个Sign列
+
+
+
+**CollapsingMergeTree高度依赖你的insert的语句的顺序, 如果你的insert语句出现了并发的问题, 那么可能在合并数据的时候会出现问题**,  Clickhouse在合并数据的时候, 会按照如果的规则来保留数据
+
+|      |                                                              |
+| ---- | ------------------------------------------------------------ |
+| 1.   | 如果“状态”行数与“取消”行数相同，且最后一行是“状态”行，则取第一行“取消”行和最后一行“状态”行。 |
+| 2    | 如果“状态”行数多于“取消”行数，则取最后一个“状态”行。         |
+| 3.   | 如果“取消”行数多于“状态”行数，则取第一个“取消”行。           |
+| 4.   | 除此以外，insert语句的顺序发生了错乱, 删除所有的行。         |
+
+
+此外，当“状态”行数比“取消”行数至少多两行，或者“取消”行数比“状态”行数至少多两行时，合并操作会继续进行。然而，ClickHouse 会将这种情况视为逻辑错误，并将其记录在服务器日志中。如果相同的数据被多次插入，则可能会出现此错误。因此，合并操作不应影响统计计算结果。更改会逐步合并，最终几乎每个对象都只保留其最后的状态。
+
+> **强烈推荐你的客户端使用单线程来同步发送insert语句, 防止insert并发顺序错乱的问题, 导致数据合并失败**
+
+
+
+我们可以通过如下的sql来建表
+
+~~~sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign) -- 这里指定这个Sign列的名字为Sign
+ORDER BY UserID
+~~~
+
+接下来insert一些数据
+
+~~~sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1);
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1),(4324182021466249494, 6, 185, 1);
+~~~
+
+接下来我们来查询数据
+
+~~~sql
+SELECT * FROM UAct
+
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         5 │      146 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+~~~
+
+因为这个时候数据还没有进行合并, 所以相同的数据还没有进行抵消, 我们能够查询到所有的数据, 并且因为合并的时机是不确定的, 所以这个表引擎是不保存强一致性的, 只保证最终一致性, 如果我们要查询最终的状态的话, 必须使用如下的sql进行聚合
+
+~~~sql
+-- 这里使用了sum聚合, 并且因为回撤行的Sign是-1, 所以在sum的时候会和上一个状态聚合掉, 所以可以保证正确的结果
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration
+FROM UAct
+GROUP BY UserID
+HAVING sum(Sign) > 0
+
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+~~~
+
+如果你不想使用Sign来控制数据的正负的话, 那么你也可以直接插入负数的数据, 这样就不用*Sign了, 缺点就是你需要将UInt8修改为Int8
+
+~~~sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews Int16,
+    Duration Int16,
+    Sign Int8
+)
+ENGINE = CollapsingMergeTree(Sign)
+ORDER BY UserID
+
+INSERT INTO UAct VALUES(4324182021466249494,  5,  146,  1);
+INSERT INTO UAct VALUES(4324182021466249494, -5, -146, -1); -- 这里直接插入负值
+INSERT INTO UAct VALUES(4324182021466249494,  6,  185,  1);
+
+SELECT * FROM UAct FINAL;
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+│ 4324182021466249494 │         6 │      185 │    1 │
+└─────────────────────┴───────────┴──────────┴──────┘
+
+SELECT
+    UserID,
+    sum(PageViews) AS PageViews,
+    sum(Duration) AS Duration
+FROM UAct
+GROUP BY UserID
+┌──────────────UserID─┬─PageViews─┬─Duration─┐
+│ 4324182021466249494 │         6 │      185 │
+└─────────────────────┴───────────┴──────────┘
+
+SELECT COUNT() FROM UAct
+┌─count()─┐
+│       3 │
+└─────────┘
+~~~
+
+
+
+
+
+**经过测试, CollapsingMergeTree的insert语句的顺序和相邻的两个数据的值是否相等非常重要的**
+
+~~~sql
+:) select * from UAct ;
+0 rows in set. Elapsed: 0.005 sec.
+
+:) INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1);
+1 row in set. Elapsed: 0.004 sec.
+
+:) select * from UAct ;
+   ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+1. │ 4324182021466249494 │         5 │      146 │    1 │
+   └─────────────────────┴───────────┴──────────┴──────┘
+
+:) INSERT INTO UAct VALUES (4324182021466249494, 666, 146, -1);
+1 row in set. Elapsed: 0.004 sec.
+
+:) select * from UAct ;
+   ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┐
+1. │ 4324182021466249494 │         5 │      146 │    1 │
+2. │ 4324182021466249494 │       154 │      146 │   -1 │
+   └─────────────────────┴───────────┴──────────┴──────┘
+~~~
+
+可以看到, 如果前后的撤销数据不一致的话, 那么ck保存下来的数据会非常的奇怪
+
+
+
+
+
+## VersionedCollapsingMergeTree
+
+上面说到CollapsingMergeTree在合并数据的时候, 强烈依赖你的insert语句的顺序性, 你必须按照顺序来insert回撤行和状态行, 如果发生了并发问题, 那么在合并数据的时候可能会出错
+
+所以在使用CollapsingMergeTree的时候强烈建议客户端使用单线程来进行insert, 防止并发
+
+
+
+所以VersionedCollapsingMergeTree就是用来解决这个问题的, 他的合并流程也是和CollapsingMergeTree类似, 都是回撤和上一个状态会抵消掉, 但是使用这个表引擎可以额外指定一个version列, 在合并数据之前, 数据会按照version列进行排序, 这样你只要插入数据就行了, 而不用考虑insert并发的问题, 因为最后会按照version进行排序, 然后进行抵消
+
+
+
+建表
+
+~~~sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8,
+    Version UInt8 -- 这个Version列只能是Int* UInt*, Date, Date32, DateTime, DateTime64类型
+)
+ENGINE = VersionedCollapsingMergeTree(Sign, Version)
+ORDER BY UserID
+~~~
+
+插入数据
+
+~~~sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1, 1);
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1, 1); -- 回撤上一个状态
+INSERT INTO UAct VALUES (4324182021466249494, 6, 185, 1, 2); -- 第二个版本的状态
+~~~
+
+查询数据
+
+~~~sql
+SELECT * FROM UAct;
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 │
+│ 4324182021466249494 │         6 │      185 │    1 │       2 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+~~~
+
+因为合并的时机是不确定的, 所以你仍然会查询到所有的数据, 如果你需要查询最终的结果, 那么可以使用如下的sql语句进行聚合
+
+~~~sql
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration,
+    Version
+FROM UAct
+GROUP BY UserID, Version
+HAVING sum(Sign) > 0;
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Version─┐
+│ 4324182021466249494 │         6 │      185 │       2 │
+└─────────────────────┴───────────┴──────────┴─────────┘
+~~~
+
+
+
+如果你使用聚合的话, 那么也可以使用如下的sql来强制进行数据的合并
+
+~~~sql
+SELECT * FROM UAct FINAL;
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         6 │      185 │    1 │       2 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+~~~
+
+
+
+## GraphiteMergeTree
+
+Graphite是一个基础的监控程序, 能够监控你的程序, 持续的发送时序数据, 他的数据有点类似VectoriaMetrics
+
+而GraphiteMergeTree就是专门开发的用来存储Graphite数据的
+
+如果你的Graphite数据不需要聚合, 汇总, 那么使用任何的MergeTree引擎都可以, 如果你的数据需要汇总聚合的话, 那么使用GraphiteMergeTree可以有效的提交查询效率, 并减少空间存储
+
+https://clickhouse.com/docs/engines/table-engines/mergetree-family/graphitemergetree
 
 
 
