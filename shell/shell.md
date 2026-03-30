@@ -3096,6 +3096,73 @@ xargs还有很多有用的参数
 
 
 
+
+
+### 并行执行子进程
+
+如果你在一个大的脚本中, 要执行多个步骤, 并且这些步骤耗时比较久, 并且没有依赖关系, 那么可以使用子进程来并发执行
+
+我们这里假设有两个子shell脚本需要并发执行
+
+
+
+`a/build.sh`
+
+~~~shell
+#!/bin/bash
+
+echo "正在执行 a 目录中的构建任务"
+# 故意引入一个错误，模拟失败的构建过程
+exit 1
+~~~
+
+`b/build.sh`
+
+~~~shell
+#!/bin/bash
+echo "正在执行 b 目录中的构建任务"
+# 正常完成的构建任务
+exit 0
+~~~
+
+主脚本`main.sh`
+
+~~~shell
+#!/bin/bash
+set -e  # 启用 set -e，遇到非零退出状态码会导致脚本停止
+
+echo "开始执行父脚本"
+
+# 在后台执行 a 和 b 目录下的 build.sh
+# ()中的内容在子进程中执行, 并通过$!获取pid
+(cd a && ./build.sh) & pid_a=$!
+(cd b && ./build.sh) & pid_b=$!
+
+# 等待两个子进程完成
+wait $pid_a
+status_a=$?
+
+wait $pid_b
+status_b=$?
+
+# 输出退出状态码
+echo "子进程 a 退出状态码: $status_a"
+echo "子进程 b 退出状态码: $status_b"
+
+# 判断退出状态码
+if [ $status_a -eq 0 ] && [ $status_b -eq 0 ]; then
+    echo "两个子进程都成功执行！"
+else
+    echo "有一个或多个子进程执行失败！"
+fi
+~~~
+
+
+
+
+
+
+
 ## 其他
 
 
