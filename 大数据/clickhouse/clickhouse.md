@@ -606,6 +606,10 @@ SHOW CREATE DATABASE demo;
 
 
 
+在默认的情况下, 如果你在创建数据库的时候不指定engine, 那么会默认使用atomic引擎
+
+
+
 ## Atomic
 
 开源版本的clickhouse默认使用的数据库引擎, sql语句如下
@@ -6157,3 +6161,9 @@ GROUP BY database, table, partition
 ORDER BY sum(bytes) DESC;
 ~~~
 
+
+
+
+
+// todo 
+对于分布式表, 如果想要truncate table的话, 那么你不能针对分布式表执行truncate, 需要针对他的local表执行, 并且需要加上 on cluster , 让这个sql发送到所有的节点进行执行

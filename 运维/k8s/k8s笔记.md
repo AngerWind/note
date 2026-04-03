@@ -16749,22 +16749,29 @@ nindent和indent主要用来给yaml换行使用的
 
 # kubectl命令行自动补全
 
-1. 在Master01节点上开启kubectl自动补全
+永久针对所有用户生效
 
-```shell
-source <(kubectl completion bash) 
-echo "source <(kubectl completion bash)" >> ~/.bashrc
-```
+~~~shell
+sudo bash -c 'cat > /etc/profile.d/kubectl-k-completion.sh <<'\''EOF'\''
+# kubectl completion + alias k for all users (bash)
 
-2. 在Master01节点上为 `kubectl` 使用一个速记别名`k`, 并给k添加自动补全
+# Only for bash
+[ -n "$BASH_VERSION" ] || return 0
 
-   将该命令写入到`/etc/bashrc`中, 永久生效
+# Load kubectl completion
+if command -v kubectl >/dev/null 2>&1; then
+  source <(kubectl completion bash)
+  alias k=kubectl
+  complete -o default -F __start_kubectl k
+fi
+EOF'
+~~~
 
-```shell
-echo "alias k=kubectl" | sudo tee -a /etc/bashrc
-echo "complete -o default -F __start_kubectl k" | sudo tee -a /etc/bashrc
-source /etc/bashrc
-```
+让当前终端立即生效
+
+~~~shell
+source /etc/profile
+~~~
 
 
 
