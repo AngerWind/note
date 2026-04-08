@@ -13837,7 +13837,7 @@ metadata:
     component: syslog
   annotations:
     # 通过这个注解, 将资源文件标记为hook, 并且在当前的release升级之前执行
-    # 如果不添加这个注解, 那么其他的htlm.sh注解也是无效的
+    # 如果不添加这个注解, 那么其他的helm.sh注解也是无效的
     "helm.sh/hook": pre-upgrade 
     # 可选, 通过这个注解来指定helm何时自动清理这个hook资源, 可选的值有
     #     hook-succeeded 当 hook 资源成功执行（退出码 0）后删除
@@ -13851,8 +13851,8 @@ metadata:
     # weight越小, 越先执行, weight可以为负数
     "helm.sh/hook-weight": "0"
     # 可选, 用于控制 Helm 在执行 uninstall（卸载）操作时是否删除hook资源
-    # 你可以指定为true, 那么即使uninstall的时候, 也不会删除hook资源
-    # 你也可以不指定这个值, 那么会使用Helm 默认行为，会删除该资源, 主要用于ConfigMap和PVC
+    # keep, 在helm uninstall的时候不会删除hook资源
+    # delete(默认值), 资源在helm delete的时候会被删除掉, 主要用于ConfigMap和PVC
     "helm.sh/resource-policy": keep
 spec:
   template:
