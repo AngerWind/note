@@ -6148,25 +6148,121 @@ SELECT * FROM hits_mv;
 
 # 文档
 
-## Java Language clients
+## Integrations
+
+### Language clients
+
+#### Java
+
+##### Overview
 
 https://clickhouse.com/docs/integrations/java
 
+ClickHouse对Java提供了三个客户端用来访问ClickHouse
 
-
-### Overview
-
-
-
-### Client
-
-
-
-### JDBC
+- [Client 0.8+ 客户端 0.8+](https://clickhouse.com/docs/integrations/language-clients/java/client)
+- [JDBC 0.8+](https://clickhouse.com/docs/integrations/language-clients/java/jdbc)
+- [R2DBC Driver R2DBC 驱动](https://clickhouse.com/docs/integrations/java/r2dbc)
 
 
 
-### R2DBC 
+###### 日志
+
+ClickHouse Client使用SLF4J来进行日志的记录, 您可以使用任何兼容 SLF4J 的日志框架，如 `Logback` 或 `Log4j` , 比如logback的pom如下, 你可以直接导入
+
+~~~xml
+<dependencies>
+    <!-- SLF4J API -->
+    <dependency>
+        <groupId>org.slf4j</groupId>
+        <artifactId>slf4j-api</artifactId>
+        <version>2.0.16</version> <!-- Use the latest version -->
+    </dependency>
+
+    <!-- Logback Core -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-core</artifactId>
+        <version>1.5.16</version> <!-- Use the latest version -->
+    </dependency>
+
+    <!-- Logback Classic (bridges SLF4J to Logback) -->
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.5.16</version> <!-- Use the latest version -->
+    </dependency>
+</dependencies>
+~~~
+
+ 然后设置日志等级
+
+~~~xml
+<configuration>
+    <!-- Console Appender -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- File Appender -->
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>logs/app.log</file>
+        <append>true</append>
+        <encoder>
+            <pattern>[%d{yyyy-MM-dd HH:mm:ss}] [%level] [%thread] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root Logger -->
+    <root level="info">
+        <appender-ref ref="STDOUT" />
+        <appender-ref ref="FILE" />
+    </root>
+
+    <!-- 将ck的日志等级设置为info -->
+    <logger name="com.clickhouse" level="info" />
+</configuration>
+~~~
+
+
+
+
+
+
+
+##### Client
+
+Java Client是一个实现自身 API 的库，抽象了与 ClickHouse 服务器的网络通信细节。目前仅支持 HTTP 接口。该库提供工具，用于处理不同的 ClickHouse 格式及其他相关功能。
+
+Java 客户端早在 2015 年就已经开发完成。它的代码库变得非常难以维护，API 很混乱，优化也很难。所以我们在 2024 年将其重构为新的组件`客户端 v2`。它有清晰的 API，更轻量的代码库和更多性能提升，更好的 ClickHouse 格式支持（主要是 RowBinary 和 Native）。JDBC 将在近功能中使用该客户端。
+
+
+
+要想使用client, 需要导入如下的依赖
+
+~~~xml
+<dependency>
+    <groupId>com.clickhouse</groupId>
+    <artifactId>client-v2</artifactId>
+    <version>0.9.8</version>
+</dependency>
+~~~
+
+
+
+
+
+
+
+##### JDBC
+
+
+
+
+
+##### R2DBC 
 
 
 
