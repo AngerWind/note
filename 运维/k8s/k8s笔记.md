@@ -13904,7 +13904,7 @@ spec:
 
 那么按照正常的逻辑, 我应该先创建namespace, 然后创建role, service-account, 然后创建rolebinding, configmap, 然后创建deploy
 
-但是helm在执行chart安装release的时候, 并不会去控制templates中的文件, 而是直接安装文件的字母属性来执行
+但是helm在执行chart安装release的时候, 并不会去控制templates中的文件, **而是直接按照文件的字母属性来执行**
 
 我们有两种办法来控制资源创建的先后
 
@@ -13997,11 +13997,199 @@ spec:
            image: my-app-image
    ~~~
 
-**实际上, 我们根本就没有必要去控制templates目录中的资源创建的先后**
+**<font color=red>实际上, 我们根本就没有必要去控制templates目录中的资源创建的先后, 因为资源的创建并不依赖于他们创建的先后属性, k8s会监听并响应各种事件, 将期望的状态和当前的状态进行对比, 并进行调整</font>**
 
-因为在k8s中, 如果你RoleBinding依赖于Role和ServiceAccount, 那么k8s还是允许你创建RoleBinding的, 只是他暂时不会生效, 只有你创建了Role和ServiceAccount的时候, 才会生效
 
-如果Deploy依赖一个ConfigMap, 如果没有先创建ConfigMap, 而是先创建了Deploy, 那么Pod实际上会进入`CrashLoopBackOff`的状态, 等到ConfigMap创建好了之后, pod自然可以创建成功
+
+下面有一个案例
+
+~~~shell
+[root@node-223-219-vip-229 templates]# ls
+a_deploy.yaml  b_rb.yaml  c_role.yaml  d_secret.yaml  e_sa.yaml 
+~~~
+
+上面的文件中, deployment依赖sa, sa又需要role和rolebinding, 并且deploy还依赖secret, 其实这些资源在创建的时候顺序是无所谓的
+
+~~~shell
+[root@node-223-219-vip-229 templates]# k create -f a_deploy.yaml
+deployment.apps/my-app created
+[root@node-223-219-vip-229 templates]# k get deployments.apps my-app
+NAME     READY   UP-TO-DATE   AVAILABLE   AGE
+my-app   0/1     0            0           11s
+[root@node-223-219-vip-229 templates]# k get replicasets.apps my-app-d6c5b7765
+NAME               DESIRED   CURRENT   READY   AGE
+my-app-d6c5b7765   1         0         0       27s
+[root@node-223-219-vip-229 templates]# k get pod -A | grep my
+[root@node-223-219-vip-229 templates]# k describe replicasets.apps my-app-d6c5b7765
+Name:           my-app-d6c5b7765
+Namespace:      default
+Selector:       app=test-app,pod-template-hash=d6c5b7765
+Labels:         app=test-app
+                pod-template-hash=d6c5b7765
+Annotations:    deployment.kubernetes.io/desired-replicas: 1
+                deployment.kubernetes.io/max-replicas: 2
+                deployment.kubernetes.io/revision: 1
+Controlled By:  Deployment/my-app
+Replicas:       0 current / 1 desired
+Pods Status:    0 Running / 0 Waiting / 0 Succeeded / 0 Failed
+Pod Template:
+  Labels:           app=test-app
+                    pod-template-hash=d6c5b7765
+  Service Account:  my-app-sa
+  Containers:
+   nginx:
+    Image:      nginx:latest
+    Port:       80/TCP
+    Host Port:  0/TCP
+    Environment Variables from:
+      my-app-secret  Secret  Optional: false
+    Environment:     <none>
+    Mounts:          <none>
+  Volumes:           <none>
+Conditions:
+  Type             Status  Reason
+  ----             ------  ------
+  ReplicaFailure   True    FailedCreate
+Events:
+  Type     Reason        Age                 From                   Message
+  ----     ------        ----                ----                   -------
+  Warning  FailedCreate  11s (x14 over 52s)  replicaset-controller  Error creating: pods "my-app-d6c5b7765-" is forbidden: error looking up service account default/my-app-sa: serviceaccount "my-app-sa" not found
+~~~
+
+上面可以看到, 我们先创建了deployment, 并且这个deployment也创建了对应的replicasset, 但是因为没有对应的sa, 所有replicasset无法创建对应的pod
+
+接下来我们估计不先创建sa, 而是创建rolebinding
+
+~~~shell
+[root@node-223-219-vip-229 templates]# k create -f b_rb.yaml
+rolebinding.rbac.authorization.k8s.io/my-app-role-binding created
+[root@node-223-219-vip-229 templates]# k get rolebindings.rbac.authorization.k8s.io my-app-role-binding
+NAME                  ROLE               AGE
+my-app-role-binding   Role/my-app-role   17s
+[root@node-223-219-vip-229 templates]# k describe rolebindings.rbac.authorization.k8s.io my-app-role-binding
+Name:         my-app-role-binding
+Labels:       app=test-app
+Annotations:  <none>
+Role:
+  Kind:  Role
+  Name:  my-app-role
+Subjects:
+  Kind            Name       Namespace
+  ----            ----       ---------
+  ServiceAccount  my-app-sa  default
+~~~
+
+上面可以看到, 在没有role和sa的情况下, 也成功创建了rolebinding
+
+之后我们创建对应的sa和role
+
+~~~shell
+[root@node-223-219-vip-229 templates]# k create -f c_role.yaml
+role.rbac.authorization.k8s.io/my-app-role created
+[root@node-223-219-vip-229 templates]# k get role
+NAME          CREATED AT
+my-app-role   2026-04-09T02:54:34Z
+[root@node-223-219-vip-229 templates]# k create -f e_sa.yaml
+serviceaccount/my-app-sa created
+[root@node-223-219-vip-229 templates]# k get serviceaccounts my-app-sa
+NAME        SECRETS   AGE
+my-app-sa   1         3m8s
+
+[root@node-223-219-vip-229 templates]# k get pod my-app-d6c5b7765-4mlr6
+NAME                     READY   STATUS                       RESTARTS   AGE
+my-app-d6c5b7765-4mlr6   0/1     CreateContainerConfigError   0          4m57s
+[root@node-223-219-vip-229 templates]# k describe pod my-app-d6c5b7765-4mlr6
+Name:         my-app-d6c5b7765-4mlr6
+Namespace:    default
+Priority:     0
+Node:         node-223-219-vip-229/10.142.136.51
+Start Time:   Thu, 09 Apr 2026 10:59:26 +0800
+Labels:       app=test-app
+              pod-template-hash=d6c5b7765
+Annotations:  k8s.v1.cni.cncf.io/networks-status:
+                [{
+                    "name": "k8s-pod-network",
+                    "ips": [
+                        "177.177.48.111"
+                    ],
+                    "default": true,
+                    "dns": {}
+                }]
+Status:       Pending
+IP:           177.177.48.111
+IPs:
+  IP:           177.177.48.111
+Controlled By:  ReplicaSet/my-app-d6c5b7765
+Containers:
+  nginx:
+    Container ID:
+    Image:          nginx:latest
+    Image ID:
+    Port:           80/TCP
+    Host Port:      0/TCP
+    State:          Waiting
+      Reason:       CreateContainerConfigError
+    Ready:          False
+    Restart Count:  0
+    Environment Variables from:
+      my-app-secret  Secret  Optional: false
+    Environment:     <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from my-app-sa-token-99kwl (ro)
+Conditions:
+  Type              Status
+  Initialized       True
+  Ready             False
+  ContainersReady   False
+  PodScheduled      True
+Volumes:
+  my-app-sa-token-99kwl:
+    Type:        Secret (a volume populated by a Secret)
+    SecretName:  my-app-sa-token-99kwl
+    Optional:    false
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     node.kubernetes.io/not-ready:NoExecute op=Exists for 180s
+                 node.kubernetes.io/unreachable:NoExecute op=Exists for 180s
+Events:
+  Type     Reason     Age                 From               Message
+  ----     ------     ----                ----               -------
+  Normal   Scheduled  101s                default-scheduler  Successfully assigned default/my-app-d6c5b7765-4mlr6 to node-223-219-vip-229
+  Normal   Pulled     6s (x10 over 101s)  kubelet            Container image "nginx:latest" already present on machine
+  Warning  Failed     6s (x10 over 101s)  kubelet            Error: secret "my-app-secret" not found
+~~~
+
+上面可以看到, sa和role创建出来之后, replicasset已经开始尝试创建pod, 但是pod由于没有对应的secret, 所以还是创建失败了, 我们现在开始创建secret
+
+~~~shell
+[root@node-223-219-vip-229 templates]# k get secrets my-app-s
+my-app-sa-token-99kwl  my-app-secret
+[root@node-223-219-vip-229 templates]# k get secrets my-app-secret
+NAME            TYPE     DATA   AGE
+my-app-secret   Opaque   1      20s
+~~~
+
+之后我们等一会再来看看pod的状态
+
+~~~shell
+[root@node-223-219-vip-229 templates]# k get deployments.apps my-app
+NAME     READY   UP-TO-DATE   AVAILABLE   AGE
+my-app   1/1     1            1           30m
+[root@node-223-219-vip-229 templates]# k get replicasets.apps my-app-d6c5b7765
+NAME               DESIRED   CURRENT   READY   AGE
+my-app-d6c5b7765   1         1         1       30m
+[root@node-223-219-vip-229 templates]# k get pod my-app-d6c5b7765-4mlr6
+NAME                     READY   STATUS    RESTARTS   AGE
+my-app-d6c5b7765-4mlr6   1/1     Running   0          20m
+~~~
+
+可以看到pod已经正常运行了
+
+**上面的案例说明了, k8s在创建对应的资源的时候, 并不需要根据依赖关系进行创建, 后续资源创建之后会进行恢复**
+
+> k8s在校验状态的时候, 如果失败了那么每次检测的间隔会越来越久, 所以如果你的依赖资源在后续非常久才创建, 那么检验状态的间隔也很久, 所以可能需要好几分钟才能恢复正常, 耐心等待一下就好了
+
+
 
 
 
