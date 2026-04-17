@@ -1268,6 +1268,195 @@ git config --global --unset http.proxy
 
 
 
+# git worktree
+
+
+
+git worktree主要的作用就是能够让本地的一个仓库， 每个分支都在文件系统中有一份文件
+
+他主要解决的问题是：
+
+- 如果你正在一个分支开发， 并且有一部分内容没有提交
+- 这个时候突然有一个很急的问题需要在别的分支上面修改
+- 这个时候你只能git stash把没有提交的内容保持下来， 然后git switch到别的分支上修复问题
+- 问题修复完毕之后你要git switch回来， 然后git stash pop将没有提交的内容还原回来
+
+这里会有一个问题， 如果你的项目内容非常的大， 那么在switch的时候磁盘的io会很慢， 特别是你还在idea中打开了项目， 那么idea还要重新索引你的项目， 那么更是难等
+
+所以这个时候你就可以使用git worktree， 他可以让你的每个branch在本地文件系统上面都有一份文件
+
+我们来看下面的案例
+
+1. 首先创建一个项目， 并初始提交
+
+   ~~~shell
+   root@sys49482YT:/mnt/d/tmp/demo1# git init demo
+   Initialized empty Git repository in /mnt/d/tmp/demo1/demo/.git/
+   
+   root@sys49482YT:/mnt/d/tmp/demo1# cd demo/
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# touch aa.log
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git add .
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git commit -m "init"
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git branch
+   * main
+   ~~~
+
+2. 之后创建另外两个分支
+
+   ~~~shell
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git switch -c bugfix/header
+   Switched to a new branch 'bugfix/header'
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git switch -c feature/login
+   Switched to a new branch 'feature/login'
+   ~~~
+
+3. 切换会main分支， 并为上面的两个分支创建对应的worktree
+
+   ~~~shell
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git switch main
+   Switched to branch 'main'
+   
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree list
+   /mnt/d/tmp/demo1/demo 4a8b0af [main]
+   
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree add ../bugfix/header bugfix/header
+   Preparing worktree (checking out 'bugfix/header')
+   HEAD is now at 4a8b0af init
+   
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree add ../feature/login feature/login
+   Preparing worktree (checking out 'feature/login')
+   HEAD is now at 4a8b0af init
+   
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree list
+   /mnt/d/tmp/demo1/demo          4a8b0af [main]
+   /mnt/d/tmp/demo1/bugfix/header 4a8b0af [bugfix/header]
+   /mnt/d/tmp/demo1/feature/login 4a8b0af [feature/login]
+   ~~~
+
+4. 查看当前的目录结构
+
+   ~~~shell
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# cd ..
+   root@sys49482YT:/mnt/d/tmp/demo1# ls
+   bugfix  demo  feature
+   root@sys49482YT:/mnt/d/tmp/demo1# tree
+   .
+   ├── bugfix
+   │   └── header
+   │       └── aa.log
+   ├── demo
+   │   └── aa.log
+   └── feature
+       └── login
+           └── aa.log
+   
+   6 directories, 3 files
+   ~~~
+
+   
+
+5. 之后在别的worktree上面进行开发
+
+   ~~~shell
+   root@sys49482YT:/mnt/d/tmp/demo1# cd bugfix/header/
+   root@sys49482YT:/mnt/d/tmp/demo1/bugfix/header# touch header.log
+   
+   root@sys49482YT:/mnt/d/tmp/demo1/bugfix/header# git add .
+   root@sys49482YT:/mnt/d/tmp/demo1/bugfix/header# git commit -am "add a header.log"
+   ~~~
+
+6. 在main分支的worktree上面看提交是否同步
+
+   ~~~shell
+   root@sys49482YT:/mnt/d/tmp/demo1/bugfix/header# cd ../../
+   bugfix/  demo/    feature/
+   root@sys49482YT:/mnt/d/tmp/demo1/bugfix/header# cd ../../demo/
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git log bugfix/header
+   commit 12bda40352c9475dae0df1fd19022379e3cdb22a (bugfix/header)
+   Author: root <root@sys49482YT.h3c.huawei-3com.com>
+   Date:   Fri Apr 17 17:51:04 2026 +0800
+   
+       add a header.log
+   
+   commit 4a8b0af6b2d7112af83814f83cf8fa466af094c2 (HEAD -> main, feature/login)
+   Author: root <root@sys49482YT.h3c.huawei-3com.com>
+   Date:   Fri Apr 17 17:43:51 2026 +0800
+   
+       init
+   ~~~
+
+7. 现在我们来移除对应的worktree
+
+   ~~~shell
+   root@sys49482YT:/mnt/d/tmp/demo1# cd demo/
+   # 这一步要在git仓库中执行
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree remove ../bugfix/header/
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree list
+   /mnt/d/tmp/demo1/demo          4a8b0af [main]
+   /mnt/d/tmp/demo1/feature/login 4a8b0af [feature/login]
+   ~~~
+
+8. 假如你手动删除了worktree对应的目录， 但是没有在git中删除掉worktree， 那么也可以使用下面的命令来删除掉git中的worktree
+
+   ~~~shell
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# rm -rf ../feature/login
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree list
+   /mnt/d/tmp/demo1/demo          4a8b0af [main]
+   /mnt/d/tmp/demo1/feature/login 4a8b0af [feature/login] prunable
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree prune
+   root@sys49482YT:/mnt/d/tmp/demo1/demo# git worktree list
+   /mnt/d/tmp/demo1/demo 4a8b0af [main]
+   ~~~
+
+   
+
+
+
+## 相关命令
+
+~~~shell
+# 根据已经有的branch建立worktree
+git worktree add ../release-1-5 release/1.5
+
+# 根据远程分支origin/feature创建本地分支feature， 并为这个分支创建worktree
+git branch feature origin/feature # 创建分支但是不switch过去
+git worktree add ../feature feature # 为本地分支创建worktree
+
+# 根据本地分支main来创建新的分支feature/login， 并为这个分支建立worktree
+git worktree add ../feature-login -b feature/login main
+
+# 清理无效的worktree记录（worktree本地文件已经删除了， 但是git中的worktree记录没有删除）
+git worktree prune
+
+# 显示git worktree prune要删除的内容， 不实际执行
+git worktree prune -n -v
+
+# 删除某个工作区目录（先确保其中无未跟踪变更）
+git worktree remove ../feature-login
+
+# 强制删除（有风险：可能丢弃未提交的改动）
+git worktree remove -f ../feature-login
+
+# 移动工作区到新位置（路径变更）
+git worktree move ~/code/myrepo/.wt/feature-login ~/code/myrepo/.wt/feature-auth
+
+# 修复（当仓库整体路径被移动后，修复内部链接）
+git worktree repair
+
+# 锁定worktree， 之后你不能删除这个worktree， 不能移动worktree的目录， 不能git reset， 无法删除管理的分支
+git worktree lock ../release-1-5 --reason "hotfix in progress"
+
+# 解锁worktree
+git worktree unlock ../release-1-5
+
+# 这里使用detach选项, 那么会在../tmp下面建立一个worktree, 但是worktree的内容不是某个branch, 而是4f1e2c3这个特定的commit
+git worktree add --detach../tmp 4f1e2c3
+~~~
+
+
+
+
+
 
 
 # git 子模块
@@ -1356,14 +1545,15 @@ git config --global --unset http.proxy
 
 3. 当你在父项目中使用`git pull`命令时, 他会把父项目中的内容fetch下来, 然后merge
    
+
 但是对于子模块, 他会把远程仓库中的commit fetch下来, 但是不会merge, 所以我们需要将命令替换为
-   
+
    ~~~bash
    git pull --recurse-submodules
    ~~~
-   
+
    如果你想要让git pull 默认就开启`--recurse-submodules`参数, 那么你可以
-   
+
    ~~~bash
    git config submodule.recurse true
    ~~~
