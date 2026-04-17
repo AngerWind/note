@@ -2183,3 +2183,470 @@ https://blog.csdn.net/2301_76154806/article/details/141404952
 6. 容器的停止和删除
 
    ![容器操作](img/docker/968c4e94d11b4b16bf7fe895f24c0ab4.png)
+
+
+
+
+
+## Docker镜像多平台构建
+
+随着国产化和信创的推进，为应用适配多个操作系统和处理器架构的需求越来越普遍。常见做法是为不同平台单独构建一个版本，当用来开发的平台与部署的目标平台不同时，实现这一目标并不容易。例如在 x86 架构上开发一个应用程序并将其部署到 ARM 平台的机器上，通常需要准备 ARM 平台的基础设施用于开发和编译。
+
+一次构建多处部署的镜像分发大幅提高了应用的交付效率，对于需要跨平台部署应用的场景，利用 docker buildx 构建跨平台的镜像也是一种快捷高效的解决方案。
+
+
+
+### 构建
+
+#### 概述
+
+大部分镜像托管平台支持多平台镜像，这意味着镜像仓库中单个标签可以包含不同平台的多个镜像，以 `docker hub` 的 `python` 镜像仓库为例，`3.9.6` 这个标签就包含了 10 个不同系统和架构的镜像（平台 = 系统 + 架构）：
+
+![Untitled](img/2020-09-02-python-multi-arch-images.png)
+
+通过 `docker pull` 或 `docker run` 拉取一个支持跨平台的镜像时，`docker` 会自动选择与当前运行平台相匹配的镜像。由于该特性的存在，在进行镜像的跨平台分发时，我们不需要对镜像的消费做任何处理，只需要关心镜像的生产，即如何构建跨平台的镜像。
+
+
+
+#### 单平台镜像与多平台镜像的区别
+
+单平台镜像与多平台镜像之间的镜像结构不同
+
+- 单平台镜像包含一个manifest文件, 指向一个单独的配置文件和一组layer
+- 多平台镜像包含一个manifest list, 指向多个manifest文件, 每个manifest文件指向一个单独的配置文件和一组layer
+
+![Multi-platform image structure](img/single-vs-multiplatform-image.svg)
+
+
+
+当您将多平台镜像推送到docker registry时，docker registry会存储manifest list以及所有单独的manifest文件。当您拉取镜像时， docker registry返回manifest list，Docker 会自动根据主机架构选择正确的版本。例如，如果您运行一个 在基于 ARM 的 Raspberry Pi 上，Docker 选择多平台镜像 `linux/arm64` 变体。如果您在 x86-64 笔记本电脑上运行相同的镜像，Docker 将选择 `linux/amd64` 变体（如果您使用的是 Linux 容器）。
+
+
+
+#### 前提
+
+#### 创建Builder
+
+多平台镜像需要一个支持清单列表的镜像存储系统。 Docker Desktop 和 Docker Engine 29.0+ 使用 [containerd 默认存储镜像 ](https://docs.docker.com/desktop/features/containerd/)，开箱即用，支持多平台镜像。如果您使用的是这些版本之一，则无需额外设置。
+
+除了使用 containerd 镜像存储之外，您还需要创建一个使用 `docker-container` 驱动程序的自定义构建器。此Driver支持 构建多平台镜像，但生成的镜像并未加载到 Docker 容器中. 这个Builder会用来进行多平台构建使用
+
+~~~shell
+mkdir -p /etc/buildkit/
+
+# 设置builder的docker镜像
+tee >  /etc/buildkit/buildkitd.toml << EOF
+[registry."docker.io"]
+  mirrors = ["https://docker.1ms.run"]
+EOF
+
+
+# --name指定builder的名字
+# --use表示docker buildx build的时候, 默认使用这个builder
+# --config表示指定这个builder使用的配置文件
+docker buildx create --name mybuilder --driver docker-container --use --config /etc/buildkit/buildkitd.toml
+~~~
+
+
+
+1. 创建 docker-container 驱动实例时可通过 --driver-opt image=moby/buildkit:v0.10.5 选项配置所使用的 buildkit 镜像版本，在拉取 buildkit 镜像存在网络问题时可将其替换为本地 registry 镜像。
+
+2. 在构建的时候, 可以通过--driver来指定构建驱动的类型, 他有三种可选的类型
+
+   - `docker-container`：使用 Docker 容器作为构建环境。这是最常用的驱动方式，适用于大部分用户。
+
+   - `kubernetes`：在 Kubernetes 集群中执行构建。适用于需要将构建任务分配到 Kubernetes 集群中的情况。
+
+   - `remote`：通过远程的构建实例进行构建。例如，可以连接到远程的 Docker daemon 或者使用远程的 BuildKit 服务来进行构建。
+
+   `docker-container`是默认的类型, 也是适合绝大部分情况的类型
+
+
+
+创建完毕之后, 你可以通过如下的命令来查看创建的builder
+
+~~~shell
+# docker buildx ls
+NAME/NODE        DRIVER/ENDPOINT                   STATUS    BUILDKIT   PLATFORMS
+mybuilder*       docker-container
+ \_ mybuilder0    \_ unix:///var/run/docker.sock   running   v0.29.0    linux/amd64 (+3), linux/arm64, linux/arm (+2), linux/ppc64le, (6 more)
+default          docker
+ \_ default       \_ default                       running   v0.29.0    linux/amd64 (+3), linux/arm64, linux/arm (+2), linux/ppc64le, (5 more)
+~~~
+
+
+
+#### 三种多平台构建的方式
+
+根据您的使用场景，您可以使用三种不同的策略来构建多平台镜像：
+
+1. 通过 QEMU 进行仿真, 虚拟出一个不同架构的虚拟机，在虚拟机系统中构建镜像。
+2. 通过在Builder中添加多个不同架构的原生节点, 并将构建任务发送到这些节点中进行构建
+3. 通过交叉编译与多阶段构建
+
+
+
+##### QEMU
+
+QEMU 通常用于模拟完整的操作系统，它还可以通过用户态模式运行：以 `binfmt_misc` 在宿主机系统中注册一个二进制转换处理程序，并在程序运行时动态翻译二进制文件，根据需要将系统调用从目标 CPU 架构转换为当前系统的 CPU 架构。最终的效果就像在一个虚拟机中运行目标 CPU 架构的二进制文件
+
+**这种方式不需要对已有的 Dockerfile 做任何修改，实现的成本很低，但显而易见效率并不高。**
+
+首先要安装QEMU, 如果你使用的是 Docker 桌面版（MacOS 和 Windows），默认已经自带了QEMU，可以跳过这一步。
+
+如果你是Linux的话, 那么确保Linux内核版本>=4.8, 之后通过如下的命令来安装QEMU
+
+~~~shell
+# --privileged表示这是一个特权容器, 允许它访问和修改主机的设备，执行一些本来被限制的操作。
+# tonistiigi/binfmt 是启动的容器的镜像
+# --rm 表示运行之后就删除掉这个镜像
+# install all 是容器启动后执行的命令
+# 这个容器会修改linux, 让服务器开启多处理器架构支持
+docker run --privileged --rm tonistiigi/binfmt --install all
+~~~
+
+执行完毕之后, 执行如下的命令
+
+~~~shell
+# docker buildx ls
+NAME/NODE        DRIVER/ENDPOINT                   STATUS    BUILDKIT   PLATFORMS
+default          docker
+ \_ default       \_ default                       running   v0.29.0    linux/amd64 (+3), linux/arm64, linux/arm (+2), linux/ppc64le, (5 more)
+~~~
+
+如果出现了多个平台, 那么开启成功
+
+之后我们使用通过Dockerfile来镜像多平台构建
+
+~~~dockerfile
+FROM alpine:3.19
+
+# 直接输出当前平台的架构信息
+CMD echo "Hello from $(uname -m) platform!"
+~~~
+
+
+
+~~~shell
+# --push 表示将构建好的镜像, 执行docker push 推送到私服或者docker hub, 必须提前登录
+# 之后在私服上面就可以看到多个
+
+# -t 指定构建的镜像的tag
+# --platform表示需要构建的平台
+
+# --load表示将构建的产物直接load到当前docker上面
+docker buildx build --push --load \
+  -t zhangguanzhang/keepalived:v2.0.20 \
+  --platform=linux/amd64,linux/arm64 .
+~~~
+
+推送到指定的docker私服之后,  你就可以在其他的docker拉去相应架构的镜像了
+
+
+
+如果想将构建好的镜像保存在本地，可以将 `type` 指定为 `docker`，但必须分别为不同的 CPU 架构构建不同的镜像，不能合并成一个镜像，即：
+
+```shell
+docker buildx build \
+  -t middle/otel_opentelemetry-collector-analysis:0.149.0 \
+  --platform=linux/arm64 \
+  -o type=docker,dest=./otel_opentelemetry-collector-analysis_0.149.0-arm64.tar \
+  .
+  
+docker buildx build \
+  -t middle/otel_opentelemetry-collector-analysis:0.149.0 \
+  --platform=linux/amd64 \
+  -o type=docker,dest=./otel_opentelemetry-collector-analysis_0.149.0-amd64.tar \
+  .
+  
+ls *.tar
+otel_opentelemetry-collector-analysis_0.149.0-amd64.tar  otel_opentelemetry-collector-analysis_0.149.0-arm64.tar
+```
+
+
+
+
+
+#### 多原生节点构建
+
+这种方式使用原生节点来运行构建任务,  他可以更好地支持 QEMU 无法处理的更复杂情况，并且还能提供更好的性能。但是缺点就是你需要有多个不同架构的服务器
+
+使用这种方式, 你需要准备好其他架构的服务器, 然后使用 `--append` 标志向Builder添加其他节点。
+
+~~~shell
+# 添加别的节点到builder中进行管理
+docker buildx create --use --name mybuild node-amd64
+mybuild
+docker buildx create --append --name mybuild node-arm64
+
+# 使用默认的builder进行构建, 会将任务分发到对应的节点上构建
+docker buildx build --platform linux/amd64,linux/arm64 .
+~~~
+
+
+
+#### 交叉编译
+
+如果你使用的编程语言能够进行交叉编译, 那么你可以使用交叉编译和docker的多节点编译来进行多平台构建
+
+使用这种方式首先要了解, 在多平台编译的时候, docker会向dockerfile中传递4个参数:
+
+- `BUILDPLATFORM`: 当前构建的机器的架构, `linux/amd64`
+- `TARGETPLATFORM`: 需要构建的机器的架构, `linux/arm64`
+- `BUILDARCH`: 当前平台的架构, `amd64`
+- `TARGETARCH`: 需要构建的机器的架构, `arm64`
+- `BUILDOS`: 表示当前平台的操作系统。`linux`、`windows`
+- `TARGETOS`: 表示目标平台的操作系统。 `linux`、`windows`
+
+之后你可以使用如下的Dockerfile来进行多平台编译
+
+~~~Dockerfile
+# syntax=docker/dockerfile:1
+
+# 这里指定了当前机器架构的golang:alpine来进行一阶段编译
+FROM --platform=$BUILDPLATFORM golang:alpine AS build
+ARG TARGETOS
+ARG TARGETARCH
+WORKDIR /app
+ADD https://github.com/dvdksn/buildme.git#eb6279e0ad8a10003718656c6867539bd9426ad8 .
+# 这里使用了go的交叉编译, 来生成目标平台的二进制文件
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o server .
+
+
+# 这里进行二阶段编译, 在这里的时候docker会根据你指定的platform进行多次编译
+FROM alpine
+COPY --from=build /app/server /server
+ENTRYPOINT ["/server"]
+~~~
+
+之后你可以通过如下的命令来进行构建
+
+~~~shell
+docker buildx build --platform linux/amd64,linux/arm64 -t middle/otel_opentelemetry-collector-analysis:0.149.0 .
+~~~
+
+
+
+
+
+### 相关命令
+
+1. `docker buildx create`
+
+   创建一个新的构建器实例（builder）。`buildx` 使用构建器来执行构建任务。你可以创建一个新的构建器并指定它为当前使用的构建器。
+
+   ~~~shell
+   docker buildx create [OPTIONS]
+   ~~~
+
+   常用选项：
+
+   - `--use`：创建并立即切换为当前使用的构建器。
+   - `--name`：指定构建器的名称（可选）。
+   - `--driver`：指定构建器的驱动类型（如 `docker` 或 `kubernetes`）。
+   - `--platform`：设置支持的平台架构。
+
+   ~~~shell
+   docker buildx create --use
+   docker buildx create --name mybuilder --platform linux/amd64,linux/arm64
+   ~~~
+
+2. `docker buildx build`
+
+   构建Builder构建 Docker 镜像，并可以指定多个平台、推送镜像到远程仓库、以及加载到本地 Docker 环境。
+
+   ~~~shell
+   docker buildx build [OPTIONS] PATH | URL | -
+   ~~~
+
+   常用选项：
+
+   - `--platform`：指定构建的目标平台。
+   - `--push`：将构建的镜像推送到 Docker Registry。
+   - `--load`：将构建的镜像加载到本地 Docker 环境。
+   - `--tag` 或 `-t`：为镜像指定标签。
+   - `--file` 或 `-f`：指定 Dockerfile 的位置。
+   - `--cache-from`：使用远程缓存来加速构建。
+   - `--build-arg`：为 Dockerfile 中的构建参数提供值。
+   - `--no-cache`：构建时不使用缓存。
+
+   ~~~shell
+   docker buildx build --platform linux/amd64,linux/arm64 \
+   --push -t myimage:latest .
+   
+   docker buildx build --load --tag myimage:1.0 --platform linux/amd64 .
+   ~~~
+
+3. `docker buildx ls`
+
+   列出当前可用的所有构建器实例以及它们的支持平台。
+
+   ~~~shell
+   docker buildx ls
+   
+   NAME/NODE      DRIVER/ENDPOINT              STATUS   PLATFORMS
+   mybuilder      docker-container             running  linux/amd64,linux/arm64
+   default        docker                       running  linux/amd64
+   ~~~
+
+4. `docker buildx use`
+
+   切换当前使用的构建器实例。
+
+   ~~~shell
+   docker buildx use BUILDER
+   
+   # 例如
+   docker buildx use mybuilder
+   ~~~
+
+5. `docker buildx rm`
+
+   删除一个或多个Builder
+
+   ~~~shell
+   docker buildx rm BUILDER [BUILDER...]
+   
+   # 比如
+   docker buildx rm mybuilder
+   ~~~
+
+6. `docker buildx inspect`
+
+   检查构建器的详细信息，包括平台、节点、缓存状态等。
+
+   ~~~shell
+   docker buildx inspect BUILDER [OPTIONS]
+   ~~~
+
+   常用选项：
+
+   - `--bootstrap`：重新初始化构建器。
+   - `--json`：以 JSON 格式输出结果。
+
+   ~~~shell
+   docker buildx inspect mybuilder --json
+   docker buildx inspect mybuilder --bootstrap
+   ~~~
+
+7. `docker buildx bake`
+
+   批量构建镜像。这个命令允许你通过 `bake` 文件指定多个镜像构建配置，并批量执行构建。
+
+   ~~~shell
+   docker buildx bake [OPTIONS] [TARGET...]
+   ~~~
+
+   常用选项：
+
+   - `--file` 或 `-f`：指定 `bake` 配置文件。
+   - `--set`：通过命令行覆盖 `bake` 配置文件中的参数。
+   - `--no-cache`：构建时不使用缓存。
+
+   ~~~shell
+   docker buildx bake -f bake.hcl
+   docker buildx bake --set myimage.build=path/to/Dockerfile
+   ~~~
+
+8. `docker buildx buildx`
+
+   此命令是一个快捷方式，用于创建自定义的构建任务。通常在构建特定场景时使用，但这个子命令的功能较少被单独使用，常常是为了配合其他命令。
+
+9. `docker buildx debug`
+
+   输出调试信息，帮助分析构建过程中的问题。
+
+   ~~~shell
+   docker buildx debug --verbose
+   ~~~
+
+
+
+### 镜像加速
+
+在遇到`docker buildx build`的时候, 即使配置了docker镜像, 也会出现一直拉取不下来镜像的原因
+
+这是因为在使用这个命令的时候, <font color=red>**Docker buildx** 默认使用基于容器的构建器（`docker-container` driver），它的 BuildKit 环境是独立运行的，因此**不会自动继承宿主机 Docker 的镜像加速配置**。需要单独为 buildx 的 BuildKit 配置镜像加速才能生效。</font>
+
+1. 确认当前 buildx 使用的构建器类型
+
+   ```
+   docker buildx ls
+   
+   NAME       DRIVER/IMAGE
+   mybuilder  docker-container
+   default    docker
+   ```
+
+   > 重点看 `DRIVER` 列, 如果 `DRIVER` 是 `docker`（非容器模式），镜像加速配置可能无效，建议切换到 `docker-container` 驱动。
+
+2. 创建或修改 BuildKit 配置文件
+
+   BuildKit 的配置通过 **`buildkitd.toml`** 文件管理。你需要将此文件挂载到 buildx 的 BuildKit 容器中。
+
+   ~~~shell
+   sudo mkdir -p /etc/buildkit
+   
+   sudo tee >  /etc/buildkit/buildkitd.toml << EOF
+   [registry."docker.io"]
+     mirrors = ["https://docker.1ms.run"]
+   EOF
+   ~~~
+
+3. 创建或更新 buildx 构建器
+
+   ~~~shell
+   
+   ~~~
+# 移除旧构建器（可选）
+   docker buildx rm mybuilder
+
+   # 创建新构建器, 并挂载 BuildKit 配置
+docker buildx create \
+   --name mybuilder \
+--config /etc/buildkit/buildkitd.toml \
+   --use
+   ~~~
+   
+4. 验证配置是否生效
+
+   ~~~shell
+   # 启动builder
+   docker buildx inspect mybuilder --bootstrap
+   
+   # 查看日志，确认镜像加速已加载
+   docker logs buildx_buildkit_mybuilder0
+   ~~~
+
+   如果看到类似以下输出，说明配置成功：
+
+   ```
+   INFO[0000] mirror configuration: registry="docker.io" mirrors=["https://1234abcd.mirror.aliyuncs.com"]
+   ```
+
+5. 重新运行构建命令
+
+   ~~~shell
+   docker buildx build \
+   --platform linux/amd64 \
+   -t hslr/sun-short-link:beta \
+   --push --load .
+   ~~~
+
+
+
+注意事项:
+
+1. 代理配置（如果服务器需要代理), 在`buildkitd.toml`中添加代理环境变量：
+
+   ```toml
+   [worker.oci]  
+     env = ["HTTP_PROXY=http://proxy-ip:port", "HTTPS_PROXY=http://proxy-ip:port"]
+   ```
+
+2. 国内镜像源可能不支持多平台镜像（如`linux/arm64`），建议直接替换基础镜像为国内源：
+
+   ```
+   FROM registry.cn-hangzhou.aliyuncs.com/google_containers/alpine:latest
+   ```
+
