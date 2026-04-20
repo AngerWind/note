@@ -222,9 +222,9 @@ dlv attach <pid> \
 
 ## go值类型与引用类型, 零值
 
-值类型: 数字, string, bool, array, struct   
+值类型: 数字, string, bool, array, struct
 
-引用类型: 指针, slice, map, interface, func, chan   零值为nil
+引用类型: 指针, slice, map, interface, func, chan  , 他们的零值为nil
 
 
 
@@ -527,7 +527,7 @@ Go的类型比较规则如下:
 
 - bool, integer, float, complex, string都是可比较的
 
-- 对于两个相同类型的pointer, 只有他们指向的地址相同, 或者都是nil时, 那么他们相同
+- **对于两个相同类型的pointer, 只有他们指向的地址相同, 或者都是nil时, 那么他们相同**
 
   ~~~go
   var a *int
@@ -967,13 +967,21 @@ func main() {
 	for i := 0; i < 10; i++ {
 		fmt.Println(i)
 	}
+~~~
 
+
+
+### for range
+
+~~~go
 	// for range可以遍历数组, 切片, 字符串, map, 通道
 	// for range等效于for each
 	for i, i2 := range "hello" {
         // i是索引, i2是值
 		fmt.Printf("%v, %c \n", i, i2)
 	}
+
+   for i in range
 ~~~
 
 
@@ -1038,6 +1046,12 @@ func main() {
 
 
 
+
+
+
+
+
+
 #### 一维数组
 
 ~~~go
@@ -1078,7 +1092,26 @@ func main() {
    }
    ~~~
 
-2. 将数组传递到函数中的时候, 是值拷贝,  **如果需要再函数内修改数组, 需要传递指针**
+2. 数组是值类型的，他和int64是一样的， 要修改的话需要获取指针
+
+   ~~~go
+   func main() {
+   	a := [3]int{1, 2, 3}
+   	b := a // 这里会对数组复制一份
+   	b[0] = 3
+   	fmt.Println(a[0]) // 1
+   
+   	// 如果要保持同一份的话, 那么需要使用指针
+   	a1 := [3]int{1, 2, 3}
+   	b1 := &a1 // 这里使用指针, 所以不会进行复制
+   	b1[0] = 3
+   	fmt.Println(a1[0]) // 3
+   }
+   ~~~
+
+   
+
+   同样的, 因为是值类型, 
 
    ~~~go
    func main() {
@@ -1426,26 +1459,16 @@ a, _ := 函数(形参列表)  // _表示忽略一个返回值
 
    
 
-   
 
-### 函数高级
 
-1. 在go中, <font color=red>**传参都是值传递, 没有引用传递**</font>, 如果想要改变外部变量的值, 那么请使用指针
 
-   ~~~go
-      func swap(a *int, b *int) {
-      	*a, *b = *b, *a
-      }
-      
-      func main() {
-      	a := 10
-      	b := 20
-      	swap(&a, &b)
-      	fmt.Println(a, b)
-      }
-   ~~~
+### 函数类型
 
-2. 在go中, 函数也是一种数据类型, 可以赋值给一个变量
+在go语言中, 函数也是一种类型, 他是引用类型, 默认值为nil, 函数的类型就是他的函数签名
+
+
+
+1. 函数可以赋值给一个变量
 
    ~~~go
    func swap(a *int, b *int) {
@@ -1463,7 +1486,7 @@ a, _ := 函数(形参列表)  // _表示忽略一个返回值
    }
    ~~~
 
-3. 函数作为参数
+2. 函数作为参数
 
    ~~~go
    func inc(a *int) {
@@ -1483,7 +1506,7 @@ a, _ := 函数(形参列表)  // _表示忽略一个返回值
    }
    ~~~
 
-4. 函数作为返回值
+3. 函数作为返回值
 
    ~~~go
    func genIncrement() func(*int) {
@@ -1501,7 +1524,7 @@ a, _ := 函数(形参列表)  // _表示忽略一个返回值
    }
    ~~~
 
-5. 闭包
+4. 闭包
 
    ~~~go
    func genIncrement() func(int) int {
@@ -1522,7 +1545,32 @@ a, _ := 函数(形参列表)  // _表示忽略一个返回值
 
    
 
-6. 匿名函数
+
+
+### 值传递
+
+在go中, <font color=red>**传参都是值传递, 没有引用传递**</font>, <font color=red>所以对于值类型, 会复制一份变量到方法中, 对于引用, 会直接拷贝指针的地址到方法中</font>
+
+~~~go
+   func swap(a *int, b *int) {
+   	*a, *b = *b, *a
+   }
+   
+   func main() {
+   	a := 10
+   	b := 20
+   	swap(&a, &b)
+   	fmt.Println(a, b)
+   }
+~~~
+
+
+
+
+
+### 匿名函数
+
+1. 匿名函数
 
    ~~~go
    func main() {
@@ -1533,7 +1581,7 @@ a, _ := 函数(形参列表)  // _表示忽略一个返回值
    }
    ~~~
 
-7. 匿名函数可以被直接调用
+2. 匿名函数可以被直接调用
 
    ~~~go
    func main() {
@@ -1542,6 +1590,12 @@ a, _ := 函数(形参列表)  // _表示忽略一个返回值
    	}(10, 20)
    }
    ~~~
+
+
+
+
+
+
 
 
 
@@ -1705,10 +1759,11 @@ go中也支持面向对象, 但是实现面向对象的方式有点奇葩
 #### 结构体的定义与创建
 
 ~~~go
-// 名字大写, 表示可以被当前模块和其他模块使用
+// 名字大写, 表示可以被所有其他的包使用, 类似public
+// 如果名字小写, 那么只能被当前包中的其他go文件使用, 无法被其他包中的go文件使用
 type Teacher struct {
-    Name string // 名字大写, 表示可以被所有模块
-    age int // 名字小写, 无法被其他模块范围, 只能在当前模块中使用
+    Name string // 名字大写, 表示可以被所有包使用
+    age int // 名字小写, 无法被其他包使用, 只能在当前包中使用
     School string
 }
 
@@ -1729,7 +1784,7 @@ func main() {
 	t1.Name = "zhangsan"
 
 	
-	var t5 *Teacher = new(Teacher) // 创建一个结构体, 并返回指针
+	var t5 *Teacher = new(Teacher) // 创建一个结构体, 并返回指针, 所有属性具有默认值
 	var t6 *Teacher = &Teacher{Name: "zhangsan"} // 创建结构体并取地址
 	
 	(*t5).School = "哈哈" // 调用属性
@@ -1738,9 +1793,11 @@ func main() {
 }
 ~~~
 
-#### 结构体之间的转换
+#### 结构体之间的类型转换
 
-想要结构体之间进行转换, 那么他们应该具有完全相同的字段(名字, 个数, 类型完全相同)
+**不同的结构体即使他们的字段相同, 那么也不是相同的类型, 所以在赋值和传参的时候不能直接使用**
+
+**但是如果不同的结构体有完全相同的字段(名字, 个数, 类型完全相同), 他们可以对他们进行强制类型转换**
 
 ~~~go
 type Teacher struct {
@@ -1773,6 +1830,34 @@ func main() {
 
 
 
+#### 值类型
+
+在go语言中, struct和int类似, 都是值类型, 所以在传参的时候, 会进行拷贝一份, 然后进行传递
+
+~~~go
+type Cat struct {
+    name string   
+}
+
+func main() {
+    cat := Cat{
+        name: "zhangsan"
+    }
+    say(cat) // 在传递的时候会拷贝一份
+    
+}
+
+func say(cat Cat) {
+    // 这里接受到的cat是传递进来的拷贝, 所以你对cat的修改, 和外面是无效的
+}
+~~~
+
+
+
+
+
+
+
 #### 方法
 
 ~~~go
@@ -1794,7 +1879,7 @@ func (t *Teacher) Growing() {
 	t.age += 10
 }
 
-func (t Teacher) say() { // 方法小写, 只能在当前模块中使用
+func (t Teacher) say() { // 方法小写, 只能在当前包中使用
 	fmt.Println(t)
 }
 
@@ -1866,9 +1951,9 @@ func (Teacher) String() string {
 
 #### 方法和函数的区别
 
-1. 对于一个方法来说,  如果他需要一个指针给他一个变量也可以, 如果他需要一个变量给他传一个指针也可以
+1. **对于一个方法来说,  如果他需要一个指针给他一个变量也可以, 如果他需要一个变量给他传一个指针也可以**
 
-   对于一个函数来说, 他要指针就必须传入指针, 他要变量就必须传入变量
+   **对于一个函数来说, 他要指针就必须传入指针, 他要变量就必须传入变量**
 
    ~~~go
    type Teacher struct {}
@@ -1887,10 +1972,10 @@ func (Teacher) String() string {
 ~~~go
 // test/test1.go
 
-// 名字大写, 表示可以被当前模块和其他模块使用
+// 名字大写, 表示可以被所有包使用
 type Teacher struct {
-	Name   string // 名字大写, 表示可以被外部访问
-	age    int    // 名字小写, 无法被外部访问
+	Name   string // 名字大写, 表示可以被所有包使用
+	age    int    // 名字小写, 无法被其他包访问, 只能在当前包中使用
 	School string
 }
 
@@ -1926,6 +2011,12 @@ func main() {
 
 
 ### 继承
+
+<font color=red>**在go语言中, 继承并不是和java中的继承一样来实现的, 而是通过组合来实现的**</font>
+
+**<font color=red>即如果Cat继承了Animal, 那么只是Cat有一个类型为Animal, 名字为Animal的属性, 只不过你可以直接通过Cat来访问Animal身上的属性和方法</font>**
+
+
 
 #### 继承的实现
 
@@ -2034,8 +2125,8 @@ func main() {
 
 内嵌指针类型和内嵌变量类型的主要区别在于:
 
-1. 内嵌指针的默认值为nil, 而内嵌Animal的默认值为空的结构体
-2. 在传参的时候, 因为是值传递, 整个结构体会深拷贝, 所以在传递Cat的时候, 内部的Animal的修改无法影响外部, 而通过* Animal是可以影响外部的
+1. **<font color=red>内嵌*Animal的时候, Animal字段默认值为nil, 而内嵌结构体的时候, Animal的默认值为空的结构体, 所以会占据更多的内存</font>**
+2. **<font color=red>在传参的时候, 因为是值传递, 整个结构体会深拷贝, 所以在传递Cat的时候, 内部的Animal的修改无法影响外部, 而通过* Animal是可以影响外部的</font>**
 
 ### 接口
 
@@ -2045,7 +2136,7 @@ func main() {
 
 3. 实现接口那么就要实现所有的接口方法
 
-4. Go中的接口, 不需要显式的实现, 没有implement关键字,  只要有相同的方法, 那么就算实现
+4. <font color=red>**Go中的接口, 不需要显式的实现, 没有implement关键字,  只要有相同的方法, 那么就算实现**</font>
 
    比如A接口有a, b方法, B接口有c,d方法,  那么只要c有和a,b,c,d相同方法前面的方法, 那么就算实现
 
@@ -2120,7 +2211,11 @@ func main() {
 
 
 
-空接口通过`interface{}`来表示, 也可以使用any来表示, 任何的数据类型都默认继承空接口, 
+#### 空接口interface{}
+
+空接口通过`interface{}`来表示, 也可以使用any来表示
+
+任何的数据类型都默认继承空接口, 因为任何数据类型都可以是一个没有方法的结构体
 
 ~~~go
 // a可以是任意类型
@@ -2133,7 +2228,9 @@ func haha1(a any){}
 
 
 
-**interface类型的默认值为nil**
+### 引用类型
+
+**interface类型是引用类型, 所以他的默认值为nil**
 
 ~~~go
 type CInterface interface {
@@ -2225,6 +2322,7 @@ func main() {
 var i interface{} = "hello"
 
 // i必须是interface类型
+// i.(type) 只能搭配switch使用, 不能单独使用
 switch v := i.(type) {
 case int:
     fmt.Println("i is an int:", v)
@@ -2593,13 +2691,144 @@ go env -w GOPRIVATE=example.gitlab.com/*/my-private-repo
 
 
 
+#### go模块的版本管理
+
+在go语言中, go语言假定同一个模块的major版本都是向后兼容的
+
+如果你的这个版本不能先后兼容的话, 那么就必须升级major版本
+
+~~~go
+// 假设我现在的go.mod中指定的module如下
+module github.com/yourname/yourrepo
+
+// 你如果要升级大版本的话, 不能简单的直接打一个tag v2.0.0就完事了
+// 从 v2 开始，模块路径本身也必须带上 /v2、/v3 这样的后缀。
+// 这是 Go 的官方规则，叫 semantic import versioning
+module github.com/yourname/yourrepo/v2
+~~~
+
+
+
+常见的步骤是这样的
+
+1. 将你的模块中的go.mod进行修改
+
+   ~~~shell
+   module github.com/yourname/yourrepo
+   改成
+   module github.com/yourname/yourrepo/v2
+   ~~~
+
+2. 修改自己仓库中所有使用自己模块的import
+
+   ~~~shell
+   import "github.com/yourname/yourrepo/pkg/foo"
+   改成
+   import "github.com/yourname/yourrepo/v2/pkg/foo"
+   ~~~
+
+3. 发布新的tag
+
+   ~~~shell
+   git tag v2.0.0
+   git push origin v2.0.0
+   ~~~
+
+4. 使用了这个模块的第三方, 如果要升级大版本的话, 那么也要修改import
+
+   ~~~shell
+   import "github.com/yourname/yourrepo/pkg/foo"
+   改成
+   import "github.com/yourname/yourrepo/v2/pkg/foo"
+   ~~~
+
+5. <font color=red>实际上按照上面的步骤,  你升级了一个大版本, 就相当于等到了一个全新的module, 第三方升级大版本就相当于替换掉一个模块, 只不过只需要改一下import</font>
+
+
+
+那么你的项目的文件目录在GitHub 仓库结构通常怎么放
+
+你有两种常见方式。
+
+1. 直接在同一个仓库分支上做 v2
+
+   仓库还是这个：
+
+   ```
+   github.com/yourname/yourrepo
+   ```
+
+   代码根目录里的 `go.mod` 改成：
+
+   ```
+   module github.com/yourname/yourrepo/v2
+   ```
+
+   然后发布 `v2.0.0` tag。
+
+   这种方式最简单，官方也支持。
+
+2. 在仓库里建 `v2/` 子目录
+
+   例如：
+
+   ```
+   yourrepo/
+     go.mod              // v1
+     ...
+     v2/
+       go.mod            // module github.com/yourname/yourrepo/v2
+       ...
+   ```
+
+   **这种适合你要同时长期维护 v1 和 v2的情况**。Go 官方 wiki 也提到这种 major subdirectory 模式，并说明这类多模块仓库的 tag 规则。
+
+   如果是这种子目录模式，tag 不是简单的 `v2.1.6`，而是带子目录前缀，例如：
+
+   ```
+   v2.1.6           // 根目录模块
+   sub/v2.1.6       // 子目录模块
+   ```
+
+   官方 wiki 对这个规则有明确说明。
+
+
+
 #### 版本冲突
 
-#### go依赖管理
+1. 如果a依赖bc, bc都依赖d
 
-1. 在go中, 如果a依赖b, 并且ab都依赖了c, 那么会选择c的高版本, 而不是maven中的路径优先规则
+   - bc依赖的d的版本minor版本不一样的话, 那么go语言会简单粗暴的选择高版本
 
-2. 如果想要排除a的1.1版本, 可以在go.mod中使用exclude标签, 哪怕当前还没有使用到a这个依赖(类似在maven的DependenciesManager添加exclude). 排除掉a的1.1版本之后将会go将会选择a的一个更高的版本, 如果没有更高版本将会报错
+     ~~~txt
+     B 要求：D v1.2.0
+     C 要求：D v1.3.0
+     
+     最终: D v1.3.0
+     ~~~
+
+   - 但是如果bc依赖的d的major版本都不一样的话
+
+     ~~~txt
+     A
+     ├── B -> D v1
+     └── C -> D v2
+     ~~~
+
+     按照我们在go模块的版本管理中的说法, 实际上d v1和d v2就已经不是一个模块了, 在 Go Modules 里，**`D v1` 和 `D v2` 会被当成两个不同模块**，因为从 `v2` 开始，模块路径必须带 major 后缀，例如 `example.com/d` 和 `example.com/d/v2`。这就是 Go 的 semantic import versioning。
+
+     也就是说，最终不是“二选一”，而通常是：
+
+     - `B` 继续用 `example.com/d`
+     - `C` 继续用 `example.com/d/v2`
+
+     它们**可以同时存在于同一个构建里**。Go 官方文档明确说明：构建中同一个**模块路径**最多只会有一个版本，但不同 major 版本因为路径不同，所以可以并存，例如可以同时有一个 `rsc.io/quote` 和一个 `rsc.io/quote/v3`。
+
+     你在项目中`import rsc.io/quote/foo`就是在使用v1版本,  使用`import rsc.io/quote/v3/foo`就是在使用v3版本
+
+   
+
+2. 如果想要排除a的1.1版本, 可以在go.mod中使用exclude标签, 哪怕当前还没有使用到a这个依赖(类似在maven的DependenciesManager添加exclude). 排除掉a的1.1版本之后将会选择a的一个更高的版本, 如果没有更高版本将会报错
 
 3. 当然, 如果不想使用exclude来解决依赖冲突, 那么我们也可以使用replace指定来强制指定一个版本
 
@@ -2627,8 +2856,8 @@ go mod replace用于将一个模块替换为另外一个模块
 ~~~~go.mod
 replace (
     golang.org/x/net v1.2.3 => example.com/fork/net v1.4.5
-    golang.org/x/net => example.com/fork/net v1.4.5
-    golang.org/x/net v1.2.3 => ./fork/net
+    golang.org/x/net => example.com/fork/net v1.4.5 # 强制指定版本
+    golang.org/x/net v1.2.3 => ./fork/net # 替换为本地的项目
     golang.org/x/net => ./fork/net
 )
 ~~~~
@@ -2653,11 +2882,22 @@ replace (
 
 incompatible表示不兼容的意思.
 
-在go中, 一个 Module 的版本号需要遵循 `v<major>.<minor>.<patch>` 的格式，此外，如果 `major` 版本号大于 1 时，其版本号还需要体现在 Module 名字中。
+在go中, 一个 Module 的版本号需要遵循 `v<major>.<minor>.<patch>` 的格式
 
-比如 Module `github.com/RainbowMango/m`，如果git中的版本小于2.x.x, 其module名字应该表示为`github.com/RainbowMango/m`, 如果其版本号增长到 2.x.x 时，其 Module 名字也需要相应的改变为： `github.com/RainbowMango/m/v2`。即，如果 `major` 版本号大于 1 时，需要在 Module 名字中体现版本。
+- 同一个majro版本, 高版本必须兼容低版本
+- 不同major版本之间, 可以不兼容
 
-但是如果版本号增长到2.x.x时, 其module名字上没有添加版本信息, 即还是使用的`github.com/RainbowMango/m`, 那么在使用命令 `go mod tidy`，go 命令会自动查找 Module m 的最新版本，即 `v2.x.x`。 由于 Module 为不规范的 Module，为了加以区分，go 命令会在 `go.mod` 中增加 `+incompatible` 标识。
+此外，如果 `major` 版本号大于 1 时，其版本号还需要体现在 Module 名字中。
+
+比如 Module `github.com/RainbowMango/m`，如果git中的版本小于2.x.x, 其module名字应该表示为`github.com/RainbowMango/m`
+
+如果其版本号增长到 2.x.x 时，其 Module 名字也需要相应的改变为： `github.com/RainbowMango/m/v2`。即，如果 `major` 版本号大于 1 时，需要在 Module 名字中体现版本。
+
+但是如果版本号增长到2.x.x时, 其module名字上没有添加版本信息, 即还是使用的`github.com/RainbowMango/m` , 而没有使用`github.com/RainbowMango/m/v2`, 那么在使用命令 `go mod tidy`，根据go module的规则, 会选择高版本，即 `v2.x.x`。 
+
+**这个时候go module就会发现, 版本是v2版本了, 但是路径上面没有添加v2的标识, 那么go module就会认为这个模块在执行`go mod tidy`的时候, 当前选择的新版本和正在使用的低版本随时会变得不可兼容**
+
+为了警告你这个不兼容的风险,  go 命令会在 `go.mod` 中增加 `+incompatible` 标识。
 
 ```
 require (
@@ -2665,7 +2905,7 @@ require (
 )
 ```
 
-除了增加 `+incompatible`（不兼容）标识外，在其使用上没有区别。
+**如果你已经确认了没有不兼容的风险，那么你就可以不用管这个+incompatible**
 
 
 
