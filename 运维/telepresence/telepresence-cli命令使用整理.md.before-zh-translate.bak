@@ -1,0 +1,3719 @@
+# Telepresence CLI 命令使用整理
+
+- 来源页面：[Telepresence CLI Reference](https://telepresence.io/docs/reference/cli/telepresence)
+- 版本分支：`release/v2`（官方文档页面显示 Telepresence 2.28；少量子页面仍标注 2.27，本文按当前 `release/v2` 源文件整理）
+- 生成时间：2026-05-19 09:58:56
+- 命令页数量：87
+
+## 阅读说明
+
+- 本文按官方 `docs/reference/cli` 目录整理，包含顶层命令及其子命令。
+- `用法` 和 `参数` 保留官方 CLI 语法，便于直接复制到命令行对照。
+- 大多数命令都可追加 `--help` 查看本机安装版本对应的完整帮助。
+
+## 全局参数
+
+以下参数出现在大多数 `telepresence` 命令中：
+
+```text
+--config string     指定 Telepresence 配置文件路径，默认 $HOME/.config/telepresence/config.yml
+--output string     输出格式：json、yaml、default，默认 default
+--progress string   进度输出类型：auto、tty、plain、json、quiet，默认 auto
+--use string        匹配并唯一标识 daemon 容器的表达式
+```
+
+## 命令索引
+
+- [telepresence](#telepresence)：Connect your workstation to a Kubernetes cluster
+- [telepresence completion](#telepresence-completion)：Generate a shell completion script
+- [telepresence compose](#telepresence-compose)：Define and run multi-container applications with Telepresence and Docker
+- [telepresence compose attach](#telepresence-compose-attach)：Attach local standard input, output, and error streams to a service's running container
+- [telepresence compose bridge](#telepresence-compose-bridge)：Convert compose files into another model
+- [telepresence compose build](#telepresence-compose-build)：Build or rebuild services
+- [telepresence compose commit](#telepresence-compose-commit)：Create a new image from a service container's changes
+- [telepresence compose config](#telepresence-compose-config)：Parse, resolve and render compose file in canonical format
+- [telepresence compose cp](#telepresence-compose-cp)：docker compose cp [OPTIONS] SRC_PATH|- SERVICE:DEST_PATH
+- [telepresence compose create](#telepresence-compose-create)：Creates containers for a service
+- [telepresence compose down](#telepresence-compose-down)：Stop and remove containers, networks
+- [telepresence compose events](#telepresence-compose-events)：Receive real time events from containers
+- [telepresence compose exec](#telepresence-compose-exec)：Execute a command in a running container
+- [telepresence compose export](#telepresence-compose-export)：Export a service container's filesystem as a tar archive
+- [telepresence compose images](#telepresence-compose-images)：List images used by the created containers
+- [telepresence compose kill](#telepresence-compose-kill)：Force stop service containers
+- [telepresence compose logs](#telepresence-compose-logs)：View output from containers
+- [telepresence compose ls](#telepresence-compose-ls)：List running compose projects
+- [telepresence compose pause](#telepresence-compose-pause)：Pause services
+- [telepresence compose port](#telepresence-compose-port)：Print the public port for a port binding
+- [telepresence compose ps](#telepresence-compose-ps)：List containers
+- [telepresence compose publish](#telepresence-compose-publish)：Publish compose application
+- [telepresence compose pull](#telepresence-compose-pull)：Pull service images
+- [telepresence compose push](#telepresence-compose-push)：Push service images
+- [telepresence compose restart](#telepresence-compose-restart)：Restart service containers
+- [telepresence compose rm](#telepresence-compose-rm)：Removes stopped service containers
+- [telepresence compose run](#telepresence-compose-run)：Run a one-off command on a service
+- [telepresence compose scale](#telepresence-compose-scale)：Scale services
+- [telepresence compose start](#telepresence-compose-start)：Start services
+- [telepresence compose stats](#telepresence-compose-stats)：Display a live stream of container(s) resource usage statistics
+- [telepresence compose stop](#telepresence-compose-stop)：Stop services
+- [telepresence compose top](#telepresence-compose-top)：Display the running processes
+- [telepresence compose unpause](#telepresence-compose-unpause)：Unpause services
+- [telepresence compose up](#telepresence-compose-up)：Create and start containers
+- [telepresence compose version](#telepresence-compose-version)：Show the Docker Compose version information
+- [telepresence compose volumes](#telepresence-compose-volumes)：List volumes
+- [telepresence compose wait](#telepresence-compose-wait)：Block until containers of all (or specified) services stop.
+- [telepresence compose watch](#telepresence-compose-watch)：Watch build context for service and rebuild/refresh containers when files are updated
+- [telepresence config](#telepresence-config)：Telepresence configuration commands
+- [telepresence config view](#telepresence-config-view)：View current Telepresence configuration
+- [telepresence connect](#telepresence-connect)：Connect to a cluster
+- [telepresence curl](#telepresence-curl)：curl with daemon network
+- [telepresence docker-run](#telepresence-docker-run)：Docker run with daemon network
+- [telepresence gather-logs](#telepresence-gather-logs)：Gather logs from traffic-manager, traffic-agent, user and root daemons, and export them into a zip file.
+- [telepresence genyaml](#telepresence-genyaml)：Generate YAML for use in kubernetes manifests.
+- [telepresence genyaml annotations](#telepresence-genyaml-annotations)：Generate YAML for the pod template metadata annotations.
+- [telepresence genyaml config](#telepresence-genyaml-config)：Generate YAML for the agent's entry in the telepresence-agents configmap.
+- [telepresence genyaml container](#telepresence-genyaml-container)：Generate YAML for the traffic-agent container.
+- [telepresence genyaml initcontainer](#telepresence-genyaml-initcontainer)：Generate YAML for the traffic-agent init container.
+- [telepresence genyaml volume](#telepresence-genyaml-volume)：Generate YAML for the traffic-agent volume.
+- [telepresence helm](#telepresence-helm)：Helm commands using the embedded Telepresence Helm chart.
+- [telepresence helm install](#telepresence-helm-install)：Install telepresence traffic manager
+- [telepresence helm lint](#telepresence-helm-lint)：Verify the embedded telepresence Helm chart
+- [telepresence helm uninstall](#telepresence-helm-uninstall)：Uninstall telepresence traffic manager
+- [telepresence helm upgrade](#telepresence-helm-upgrade)：Upgrade telepresence traffic manager
+- [telepresence helm version](#telepresence-helm-version)：Print the version of the Helm client
+- [telepresence ingest](#telepresence-ingest)：Ingest a container
+- [telepresence intercept](#telepresence-intercept)：Intercept a service
+- [telepresence leave](#telepresence-leave)：Remove existing intercept
+- [telepresence list-contexts](#telepresence-list-contexts)：Show all contexts
+- [telepresence list-namespaces](#telepresence-list-namespaces)：Show all namespaces
+- [telepresence list](#telepresence-list)：List current intercepts
+- [telepresence loglevel](#telepresence-loglevel)：Temporarily change the log-level of the traffic-manager, traffic-agent, and user and root daemons
+- [telepresence mcp](#telepresence-mcp)：MCP server management
+- [telepresence mcp claude](#telepresence-mcp-claude)：Manage Claude Desktop MCP servers
+- [telepresence mcp claude disable](#telepresence-mcp-claude-disable)：Remove server from Claude config
+- [telepresence mcp claude enable](#telepresence-mcp-claude-enable)：Add server to Claude config
+- [telepresence mcp claude list](#telepresence-mcp-claude-list)：Show Claude MCP servers
+- [telepresence mcp cursor](#telepresence-mcp-cursor)：Manage Cursor MCP servers
+- [telepresence mcp cursor disable](#telepresence-mcp-cursor-disable)：Remove server from Cursor config
+- [telepresence mcp cursor enable](#telepresence-mcp-cursor-enable)：Add server to Cursor config
+- [telepresence mcp cursor list](#telepresence-mcp-cursor-list)：Show Cursor MCP servers
+- [telepresence mcp start](#telepresence-mcp-start)：Start the MCP server
+- [telepresence mcp stream](#telepresence-mcp-stream)：Stream the MCP server over HTTP
+- [telepresence mcp tools](#telepresence-mcp-tools)：Export tools as JSON
+- [telepresence mcp vscode](#telepresence-mcp-vscode)：Manage VSCode MCP servers
+- [telepresence mcp vscode disable](#telepresence-mcp-vscode-disable)：Remove server from VSCode config
+- [telepresence mcp vscode enable](#telepresence-mcp-vscode-enable)：Add server to VSCode config
+- [telepresence mcp vscode list](#telepresence-mcp-vscode-list)：Show VSCode MCP servers
+- [telepresence quit](#telepresence-quit)：Tell telepresence daemons to quit
+- [telepresence replace](#telepresence-replace)：Replace a container
+- [telepresence revoke](#telepresence-revoke)：Revoke an intercept by intercept ID. The intercept ID must be in the format &lt;session_id&gt;:&lt;intercept_name&gt;
+- [telepresence serve](#telepresence-serve)：Start the browser on a remote service
+- [telepresence status](#telepresence-status)：Show connectivity status
+- [telepresence uninstall](#telepresence-uninstall)：Uninstall telepresence agents
+- [telepresence version](#telepresence-version)：Show version
+- [telepresence wiretap](#telepresence-wiretap)：Wiretap a Service
+
+## telepresence
+
+**用途**：Connect your workstation to a Kubernetes cluster
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence](https://telepresence.io/docs/reference/cli/telepresence)
+
+### 概要
+
+Telepresence can connect to a cluster and route all outbound traffic from your
+workstation to that cluster so that software running locally can communicate
+as if it executed remotely, inside the cluster. This is achieved using the
+command:
+```bash
+telepresence connect
+```
+
+Telepresence can also intercept traffic intended for a specific service in a
+cluster and redirect it to your local workstation:
+
+```bash
+telepresence intercept <name of service>
+```
+
+Telepresence uses a background process, the user daemon, to manage the cluster
+session, and a system service, the root daemon, to modify the workstation's
+network and DNS so that the cluster's services become available locally.
+
+If Telepresence was installed as a standalone binary, the system service will
+not be present. A root daemon must then be started using sudo, which may
+result in a password prompt.
+
+### 用法
+```
+  telepresence [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [completion](telepresence_completion) | Generate a shell completion script |
+| [compose](telepresence_compose) | Define and run multi-container applications with Telepresence and Docker |
+| [config](telepresence_config) | Telepresence configuration commands |
+| [connect](telepresence_connect) | Connect to a cluster |
+| [curl](telepresence_curl) | curl with daemon network |
+| [docker-run](telepresence_docker-run) | Docker run with daemon network |
+| [gather-logs](telepresence_gather-logs) | Gather logs from traffic-manager, traffic-agent, user and root daemons, and export them into a zip file. |
+| [genyaml](telepresence_genyaml) | Generate YAML for use in kubernetes manifests. |
+| [helm](telepresence_helm) | Helm commands using the embedded Telepresence Helm chart. |
+| [ingest](telepresence_ingest) | Ingest a container |
+| [intercept](telepresence_intercept) | Intercept a service |
+| [leave](telepresence_leave) | Remove existing intercept |
+| [list](telepresence_list) | List current intercepts |
+| [list-contexts](telepresence_list-contexts) | Show all contexts |
+| [list-namespaces](telepresence_list-namespaces) | Show all namespaces |
+| [loglevel](telepresence_loglevel) | Temporarily change the log-level of the traffic-manager, traffic-agent, and user and root daemons |
+| [mcp](telepresence_mcp) | MCP server management |
+| [quit](telepresence_quit) | Tell telepresence daemons to quit |
+| [replace](telepresence_replace) | Replace a container |
+| [revoke](telepresence_revoke) | Revoke an intercept by intercept ID. The intercept ID must be in the format <session_id>:<intercept_name> |
+| [serve](telepresence_serve) | Start the browser on a remote service |
+| [status](telepresence_status) | Show connectivity status |
+| [uninstall](telepresence_uninstall) | Uninstall telepresence agents |
+| [version](telepresence_version) | Show version |
+| [wiretap](telepresence_wiretap) | Wiretap a Service |
+
+### 参数
+```
+  -h, --help   help for telepresence
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence [command] --help`。
+
+## telepresence completion
+
+**用途**：Generate a shell completion script
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_completion](https://telepresence.io/docs/reference/cli/telepresence_completion)
+
+### 概要
+
+To load completions:
+
+### Bash:
+```bash
+  $ source <(telepresence completion bash)
+
+  # To load completions for each session, execute once:
+  # Linux:
+  $ telepresence completion bash > /etc/bash_completion.d/telepresence
+  # macOS:
+  $ telepresence completion bash > $(brew --prefix)/etc/bash_completion.d/telepresence
+```
+
+### Zsh:
+```zsh
+
+  # If shell completion is not already enabled in your environment,
+  # you will need to enable it.  You can execute the following once:
+
+  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
+
+  # To load completions for each session, execute once:
+  $ telepresence completion zsh > "${fpath[1]}/_telepresence"
+
+  # You will need to start a new shell for this setup to take effect.
+```
+
+### fish:
+```fish
+
+  $ telepresence completion fish | source
+
+  # To load completions for each session, execute once:
+  $ telepresence completion fish > ~/.config/fish/completions/telepresence.fish
+```
+
+### PowerShell:
+```powershell
+
+  PS> telepresence completion powershell | Out-String | Invoke-Expression
+
+  # To load completions for every new session, run:
+  PS> telepresence completion powershell > telepresence.ps1
+  # and source this file from your PowerShell profile.
+```
+
+### 用法
+```
+  telepresence completion [flags]
+```
+
+### 参数
+```
+  -h, --help   help for completion
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose
+
+**用途**：Define and run multi-container applications with Telepresence and Docker
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose](https://telepresence.io/docs/reference/cli/telepresence_compose)
+
+### 用法
+```
+  telepresence compose [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [attach](telepresence_compose_attach) | Attach local standard input, output, and error streams to a service's running container |
+| [bridge](telepresence_compose_bridge) | Convert compose files into another model |
+| [build](telepresence_compose_build) | Build or rebuild services |
+| [commit](telepresence_compose_commit) | Create a new image from a service container's changes |
+| [config](telepresence_compose_config) | Parse, resolve and render compose file in canonical format |
+| [cp](telepresence_compose_cp) | docker compose cp [OPTIONS] SRC_PATH|- SERVICE:DEST_PATH |
+| [create](telepresence_compose_create) | Creates containers for a service |
+| [down](telepresence_compose_down) | Stop and remove containers, networks |
+| [events](telepresence_compose_events) | Receive real time events from containers |
+| [exec](telepresence_compose_exec) | Execute a command in a running container |
+| [export](telepresence_compose_export) | Export a service container's filesystem as a tar archive |
+| [images](telepresence_compose_images) | List images used by the created containers |
+| [kill](telepresence_compose_kill) | Force stop service containers |
+| [logs](telepresence_compose_logs) | View output from containers |
+| [ls](telepresence_compose_ls) | List running compose projects |
+| [pause](telepresence_compose_pause) | Pause services |
+| [port](telepresence_compose_port) | Print the public port for a port binding |
+| [ps](telepresence_compose_ps) | List containers |
+| [publish](telepresence_compose_publish) | Publish compose application |
+| [pull](telepresence_compose_pull) | Pull service images |
+| [push](telepresence_compose_push) | Push service images |
+| [restart](telepresence_compose_restart) | Restart service containers |
+| [rm](telepresence_compose_rm) | Removes stopped service containers |
+| [run](telepresence_compose_run) | Run a one-off command on a service |
+| [scale](telepresence_compose_scale) | Scale services |
+| [start](telepresence_compose_start) | Start services |
+| [stats](telepresence_compose_stats) | Display a live stream of container(s) resource usage statistics |
+| [stop](telepresence_compose_stop) | Stop services |
+| [top](telepresence_compose_top) | Display the running processes |
+| [unpause](telepresence_compose_unpause) | Unpause services |
+| [up](telepresence_compose_up) | Create and start containers |
+| [version](telepresence_compose_version) | Show the Docker Compose version information |
+| [volumes](telepresence_compose_volumes) | List volumes |
+| [wait](telepresence_compose_wait) | Block until containers of all (or specified) services stop. |
+| [watch](telepresence_compose_watch) | Watch build context for service and rebuild/refresh containers when files are updated |
+
+### 参数
+```
+  -h, --help   help for compose
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence compose [command] --help`。
+
+## telepresence compose attach
+
+**用途**：Attach local standard input, output, and error streams to a service's running container
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_attach](https://telepresence.io/docs/reference/cli/telepresence_compose_attach)
+
+### 用法
+```
+  telepresence compose attach [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for attach
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose attach flags:
+```
+      --detach-keys string   Override the key sequence for detaching from a container.
+      --index int            index of the container if service has multiple replicas.
+      --no-stdin             Do not attach STDIN
+      --sig-proxy            Proxy all received signals to the process (default true)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose bridge
+
+**用途**：Convert compose files into another model
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_bridge](https://telepresence.io/docs/reference/cli/telepresence_compose_bridge)
+
+### 用法
+```
+  telepresence compose bridge [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for bridge
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose bridge flags:
+```
+
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose build
+
+**用途**：Build or rebuild services
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_build](https://telepresence.io/docs/reference/cli/telepresence_compose_build)
+
+### 用法
+```
+  telepresence compose build [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for build
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose build flags:
+```
+      --build-arg stringArray   Set build-time variables for services
+      --builder string          Set builder to use
+      --check                   Check build configuration
+  -m, --memory bytes            Set memory limit for the build container. Not supported by BuildKit.
+      --no-cache                Do not use cache when building the image
+      --print                   Print equivalent bake file
+      --provenance string       Add a provenance attestation
+      --pull                    Always attempt to pull a newer version of the image
+      --push                    Push service images
+  -q, --quiet                   Suppress the build output
+      --sbom string             Add a SBOM attestation
+      --ssh string              Set SSH authentications used when building service images. (use 'default' for using your default SSH Agent)
+      --with-dependencies       Also build dependencies (transitively)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose commit
+
+**用途**：Create a new image from a service container's changes
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_commit](https://telepresence.io/docs/reference/cli/telepresence_compose_commit)
+
+### 用法
+```
+  telepresence compose commit [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for commit
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose commit flags:
+```
+  -a, --author string    Author (e.g., "John Hannibal Smith <hannibal@a-team.com>")
+  -c, --change list      Apply Dockerfile instruction to the created image
+      --index int        index of the container if service has multiple replicas.
+  -m, --message string   Commit message
+  -p, --pause            Pause container during commit (default true)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose config
+
+**用途**：Parse, resolve and render compose file in canonical format
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_config](https://telepresence.io/docs/reference/cli/telepresence_compose_config)
+
+### 用法
+```
+  telepresence compose config [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for config
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose config flags:
+```
+      --environment             Print environment used for interpolation.
+      --format string           Format the output. Values: [yaml | json]
+      --hash string             Print the service config hash, one per line.
+      --images                  Print the image names, one per line.
+      --lock-image-digests      Produces an override file with image digests
+      --models                  Print the model names, one per line.
+      --networks                Print the network names, one per line.
+      --no-consistency          Don't check model consistency - warning: may produce invalid Compose output
+      --no-env-resolution       Don't resolve service env files
+      --no-interpolate          Don't interpolate environment variables
+      --no-normalize            Don't normalize compose model
+      --no-path-resolution      Don't resolve file paths
+  -o, --output string           Save to file (default to stdout)
+      --profiles                Print the profile names, one per line.
+  -q, --quiet                   Only validate the configuration, don't print anything
+      --resolve-image-digests   Pin image tags to digests
+      --services                Print the service names, one per line.
+      --variables               Print model variables and default values.
+      --volumes                 Print the volume names, one per line.
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose cp
+
+**用途**：docker compose cp [OPTIONS] SRC_PATH|- SERVICE:DEST_PATH
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_cp](https://telepresence.io/docs/reference/cli/telepresence_compose_cp)
+
+### 用法
+```
+  telepresence compose cp [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for cp
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose cp flags:
+```
+      --all           Include containers created by the run command
+  -a, --archive       Archive mode (copy all uid/gid information)
+  -L, --follow-link   Always follow symbol link in SRC_PATH
+      --index int     Index of the container if service has multiple replicas
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose create
+
+**用途**：Creates containers for a service
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_create](https://telepresence.io/docs/reference/cli/telepresence_compose_create)
+
+### 用法
+```
+  telepresence compose create [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for create
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose create flags:
+```
+      --build            Build images before starting containers
+      --force-recreate   Recreate containers even if their configuration and image haven't changed
+      --no-build         Don't build an image, even if it's policy
+      --no-recreate      If containers already exist, don't recreate them. Incompatible with --force-recreate.
+      --pull string      Pull image before running ("always"|"missing"|"never"|"build") (default "policy")
+      --quiet-pull       Pull without printing progress information
+      --remove-orphans   Remove containers for services not defined in the Compose file
+      --scale uint32     Scale SERVICE to NUM instances. Overrides the scale setting in the Compose file if present.
+  -y, --yes              Assume "yes" as answer to all prompts and run non-interactively
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose down
+
+**用途**：Stop and remove containers, networks
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_down](https://telepresence.io/docs/reference/cli/telepresence_compose_down)
+
+### 用法
+```
+  telepresence compose down [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for down
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose down flags:
+```
+      --remove-orphans   Remove containers for services not defined in the Compose file
+      --rmi string       Remove images used by services. "local" remove only images that don't have a custom tag ("local"|"all")
+  -t, --timeout int      Specify a shutdown timeout in seconds
+  -v, --volumes          Remove named volumes declared in the "volumes" section of the Compose file and anonymous volumes attached to containers
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose events
+
+**用途**：Receive real time events from containers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_events](https://telepresence.io/docs/reference/cli/telepresence_compose_events)
+
+### 用法
+```
+  telepresence compose events [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for events
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose events flags:
+```
+      --json           Output events as a stream of json objects
+      --since string   Show all events created since timestamp
+      --until string   Stream events until this timestamp
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose exec
+
+**用途**：Execute a command in a running container
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_exec](https://telepresence.io/docs/reference/cli/telepresence_compose_exec)
+
+### 用法
+```
+  telepresence compose exec [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for exec
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose exec flags:
+```
+  -d, --detach            Detached mode: Run command in the background
+  -e, --env stringArray   Set environment variables
+      --index int         Index of the container if service has multiple replicas
+  -T, --no-tty            Disable pseudo-TTY allocation. By default 'docker compose exec' allocates a TTY. (default true)
+      --privileged        Give extended privileges to the process
+  -u, --user string       Run the command as this user
+  -w, --workdir string    Path to workdir directory for this command
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose export
+
+**用途**：Export a service container's filesystem as a tar archive
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_export](https://telepresence.io/docs/reference/cli/telepresence_compose_export)
+
+### 用法
+```
+  telepresence compose export [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for export
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose export flags:
+```
+      --index int       index of the container if service has multiple replicas.
+  -o, --output string   Write to a file, instead of STDOUT
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose images
+
+**用途**：List images used by the created containers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_images](https://telepresence.io/docs/reference/cli/telepresence_compose_images)
+
+### 用法
+```
+  telepresence compose images [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for images
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose images flags:
+```
+      --format string   Format the output. Values: [table | json] (default "table")
+  -q, --quiet           Only display IDs
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose kill
+
+**用途**：Force stop service containers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_kill](https://telepresence.io/docs/reference/cli/telepresence_compose_kill)
+
+### 用法
+```
+  telepresence compose kill [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for kill
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose kill flags:
+```
+      --remove-orphans   Remove containers for services not defined in the Compose file
+  -s, --signal string    SIGNAL to send to the container (default "\"SIGKILL\"")
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose logs
+
+**用途**：View output from containers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_logs](https://telepresence.io/docs/reference/cli/telepresence_compose_logs)
+
+### 用法
+```
+  telepresence compose logs [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for logs
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose logs flags:
+```
+  -f, --follow          Follow log output
+      --index int       index of the container if service has multiple replicas
+      --no-color        Produce monochrome output
+      --no-log-prefix   Don't print prefix in logs
+      --since string    Show logs since timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)
+  -n, --tail string     Number of lines to show from the end of the logs for each container (default "all")
+  -t, --timestamps      Show timestamps
+      --until string    Show logs before a timestamp (e.g. 2013-01-02T13:23:37Z) or relative (e.g. 42m for 42 minutes)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose ls
+
+**用途**：List running compose projects
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_ls](https://telepresence.io/docs/reference/cli/telepresence_compose_ls)
+
+### 用法
+```
+  telepresence compose ls [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for ls
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose ls flags:
+```
+  -a, --all             Show all stopped Compose projects
+      --filter string   Filter output based on conditions provided
+      --format string   Format the output. Values: [table | json] (default "table")
+  -q, --quiet           Only display project names
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose pause
+
+**用途**：Pause services
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_pause](https://telepresence.io/docs/reference/cli/telepresence_compose_pause)
+
+### 用法
+```
+  telepresence compose pause [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for pause
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose pause flags:
+```
+
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose port
+
+**用途**：Print the public port for a port binding
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_port](https://telepresence.io/docs/reference/cli/telepresence_compose_port)
+
+### 用法
+```
+  telepresence compose port [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for port
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose port flags:
+```
+      --index int         Index of the container if service has multiple replicas
+      --protocol string   tcp or udp (default "\"tcp\"")
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose ps
+
+**用途**：List containers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_ps](https://telepresence.io/docs/reference/cli/telepresence_compose_ps)
+
+### 用法
+```
+  telepresence compose ps [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for ps
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose ps flags:
+```
+  -a, --all                  Show all stopped containers (including those created by the run command)
+      --filter string        Filter services by a property (supported filters: status)
+      --format string        Format output using a custom template: 'table':            Print output in table format with column headers (default) 'table TEMPLATE':   Print output in table format using the given Go template 'json':             Print in JSON format 'TEMPLATE':         Print output using the given Go template. Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates (default "table")
+      --no-trunc             Don't truncate output
+      --orphans              Include orphaned services (not declared by project) (default true)
+  -q, --quiet                Only display IDs
+      --services             Display services
+      --status stringArray   Filter services by status. Values: [paused | restarting | removing | running | dead | created | exited]
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose publish
+
+**用途**：Publish compose application
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_publish](https://telepresence.io/docs/reference/cli/telepresence_compose_publish)
+
+### 用法
+```
+  telepresence compose publish [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for publish
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose publish flags:
+```
+      --app                     Published compose application (includes referenced images)
+      --oci-version string      OCI image/artifact specification version (automatically determined by default)
+      --resolve-image-digests   Pin image tags to digests
+      --with-env                Include environment variables in the published OCI artifact
+  -y, --yes                     Assume "yes" as answer to all prompts
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose pull
+
+**用途**：Pull service images
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_pull](https://telepresence.io/docs/reference/cli/telepresence_compose_pull)
+
+### 用法
+```
+  telepresence compose pull [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for pull
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose pull flags:
+```
+      --ignore-buildable       Ignore images that can be built
+      --ignore-pull-failures   Pull what it can and ignores images with pull failures
+      --include-deps           Also pull services declared as dependencies
+      --policy string          Apply pull policy ("missing"|"always")
+  -q, --quiet                  Pull without printing progress information
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose push
+
+**用途**：Push service images
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_push](https://telepresence.io/docs/reference/cli/telepresence_compose_push)
+
+### 用法
+```
+  telepresence compose push [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for push
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose push flags:
+```
+      --ignore-push-failures   Push what it can and ignores images with push failures
+      --include-deps           Also push images of services declared as dependencies
+  -q, --quiet                  Push without printing progress information
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose restart
+
+**用途**：Restart service containers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_restart](https://telepresence.io/docs/reference/cli/telepresence_compose_restart)
+
+### 用法
+```
+  telepresence compose restart [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for restart
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose restart flags:
+```
+      --no-deps       Don't restart dependent services
+  -t, --timeout int   Specify a shutdown timeout in seconds
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose rm
+
+**用途**：Removes stopped service containers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_rm](https://telepresence.io/docs/reference/cli/telepresence_compose_rm)
+
+### 用法
+```
+  telepresence compose rm [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for rm
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose rm flags:
+```
+  -f, --force     Don't ask to confirm removal
+  -s, --stop      Stop the containers, if required, before removing
+  -v, --volumes   Remove any anonymous volumes attached to containers
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose run
+
+**用途**：Run a one-off command on a service
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_run](https://telepresence.io/docs/reference/cli/telepresence_compose_run)
+
+### 用法
+```
+  telepresence compose run [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for run
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose run flags:
+```
+      --build                       Build image before starting container
+      --cap-add list                Add Linux capabilities
+      --cap-drop list               Drop Linux capabilities
+  -d, --detach                      Run container in background and print container ID
+      --entrypoint string           Override the entrypoint of the image
+  -e, --env stringArray             Set environment variables
+      --env-from-file stringArray   Set environment variables from file
+  -i, --interactive                 Keep STDIN open even if not attached (default true)
+  -l, --label stringArray           Add or override a label
+      --name string                 Assign a name to the container
+  -T, --no-TTY                      Disable pseudo-TTY allocation (default: auto-detected) (default true)
+      --no-deps                     Don't start linked services
+  -p, --publish stringArray         Publish a container's port(s) to the host
+      --pull string                 Pull image before running ("always"|"missing"|"never") (default "policy")
+  -q, --quiet                       Don't print anything to STDOUT
+      --quiet-build                 Suppress progress output from the build process
+      --quiet-pull                  Pull without printing progress information
+      --remove-orphans              Remove containers for services not defined in the Compose file
+      --rm                          Automatically remove the container when it exits
+  -P, --service-ports               Run command with all service's ports enabled and mapped to the host
+      --use-aliases                 Use the service's network useAliases in the network(s) the container connects to
+  -u, --user string                 Run as specified username or uid
+  -v, --volume stringArray          Bind mount a volume
+  -w, --workdir string              Working directory inside the container
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose scale
+
+**用途**：Scale services
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_scale](https://telepresence.io/docs/reference/cli/telepresence_compose_scale)
+
+### 用法
+```
+  telepresence compose scale [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for scale
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose scale flags:
+```
+      --no-deps   Don't start linked services
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose start
+
+**用途**：Start services
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_start](https://telepresence.io/docs/reference/cli/telepresence_compose_start)
+
+### 用法
+```
+  telepresence compose start [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for start
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose start flags:
+```
+      --wait               Wait for services to be running|healthy. Implies detached mode.
+      --wait-timeout int   Maximum duration in seconds to wait for the project to be running|healthy
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose stats
+
+**用途**：Display a live stream of container(s) resource usage statistics
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_stats](https://telepresence.io/docs/reference/cli/telepresence_compose_stats)
+
+### 用法
+```
+  telepresence compose stats [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for stats
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose stats flags:
+```
+  -a, --all             Show all containers (default shows just running)
+      --format string   Format output using a custom template: 'table':            Print output in table format with column headers (default) 'table TEMPLATE':   Print output in table format using the given Go template 'json':             Print in JSON format 'TEMPLATE':         Print output using the given Go template. Refer to https://docs.docker.com/engine/cli/formatting/ for more information about formatting output with templates
+      --no-stream       Disable streaming stats and only pull the first result
+      --no-trunc        Do not truncate output
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose stop
+
+**用途**：Stop services
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_stop](https://telepresence.io/docs/reference/cli/telepresence_compose_stop)
+
+### 用法
+```
+  telepresence compose stop [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for stop
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose stop flags:
+```
+  -t, --timeout int   Specify a shutdown timeout in seconds
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose top
+
+**用途**：Display the running processes
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_top](https://telepresence.io/docs/reference/cli/telepresence_compose_top)
+
+### 用法
+```
+  telepresence compose top [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for top
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose top flags:
+```
+
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose unpause
+
+**用途**：Unpause services
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_unpause](https://telepresence.io/docs/reference/cli/telepresence_compose_unpause)
+
+### 用法
+```
+  telepresence compose unpause [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for unpause
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose unpause flags:
+```
+
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose up
+
+**用途**：Create and start containers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_up](https://telepresence.io/docs/reference/cli/telepresence_compose_up)
+
+### 用法
+```
+  telepresence compose up [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for up
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose up flags:
+```
+      --abort-on-container-exit      Stops all containers if any container was stopped. Incompatible with -d
+      --abort-on-container-failure   Stops all containers if any container exited with failure. Incompatible with -d
+      --always-recreate-deps         Recreate dependent containers. Incompatible with --no-recreate.
+      --attach stringArray           Restrict attaching to the specified services. Incompatible with --attach-dependencies.
+      --attach-dependencies          Automatically attach to log output of dependent services
+      --build                        Build images before starting containers
+  -d, --detach                       Detached mode: Run containers in the background
+      --exit-code-from string        Return the exit code of the selected service container. Implies --abort-on-container-exit
+      --force-recreate               Recreate containers even if their configuration and image haven't changed
+      --menu                         Enable interactive shortcuts when running attached. Incompatible with --detach. Can also be enable/disable by setting COMPOSE_MENU environment var.
+      --no-attach stringArray        Do not attach (stream logs) to the specified services
+      --no-build                     Don't build an image, even if it's policy
+      --no-color                     Produce monochrome output
+      --no-deps                      Don't start linked services
+      --no-log-prefix                Don't print prefix in logs
+      --no-recreate                  If containers already exist, don't recreate them. Incompatible with --force-recreate.
+      --no-start                     Don't start the services after creating them
+      --pull string                  Pull image before running ("always"|"missing"|"never") (default "policy")
+      --quiet-build                  Suppress the build output
+      --quiet-pull                   Pull without printing progress information
+      --remove-orphans               Remove containers for services not defined in the Compose file
+  -V, --renew-anon-volumes           Recreate anonymous volumes instead of retrieving data from the previous containers
+      --scale uint32                 Scale SERVICE to NUM instances. Overrides the scale setting in the Compose file if present.
+  -t, --timeout int                  Use this timeout in seconds for container shutdown when attached or when containers are already running
+      --timestamps                   Show timestamps
+      --wait                         Wait for services to be running|healthy. Implies detached mode.
+      --wait-timeout int             Maximum duration in seconds to wait for the project to be running|healthy
+  -w, --watch                        Watch source code and rebuild/refresh containers when files are updated.
+  -y, --yes                          Assume "yes" as answer to all prompts and run non-interactively
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose version
+
+**用途**：Show the Docker Compose version information
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_version](https://telepresence.io/docs/reference/cli/telepresence_compose_version)
+
+### 用法
+```
+  telepresence compose version [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for version
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose version flags:
+```
+  -f, --format string   Format the output. Values: [pretty | json]. (Default: pretty)
+      --short           Shows only Compose's version number
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose volumes
+
+**用途**：List volumes
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_volumes](https://telepresence.io/docs/reference/cli/telepresence_compose_volumes)
+
+### 用法
+```
+  telepresence compose volumes [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for volumes
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose volumes flags:
+```
+      --format string   Format output using a custom template: 'table':            Print output in table format with column headers (default) 'table TEMPLATE':   Print output in table format using the given Go template 'json':             Print in JSON format 'TEMPLATE':         Print output using the given Go template. Refer to https://docs.docker.com/go/formatting/ for more information about formatting output with templates (default "table")
+  -q, --quiet           Only display volume names
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose wait
+
+**用途**：Block until containers of all (or specified) services stop.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_wait](https://telepresence.io/docs/reference/cli/telepresence_compose_wait)
+
+### 用法
+```
+  telepresence compose wait [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for wait
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose wait flags:
+```
+      --down-project   Drops project when the first container stops
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence compose watch
+
+**用途**：Watch build context for service and rebuild/refresh containers when files are updated
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_compose_watch](https://telepresence.io/docs/reference/cli/telepresence_compose_watch)
+
+### 用法
+```
+  telepresence compose watch [flags] [services]
+```
+
+### 参数
+```
+  -h, --help   help for watch
+```
+
+### Compose 参数
+```
+      --env-file stringArray       Optional environment files
+  -f, --file stringArray           Compose configuration files
+      --profile stringArray        Profile to enable
+      --project-directory string   Specify an alternate working directory (default: the path of the, first specified, Compose file)
+      --project-name string        Project name
+```
+
+### Compose watch flags:
+```
+      --no-up   Do not build & start services before watching
+      --prune   Prune dangling images on rebuild (default true)
+      --quiet   hide build output
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence config
+
+**用途**：Telepresence configuration commands
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_config](https://telepresence.io/docs/reference/cli/telepresence_config)
+
+### 用法
+```
+  telepresence config [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [view](telepresence_config_view) | View current Telepresence configuration |
+
+### 参数
+```
+  -h, --help   help for config
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence config [command] --help`。
+
+## telepresence config view
+
+**用途**：View current Telepresence configuration
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_config_view](https://telepresence.io/docs/reference/cli/telepresence_config_view)
+
+### 用法
+```
+  telepresence config view [flags]
+```
+
+### 参数
+```
+  -c, --client-only   Only view config from client file.
+  -h, --help          help for view
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence connect
+
+**用途**：Connect to a cluster
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_connect](https://telepresence.io/docs/reference/cli/telepresence_connect)
+
+### 用法
+```
+  telepresence connect [flags] [-- <command to run while connected>]
+```
+
+### 参数
+```
+      --allow-conflicting-subnets strings   Comma separated list of CIDR that will be allowed to conflict with local subnets
+      --also-proxy strings                  Additional comma separated list of CIDR to proxy
+      --docker                              Start, or connect to, daemon in a docker container
+      --expose stringArray                  Port that a containerized daemon will expose. See docker run -p for more info. Can be repeated
+  -h, --help                                help for connect
+      --hostname string                     Hostname used by a containerized daemon
+      --manager-namespace string            The namespace where the traffic manager is to be found. Overrides any other manager namespace set in config
+      --mapped-namespaces strings           Comma separated list of namespaces considered by DNS resolver and NAT for outbound connections. Defaults to all namespaces
+      --name string                         Optional name to use for the connection
+  -n, --namespace string                    If present, the namespace scope for this CLI request
+      --never-proxy strings                 Comma separated list of CIDR to never proxy
+      --proxy-via strings                   Use Network Address Translation to create virtual IPs for the given CIDR, and route via WORKLOAD. Must be in the form CIDR=WORKLOAD. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+      --reroute-local strings               Reroute port on local host to remote host. Format is <local port>:<host>:<port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --reroute-remote strings              Reroute port on remote host. Format is <host>:<port>:<new port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --vnat strings                        Use Network Address Translation to create virtual IPs for the given CIDR. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence curl
+
+**用途**：curl with daemon network
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_curl](https://telepresence.io/docs/reference/cli/telepresence_curl)
+
+### 用法
+```
+  telepresence curl
+```
+
+### 参数
+```
+  -h, --help   help for curl
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence docker-run
+
+**用途**：Docker run with daemon network
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_docker-run](https://telepresence.io/docs/reference/cli/telepresence_docker-run)
+
+### 用法
+```
+  telepresence docker-run
+```
+
+### 参数
+```
+  -h, --help   help for docker-run
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence gather-logs
+
+**用途**：Gather logs from traffic-manager, traffic-agent, user and root daemons, and export them into a zip file.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_gather-logs](https://telepresence.io/docs/reference/cli/telepresence_gather-logs)
+
+### 概要
+
+Gather logs from traffic-manager, traffic-agent, user and root daemons,
+and export them into a zip file. Useful if you are opening a Github issue or asking
+someone to help you debug Telepresence.
+
+### 用法
+```
+  telepresence gather-logs [flags]
+```
+
+### 示例
+```
+Here are a few examples of how you can use this command:
+# Get all logs and export to a given file
+telepresence gather-logs -o /tmp/telepresence_logs.zip
+
+# Get all logs and pod yaml manifests for components in the kubernetes cluster
+telepresence gather-logs -o /tmp/telepresence_logs.zip --get-pod-yaml
+
+# Get all logs for the daemons only
+telepresence gather-logs --traffic-agents=None --traffic-manager=False
+
+# Get all logs for pods that have "echo-easy" in the name, useful if you have multiple replicas
+telepresence gather-logs --traffic-manager=False --traffic-agents=echo-easy
+
+# Get all logs for a specific pod
+telepresence gather-logs --traffic-manager=False --traffic-agents=echo-easy-6848967857-tw4jw
+
+# Get logs from everything except the daemons
+telepresence gather-logs --daemons=None
+
+```
+
+### 参数
+```
+  -a, --anonymize               To anonymize pod names + namespaces from the logs
+      --daemons string          Comma separated list of daemons you want logs from: all, root, user, kubeauth, None (default "all")
+  -y, --get-pod-yaml            Get the yaml of any pods you are getting logs for
+  -h, --help                    help for gather-logs
+  -o, --output-file string      The file you want to output the logs to.
+      --traffic-agents string   Traffic-agents to collect logs from: all, name substring, None (default "all")
+      --traffic-manager         If you want to collect logs from the traffic-manager (default true)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence genyaml
+
+**用途**：Generate YAML for use in kubernetes manifests.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_genyaml](https://telepresence.io/docs/reference/cli/telepresence_genyaml)
+
+### 概要
+
+Generate traffic-agent yaml for use in kubernetes manifests.
+This allows the traffic agent to be injected by hand into existing kubernetes manifests.
+For your modified workload to be valid, you'll have to manually inject annotations, a
+container, and a volume into the workload; you can do this by running "genyaml config",
+"genyaml container", "genyaml initcontainer", "genyaml annotations", and "genyaml volume".
+
+NOTE: It is recommended that you not do this unless strictly necessary. Instead, we suggest letting
+telepresence's webhook injector configure the traffic agents on demand.
+
+### 用法
+```
+  telepresence genyaml [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [annotations](telepresence_genyaml_annotations) | Generate YAML for the pod template metadata annotations. |
+| [config](telepresence_genyaml_config) | Generate YAML for the agent's entry in the telepresence-agents configmap. |
+| [container](telepresence_genyaml_container) | Generate YAML for the traffic-agent container. |
+| [initcontainer](telepresence_genyaml_initcontainer) | Generate YAML for the traffic-agent init container. |
+| [volume](telepresence_genyaml_volume) | Generate YAML for the traffic-agent volume. |
+
+### 参数
+```
+  -h, --help            help for genyaml
+  -o, --output string   Path to the file to place the output in. Defaults to '-' which means stdout. (default "-")
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence genyaml [command] --help`。
+
+## telepresence genyaml annotations
+
+**用途**：Generate YAML for the pod template metadata annotations.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_genyaml_annotations](https://telepresence.io/docs/reference/cli/telepresence_genyaml_annotations)
+
+### 概要
+
+Generate YAML for the pod template metadata annotations. See genyaml for more info on what this means
+
+### 用法
+```
+  telepresence genyaml annotations [flags]
+```
+
+### 参数
+```
+  -a, --agent string    Path to the yaml containing the generated agent config
+  -h, --help            help for annotations
+  -o, --output string   Path to the file to place the output in. Defaults to '-' which means stdout. (default "-")
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence genyaml config
+
+**用途**：Generate YAML for the agent's entry in the telepresence-agents configmap.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_genyaml_config](https://telepresence.io/docs/reference/cli/telepresence_genyaml_config)
+
+### 概要
+
+Generate YAML for the agent's entry in the telepresence-agents configmap. See genyaml for more info on what this means
+
+### 用法
+```
+  telepresence genyaml config [flags]
+```
+
+### 参数
+```
+      --agent-image string         The qualified name of the agent image (default "ghcr.io/telepresenceio/tel2:<current version>")
+      --agent-port uint16          The port number you wish the agent to listen on. (default 9900)
+  -h, --help                       help for config
+  -i, --input string               Path to the yaml containing the workload definition (i.e. Deployment, StatefulSet, etc). Pass '-' for stdin.. Mutually exclusive to --workload
+      --loglevel                   The loglevel for the generated traffic-agent sidecar (default INFO)
+      --manager-namespace string   The traffic-manager namespace (default "ambassador")
+      --manager-port uint16        The traffic-manager API port (default 8081)
+  -n, --namespace string           If present, the namespace scope for this CLI request
+  -o, --output string              Path to the file to place the output in. Defaults to '-' which means stdout. (default "-")
+  -w, --workload string            Name of the workload. If given, the workload will be retrieved from the cluster, mutually exclusive to --input
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence genyaml container
+
+**用途**：Generate YAML for the traffic-agent container.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_genyaml_container](https://telepresence.io/docs/reference/cli/telepresence_genyaml_container)
+
+### 概要
+
+Generate YAML for the traffic-agent container. See genyaml for more info on what this means
+
+### 用法
+```
+  telepresence genyaml container [flags]
+```
+
+### 参数
+```
+  -a, --agent string       Path to the yaml containing the generated agent config
+  -h, --help               help for container
+  -i, --input string       Optional path to the yaml containing the workload definition (i.e. Deployment, StatefulSet, etc). Pass '-' for stdin. Loaded from cluster by default
+  -n, --namespace string   If present, the namespace scope for this CLI request
+  -o, --output string      Path to the file to place the output in. Defaults to '-' which means stdout. (default "-")
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence genyaml initcontainer
+
+**用途**：Generate YAML for the traffic-agent init container.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_genyaml_initcontainer](https://telepresence.io/docs/reference/cli/telepresence_genyaml_initcontainer)
+
+### 概要
+
+Generate YAML for the traffic-agent init container. See genyaml for more info on what this means
+
+### 用法
+```
+  telepresence genyaml initcontainer [flags]
+```
+
+### 参数
+```
+  -a, --agent string       Path to the yaml containing the generated agent config
+  -h, --help               help for initcontainer
+  -n, --namespace string   If present, the namespace scope for this CLI request
+  -o, --output string      Path to the file to place the output in. Defaults to '-' which means stdout. (default "-")
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence genyaml volume
+
+**用途**：Generate YAML for the traffic-agent volume.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_genyaml_volume](https://telepresence.io/docs/reference/cli/telepresence_genyaml_volume)
+
+### 概要
+
+Generate YAML for the traffic-agent volume. See genyaml for more info on what this means
+
+### 用法
+```
+  telepresence genyaml volume [flags]
+```
+
+### 参数
+```
+  -a, --agent string       Path to the yaml containing the generated agent config
+  -h, --help               help for volume
+  -i, --input string       Optional path to the yaml containing the workload definition (i.e. Deployment, StatefulSet, etc). Pass '-' for stdin. Loaded from cluster by default
+  -n, --namespace string   If present, the namespace scope for this CLI request
+  -o, --output string      Path to the file to place the output in. Defaults to '-' which means stdout. (default "-")
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence helm
+
+**用途**：Helm commands using the embedded Telepresence Helm chart.
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_helm](https://telepresence.io/docs/reference/cli/telepresence_helm)
+
+### 用法
+```
+  telepresence helm [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [install](telepresence_helm_install) | Install telepresence traffic manager |
+| [lint](telepresence_helm_lint) | Verify the embedded telepresence Helm chart |
+| [uninstall](telepresence_helm_uninstall) | Uninstall telepresence traffic manager |
+| [upgrade](telepresence_helm_upgrade) | Upgrade telepresence traffic manager |
+| [version](telepresence_helm_version) | Print the version of the Helm client |
+
+### 参数
+```
+  -h, --help   help for helm
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence helm [command] --help`。
+
+## telepresence helm install
+
+**用途**：Install telepresence traffic manager
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_helm_install](https://telepresence.io/docs/reference/cli/telepresence_helm_install)
+
+### 用法
+```
+  telepresence helm install [flags]
+```
+
+### 参数
+```
+      --allow-conflicting-subnets strings   Comma separated list of CIDR that will be allowed to conflict with local subnets
+      --also-proxy strings                  Additional comma separated list of CIDR to proxy
+      --create-namespace                    create a namespace for the traffic-manager if not present (default true)
+      --docker                              Start, or connect to, daemon in a docker container
+      --expose stringArray                  Port that a containerized daemon will expose. See docker run -p for more info. Can be repeated
+  -h, --help                                help for install
+      --hostname string                     Hostname used by a containerized daemon
+      --manager-namespace string            The namespace where the traffic manager is to be found. Overrides any other manager namespace set in config
+      --mapped-namespaces strings           Comma separated list of namespaces considered by DNS resolver and NAT for outbound connections. Defaults to all namespaces
+      --name string                         Optional name to use for the connection
+  -n, --namespace string                    If present, the namespace scope for this CLI request
+      --never-proxy strings                 Comma separated list of CIDR to never proxy
+      --no-hooks                            prevent hooks from running during install
+      --proxy-via strings                   Use Network Address Translation to create virtual IPs for the given CIDR, and route via WORKLOAD. Must be in the form CIDR=WORKLOAD. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+      --reroute-local strings               Reroute port on local host to remote host. Format is <local port>:<host>:<port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --reroute-remote strings              Reroute port on remote host. Format is <host>:<port>:<new port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --set stringArray                     specify a value as a.b=v (can specify multiple or separate values with commas: a.b=v1,a.c=v2)
+      --set-file stringArray                set values from respective files specified via the command line (can specify multiple or separate values with commas: key1=path1,key2=path2)
+      --set-json stringArray                set JSON values on the command line (can specify multiple or separate values with commas: a.b=jsonval1,a.c=jsonval2)
+      --set-string stringArray              set STRING values on the command line (can specify multiple or separate values with commas: a.b=val1,a.c=val2)
+  -f, --values stringArray                  specify values in a YAML file or a URL (can specify multiple)
+      --version string                      the telepresence version if different from the client's version. May be a range (e.g. ^2.21.0)
+      --vnat strings                        Use Network Address Translation to create virtual IPs for the given CIDR. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence helm lint
+
+**用途**：Verify the embedded telepresence Helm chart
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_helm_lint](https://telepresence.io/docs/reference/cli/telepresence_helm_lint)
+
+### 用法
+```
+  telepresence helm lint [flags]
+```
+
+### 参数
+```
+      --allow-conflicting-subnets strings   Comma separated list of CIDR that will be allowed to conflict with local subnets
+      --also-proxy strings                  Additional comma separated list of CIDR to proxy
+      --docker                              Start, or connect to, daemon in a docker container
+      --expose stringArray                  Port that a containerized daemon will expose. See docker run -p for more info. Can be repeated
+  -h, --help                                help for lint
+      --hostname string                     Hostname used by a containerized daemon
+      --manager-namespace string            The namespace where the traffic manager is to be found. Overrides any other manager namespace set in config
+      --mapped-namespaces strings           Comma separated list of namespaces considered by DNS resolver and NAT for outbound connections. Defaults to all namespaces
+      --name string                         Optional name to use for the connection
+  -n, --namespace string                    If present, the namespace scope for this CLI request
+      --never-proxy strings                 Comma separated list of CIDR to never proxy
+      --proxy-via strings                   Use Network Address Translation to create virtual IPs for the given CIDR, and route via WORKLOAD. Must be in the form CIDR=WORKLOAD. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+      --reroute-local strings               Reroute port on local host to remote host. Format is <local port>:<host>:<port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --reroute-remote strings              Reroute port on remote host. Format is <host>:<port>:<new port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --set stringArray                     specify a value as a.b=v (can specify multiple or separate values with commas: a.b=v1,a.c=v2)
+      --set-file stringArray                set values from respective files specified via the command line (can specify multiple or separate values with commas: key1=path1,key2=path2)
+      --set-json stringArray                set JSON values on the command line (can specify multiple or separate values with commas: a.b=jsonval1,a.c=jsonval2)
+      --set-string stringArray              set STRING values on the command line (can specify multiple or separate values with commas: a.b=val1,a.c=val2)
+  -f, --values stringArray                  specify values in a YAML file or a URL (can specify multiple)
+      --version string                      the telepresence version if different from the client's version. May be a range (e.g. ^2.21.0)
+      --vnat strings                        Use Network Address Translation to create virtual IPs for the given CIDR. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence helm uninstall
+
+**用途**：Uninstall telepresence traffic manager
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_helm_uninstall](https://telepresence.io/docs/reference/cli/telepresence_helm_uninstall)
+
+### 用法
+```
+  telepresence helm uninstall [flags]
+```
+
+### 参数
+```
+      --allow-conflicting-subnets strings   Comma separated list of CIDR that will be allowed to conflict with local subnets
+      --also-proxy strings                  Additional comma separated list of CIDR to proxy
+      --docker                              Start, or connect to, daemon in a docker container
+      --expose stringArray                  Port that a containerized daemon will expose. See docker run -p for more info. Can be repeated
+  -h, --help                                help for uninstall
+      --hostname string                     Hostname used by a containerized daemon
+      --manager-namespace string            The namespace where the traffic manager is to be found. Overrides any other manager namespace set in config
+      --mapped-namespaces strings           Comma separated list of namespaces considered by DNS resolver and NAT for outbound connections. Defaults to all namespaces
+      --name string                         Optional name to use for the connection
+  -n, --namespace string                    If present, the namespace scope for this CLI request
+      --never-proxy strings                 Comma separated list of CIDR to never proxy
+      --no-hooks                            prevent hooks from running during uninstallation
+      --proxy-via strings                   Use Network Address Translation to create virtual IPs for the given CIDR, and route via WORKLOAD. Must be in the form CIDR=WORKLOAD. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+      --reroute-local strings               Reroute port on local host to remote host. Format is <local port>:<host>:<port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --reroute-remote strings              Reroute port on remote host. Format is <host>:<port>:<new port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --vnat strings                        Use Network Address Translation to create virtual IPs for the given CIDR. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence helm upgrade
+
+**用途**：Upgrade telepresence traffic manager
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_helm_upgrade](https://telepresence.io/docs/reference/cli/telepresence_helm_upgrade)
+
+### 用法
+```
+  telepresence helm upgrade [flags]
+```
+
+### 参数
+```
+      --allow-conflicting-subnets strings   Comma separated list of CIDR that will be allowed to conflict with local subnets
+      --also-proxy strings                  Additional comma separated list of CIDR to proxy
+      --create-namespace                    create the release namespace if not present (default true)
+      --docker                              Start, or connect to, daemon in a docker container
+      --expose stringArray                  Port that a containerized daemon will expose. See docker run -p for more info. Can be repeated
+  -h, --help                                help for upgrade
+      --hostname string                     Hostname used by a containerized daemon
+      --manager-namespace string            The namespace where the traffic manager is to be found. Overrides any other manager namespace set in config
+      --mapped-namespaces strings           Comma separated list of namespaces considered by DNS resolver and NAT for outbound connections. Defaults to all namespaces
+      --name string                         Optional name to use for the connection
+  -n, --namespace string                    If present, the namespace scope for this CLI request
+      --never-proxy strings                 Comma separated list of CIDR to never proxy
+      --no-hooks                            disable pre/post upgrade hooks
+      --proxy-via strings                   Use Network Address Translation to create virtual IPs for the given CIDR, and route via WORKLOAD. Must be in the form CIDR=WORKLOAD. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+      --reroute-local strings               Reroute port on local host to remote host. Format is <local port>:<host>:<port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --reroute-remote strings              Reroute port on remote host. Format is <host>:<port>:<new port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --reset-values                        when upgrading, reset the values to the ones built into the chart
+      --reuse-values                        when upgrading, reuse the last release's values and merge in any overrides from the command line via --set and -f
+      --set stringArray                     specify a value as a.b=v (can specify multiple or separate values with commas: a.b=v1,a.c=v2)
+      --set-file stringArray                set values from respective files specified via the command line (can specify multiple or separate values with commas: key1=path1,key2=path2)
+      --set-json stringArray                set JSON values on the command line (can specify multiple or separate values with commas: a.b=jsonval1,a.c=jsonval2)
+      --set-string stringArray              set STRING values on the command line (can specify multiple or separate values with commas: a.b=val1,a.c=val2)
+  -f, --values stringArray                  specify values in a YAML file or a URL (can specify multiple)
+      --version string                      the telepresence version if different from the client's version. May be a range (e.g. ^2.21.0)
+      --vnat strings                        Use Network Address Translation to create virtual IPs for the given CIDR. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence helm version
+
+**用途**：Print the version of the Helm client
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_helm_version](https://telepresence.io/docs/reference/cli/telepresence_helm_version)
+
+### 用法
+```
+  telepresence helm version [flags]
+```
+
+### 参数
+```
+  -h, --help   help for version
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence ingest
+
+**用途**：Ingest a container
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_ingest](https://telepresence.io/docs/reference/cli/telepresence_ingest)
+
+### 用法
+```
+  telepresence ingest [flags] <name> [-- [[docker run flags] <image name>] OR [<command>]] args...]
+```
+
+### 参数
+```
+  -c, --container string               Name of container that provides the environment and mounts for the ingest
+      --docker-build string            Build a Docker container from the given docker-context (path or URL), and run it with ingested environment and volume mounts, by passing arguments after -- to 'docker run', e.g. '--docker-build /path/to/docker/context -- -it IMAGE /bin/bash'
+      --docker-build-opt stringArray   Options to docker-build in the form key=value, e.g. --docker-build-opt tag=mytag.
+      --docker-debug string            Like --docker-build, but allows a debugger to run inside the container with relaxed security
+      --docker-mount string            The volume mount point in docker. Defaults to same as "--mount"
+      --docker-run                     Run a Docker container with ingested environment, volume mount, by passing arguments after -- to 'docker run', e.g. '--docker-run -- -it --rm ubuntu:20.04 /bin/bash'
+  -e, --env-file string                Also emit the remote environment to an file. The syntax used in the file can be determined using flag --env-syntax
+  -j, --env-json string                Also emit the remote environment to a file as a JSON blob.
+      --env-syntax string              Syntax used for env-file. One of "docker", "compose", "sh", "csh", "cmd", "json", and "ps"; where "sh", "csh", and "ps" can be suffixed with ":export" (default "docker")
+  -h, --help                           help for ingest
+      --local-mount-port uint16        Do not mount remote directories. Instead, expose this port on localhost to an external mounter
+      --mount string                   The absolute path for the root directory where volumes will be mounted, $TELEPRESENCE_ROOT. Use "true" to have Telepresence pick a random mount point (default). Use "false" to disable filesystem mounting entirely. (default "true")
+      --to-pod strings                 An additional port to forward from the ingested pod, will be made available at localhost:PORT Use this to, for example, access proxy/helper sidecars in the ingested pod. The default protocol is TCP. Use <port>/UDP for UDP ports
+      --wait-message string            Message to print when ingest handler has started
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence intercept
+
+**用途**：Intercept a service
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_intercept](https://telepresence.io/docs/reference/cli/telepresence_intercept)
+
+### 用法
+```
+  telepresence intercept [flags] <name> [-- [[docker run flags] <image name>] OR [<command>]] args...]
+```
+
+### 参数
+```
+      --address string                 Local address to forward to, e.g. '--address 10.0.0.2' (default "127.0.0.1" or name of container)
+      --container string               Name of container that provides the environment and mounts for the intercept. Defaults to the container matching the first intercepted port.
+      --detailed-output                Provide very detailed info about the intercept when used together with --output=json or --output=yaml'
+      --docker-build string            Build a Docker container from the given docker-context (path or URL), and run it with intercepted environment and volume mounts, by passing arguments after -- to 'docker run', e.g. '--docker-build /path/to/docker/context -- -it IMAGE /bin/bash'
+      --docker-build-opt stringArray   Options to docker-build in the form key=value, e.g. --docker-build-opt tag=mytag.
+      --docker-debug string            Like --docker-build, but allows a debugger to run inside the container with relaxed security
+      --docker-mount string            The volume mount point in docker. Defaults to same as "--mount"
+      --docker-run                     Run a Docker container with intercepted environment, volume mount, by passing arguments after -- to 'docker run', e.g. '--docker-run -- -it --rm ubuntu:20.04 /bin/bash'
+  -e, --env-file string                Also emit the remote environment to an file. The syntax used in the file can be determined using flag --env-syntax
+  -j, --env-json string                Also emit the remote environment to a file as a JSON blob.
+      --env-syntax string              Syntax used for env-file. One of "docker", "compose", "sh", "csh", "cmd", "json", and "ps"; where "sh", "csh", and "ps" can be suffixed with ":export" (default "docker")
+  -h, --help                           help for intercept
+      --http-header strings            HTTP header filters. Only requests with matching headers will be intercepted. Supports both formats: --http-header "X-User-ID=dev123" or --http-header "X-User-ID: dev123" (curl -H compatible). Multiple headers use AND logic.
+      --http-path-equal strings        HTTP path filters. Only requests with matching paths will be intercepted. Exact path matching.
+      --http-path-prefix strings       HTTP path prefix filters. Only requests with matching path prefixes will be intercepted.
+      --http-path-regex strings        HTTP path regex filters. Only requests with paths matching the regex will be intercepted.
+      --local-mount-port uint16        Do not mount remote directories. Instead, expose this port on localhost to an external mounter
+      --mechanism mechanism            Which extension mechanism to use (default "tcp")
+      --metadata strings               Metadata to attach to the intercept. Use --metadata key=value to set a single key/value pair, or --metadata key1=value1 --metadata key2=value2 to set multiple key/value pairs. The metadata can be retrieved using the Telepresence API server.
+      --mount string                   The absolute path for the root directory where volumes will be mounted, $TELEPRESENCE_ROOT. Use "true" to have Telepresence pick a random mount point (default). Use "false" to disable filesystem mounting entirely. Append ":ro" to mount everything read-only. (default "true")
+  -n, --namespace string               Namespace containing the workload to intercept. Defaults to the connected namespace
+      --plaintext                      Use plaintext instead of TLS when communicating with the intercept handler
+  -p, --port strings                   Local ports to forward to. Use <local port>:<identifier> to uniquely identify service ports, where the <identifier> is the port name or number. With --docker-run and a daemon that doesn't run in docker', use <local port>:<container port> or <local port>:<container port>:<identifier>.
+      --replace                        Indicates if the traffic-agent should replace application containers in workload pods. The default behavior is for the agent sidecar to be installed alongside existing containers. (DEPRECATED: Use the replace command.)
+      --service string                 Optional name of service to intercept. Sometimes needed to uniquely identify the intercepted port.
+      --to-pod strings                 Additional ports to forward to the intercepted pod, will available for connections to localhost:PORT. Use this to, for example, access proxy/helper sidecars in the intercepted pod. The default protocol is TCP. Use <port>/UDP for UDP ports
+      --wait-message string            Message to print when intercept handler has started
+  -w, --workload string                Name of workload (Deployment, ReplicaSet, StatefulSet, Rollout) to intercept, if different from <name>
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence leave
+
+**用途**：Remove existing intercept
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_leave](https://telepresence.io/docs/reference/cli/telepresence_leave)
+
+### 用法
+```
+  telepresence leave [flags] <intercept_name>
+```
+
+### 参数
+```
+  -c, --container string   Container name
+  -h, --help               help for leave
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence list-contexts
+
+**用途**：Show all contexts
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_list-contexts](https://telepresence.io/docs/reference/cli/telepresence_list-contexts)
+
+### 用法
+```
+  telepresence list-contexts [flags]
+```
+
+### 参数
+```
+      --allow-conflicting-subnets strings   Comma separated list of CIDR that will be allowed to conflict with local subnets
+      --also-proxy strings                  Additional comma separated list of CIDR to proxy
+      --docker                              Start, or connect to, daemon in a docker container
+      --expose stringArray                  Port that a containerized daemon will expose. See docker run -p for more info. Can be repeated
+  -h, --help                                help for list-contexts
+      --hostname string                     Hostname used by a containerized daemon
+      --manager-namespace string            The namespace where the traffic manager is to be found. Overrides any other manager namespace set in config
+      --mapped-namespaces strings           Comma separated list of namespaces considered by DNS resolver and NAT for outbound connections. Defaults to all namespaces
+      --name string                         Optional name to use for the connection
+  -n, --namespace string                    If present, the namespace scope for this CLI request
+      --never-proxy strings                 Comma separated list of CIDR to never proxy
+      --proxy-via strings                   Use Network Address Translation to create virtual IPs for the given CIDR, and route via WORKLOAD. Must be in the form CIDR=WORKLOAD. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+      --reroute-local strings               Reroute port on local host to remote host. Format is <local port>:<host>:<port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --reroute-remote strings              Reroute port on remote host. Format is <host>:<port>:<new port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --vnat strings                        Use Network Address Translation to create virtual IPs for the given CIDR. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence list-namespaces
+
+**用途**：Show all namespaces
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_list-namespaces](https://telepresence.io/docs/reference/cli/telepresence_list-namespaces)
+
+### 用法
+```
+  telepresence list-namespaces [flags]
+```
+
+### 参数
+```
+      --allow-conflicting-subnets strings   Comma separated list of CIDR that will be allowed to conflict with local subnets
+      --also-proxy strings                  Additional comma separated list of CIDR to proxy
+      --docker                              Start, or connect to, daemon in a docker container
+      --expose stringArray                  Port that a containerized daemon will expose. See docker run -p for more info. Can be repeated
+  -h, --help                                help for list-namespaces
+      --hostname string                     Hostname used by a containerized daemon
+      --manager-namespace string            The namespace where the traffic manager is to be found. Overrides any other manager namespace set in config
+      --mapped-namespaces strings           Comma separated list of namespaces considered by DNS resolver and NAT for outbound connections. Defaults to all namespaces
+      --name string                         Optional name to use for the connection
+  -n, --namespace string                    If present, the namespace scope for this CLI request
+      --never-proxy strings                 Comma separated list of CIDR to never proxy
+      --proxy-via strings                   Use Network Address Translation to create virtual IPs for the given CIDR, and route via WORKLOAD. Must be in the form CIDR=WORKLOAD. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+      --reroute-local strings               Reroute port on local host to remote host. Format is <local port>:<host>:<port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --reroute-remote strings              Reroute port on remote host. Format is <host>:<port>:<new port>[/{tcp,udp}]. <port> can be symbolic when <host> is a service name.
+      --vnat strings                        Use Network Address Translation to create virtual IPs for the given CIDR. CIDR can be substituted for the symblic name "service", "pods", "also", or "all".
+```
+
+### Kubernetes 参数
+```
+      --as string                      Username to impersonate for the operation. User could be a regular user or a service account in a namespace.
+      --as-group stringArray           Group to impersonate for the operation, this flag can be repeated to specify multiple groups.
+      --as-uid string                  UID to impersonate for the operation.
+      --as-user-extra stringArray      User extras to impersonate for the operation, this flag can be repeated to specify multiple values for the same key.
+      --cache-dir string               Default cache directory (default "$HOME/.kube/cache")
+      --certificate-authority string   Path to a cert file for the certificate authority
+      --client-certificate string      Path to a client certificate file for TLS
+      --client-key string              Path to a client key file for TLS
+      --cluster string                 The name of the kubeconfig cluster to use
+      --context string                 The name of the kubeconfig context to use
+      --disable-compression            If true, opt-out of response compression for all requests to the server
+      --insecure-skip-tls-verify       If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure
+      --kubeconfig string              Path to the kubeconfig file to use for CLI requests.
+      --request-timeout string         The length of time to wait before giving up on a single server request. Non-zero values should contain a corresponding time unit (e.g. 1s, 2m, 3h). A value of zero means don't timeout requests. (default "0")
+  -s, --server string                  The address and port of the Kubernetes API server
+      --tls-server-name string         Server name to use for server certificate validation. If it is not provided, the hostname used to contact the server is used
+      --token string                   Bearer token for authentication to the API server
+      --user string                    The name of the kubeconfig user to use
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence list
+
+**用途**：List current intercepts
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_list](https://telepresence.io/docs/reference/cli/telepresence_list)
+
+### 用法
+```
+  telepresence list [flags]
+```
+
+### 参数
+```
+  -a, --agents             with installed agents only
+      --debug              include debugging information
+  -h, --help               help for list
+  -g, --ingests            ingests
+  -i, --intercepts         intercepts
+  -n, --namespace string   If present, the namespace scope for this CLI request
+  -r, --replacements       replacements
+  -t, --wiretaps           wiretaps
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence loglevel
+
+**用途**：Temporarily change the log-level of the traffic-manager, traffic-agent, and user and root daemons
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_loglevel](https://telepresence.io/docs/reference/cli/telepresence_loglevel)
+
+### 用法
+```
+  telepresence loglevel <ERROR,WARN,INFO,DEBUG,TRACE> [flags]
+```
+
+### 参数
+```
+  -d, --duration duration   The time that the log-level will be in effect (0s means indefinitely) (default 30m0s)
+  -h, --help                help for loglevel
+  -l, --local-only          Only affect the user and root daemons
+  -r, --remote-only         Only affect the traffic-manager and traffic-agents
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp
+
+**用途**：MCP server management
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp](https://telepresence.io/docs/reference/cli/telepresence_mcp)
+
+### 概要
+
+Manage MCP servers for AI assistants and code editors
+
+### 用法
+```
+  telepresence mcp [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [claude](telepresence_mcp_claude) | Manage Claude Desktop MCP servers |
+| [cursor](telepresence_mcp_cursor) | Manage Cursor MCP servers |
+| [start](telepresence_mcp_start) | Start the MCP server |
+| [stream](telepresence_mcp_stream) | Stream the MCP server over HTTP |
+| [tools](telepresence_mcp_tools) | Export tools as JSON |
+| [vscode](telepresence_mcp_vscode) | Manage VSCode MCP servers |
+
+### 参数
+```
+  -h, --help   help for mcp
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence mcp [command] --help`。
+
+## telepresence mcp claude
+
+**用途**：Manage Claude Desktop MCP servers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_claude](https://telepresence.io/docs/reference/cli/telepresence_mcp_claude)
+
+### 概要
+
+Manage MCP server configuration for Claude Desktop
+
+### 用法
+```
+  telepresence mcp claude [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [disable](telepresence_mcp_claude_disable) | Remove server from Claude config |
+| [enable](telepresence_mcp_claude_enable) | Add server to Claude config |
+| [list](telepresence_mcp_claude_list) | Show Claude MCP servers |
+
+### 参数
+```
+  -h, --help   help for claude
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence mcp claude [command] --help`。
+
+## telepresence mcp claude disable
+
+**用途**：Remove server from Claude config
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_claude_disable](https://telepresence.io/docs/reference/cli/telepresence_mcp_claude_disable)
+
+### 概要
+
+Remove this application from Claude Desktop MCP servers
+
+### 用法
+```
+  telepresence mcp claude disable [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to Claude config file
+  -h, --help                 help for disable
+      --server-name string   Name of the MCP server to remove (default: derived from executable name)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp claude enable
+
+**用途**：Add server to Claude config
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_claude_enable](https://telepresence.io/docs/reference/cli/telepresence_mcp_claude_enable)
+
+### 概要
+
+Add this application as an MCP server in Claude Desktop
+
+### 用法
+```
+  telepresence mcp claude enable [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to Claude config file
+  -e, --env stringToString   Environment variables (e.g., --env KEY1=value1 --env KEY2=value2) (default [])
+  -h, --help                 help for enable
+      --log-level string     Log level (debug, info, warn, error)
+      --server-name string   Name for the MCP server (default: derived from executable name)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp claude list
+
+**用途**：Show Claude MCP servers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_claude_list](https://telepresence.io/docs/reference/cli/telepresence_mcp_claude_list)
+
+### 概要
+
+Show all MCP servers configured in Claude Desktop
+
+### 用法
+```
+  telepresence mcp claude list [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to Claude config file
+  -h, --help                 help for list
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp cursor
+
+**用途**：Manage Cursor MCP servers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_cursor](https://telepresence.io/docs/reference/cli/telepresence_mcp_cursor)
+
+### 概要
+
+Manage MCP server configuration for Cursor
+
+### 用法
+```
+  telepresence mcp cursor [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [disable](telepresence_mcp_cursor_disable) | Remove server from Cursor config |
+| [enable](telepresence_mcp_cursor_enable) | Add server to Cursor config |
+| [list](telepresence_mcp_cursor_list) | Show Cursor MCP servers |
+
+### 参数
+```
+  -h, --help   help for cursor
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence mcp cursor [command] --help`。
+
+## telepresence mcp cursor disable
+
+**用途**：Remove server from Cursor config
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_cursor_disable](https://telepresence.io/docs/reference/cli/telepresence_mcp_cursor_disable)
+
+### 概要
+
+Remove this application from Cursor MCP servers
+
+### 用法
+```
+  telepresence mcp cursor disable [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to Cursor config file
+  -h, --help                 help for disable
+      --server-name string   Name of the MCP server to remove (default: derived from executable name)
+      --workspace            Remove from workspace settings (.cursor/mcp.json) instead of user settings
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp cursor enable
+
+**用途**：Add server to Cursor config
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_cursor_enable](https://telepresence.io/docs/reference/cli/telepresence_mcp_cursor_enable)
+
+### 概要
+
+Add this application as an MCP server in Cursor
+
+### 用法
+```
+  telepresence mcp cursor enable [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to Cursor config file
+  -e, --env stringToString   Environment variables (e.g., --env KEY1=value1 --env KEY2=value2) (default [])
+  -h, --help                 help for enable
+      --log-level string     Log level (debug, info, warn, error)
+      --server-name string   Name for the MCP server (default: derived from executable name)
+      --workspace            Add to workspace settings (.cursor/mcp.json) instead of user settings
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp cursor list
+
+**用途**：Show Cursor MCP servers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_cursor_list](https://telepresence.io/docs/reference/cli/telepresence_mcp_cursor_list)
+
+### 概要
+
+Show all MCP servers configured in Cursor
+
+### 用法
+```
+  telepresence mcp cursor list [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to Cursor config file
+  -h, --help                 help for list
+      --workspace            List from workspace settings (.cursor/mcp.json) instead of user settings
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp start
+
+**用途**：Start the MCP server
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_start](https://telepresence.io/docs/reference/cli/telepresence_mcp_start)
+
+### 概要
+
+Start stdio server to expose CLI commands to AI assistants
+
+### 用法
+```
+  telepresence mcp start [flags]
+```
+
+### 参数
+```
+  -h, --help               help for start
+      --log-level string   Log level (debug, info, warn, error)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp stream
+
+**用途**：Stream the MCP server over HTTP
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_stream](https://telepresence.io/docs/reference/cli/telepresence_mcp_stream)
+
+### 概要
+
+Start HTTP server to expose CLI commands to AI assistants
+
+### 用法
+```
+  telepresence mcp stream [flags]
+```
+
+### 参数
+```
+  -h, --help               help for stream
+      --host string        host to listen on
+      --log-level string   Log level (debug, info, warn, error)
+      --port int           port number to listen on (default 8080)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp tools
+
+**用途**：Export tools as JSON
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_tools](https://telepresence.io/docs/reference/cli/telepresence_mcp_tools)
+
+### 概要
+
+Export available MCP tools to mcp-tools.json for inspection
+
+### 用法
+```
+  telepresence mcp tools [flags]
+```
+
+### 参数
+```
+  -h, --help               help for tools
+      --log-level string   Log level (debug, info, warn, error)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp vscode
+
+**用途**：Manage VSCode MCP servers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_vscode](https://telepresence.io/docs/reference/cli/telepresence_mcp_vscode)
+
+### 概要
+
+Manage MCP server configuration for Visual Studio Code
+
+### 用法
+```
+  telepresence mcp vscode [command] [flags]
+```
+
+### 子命令
+| Command | Description |
+|---------|-------------|
+| [disable](telepresence_mcp_vscode_disable) | Remove server from VSCode config |
+| [enable](telepresence_mcp_vscode_enable) | Add server to VSCode config |
+| [list](telepresence_mcp_vscode_list) | Show VSCode MCP servers |
+
+### 参数
+```
+  -h, --help   help for vscode
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+更多子命令详情可查看 `telepresence mcp vscode [command] --help`。
+
+## telepresence mcp vscode disable
+
+**用途**：Remove server from VSCode config
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_vscode_disable](https://telepresence.io/docs/reference/cli/telepresence_mcp_vscode_disable)
+
+### 概要
+
+Remove this application from VSCode MCP servers
+
+### 用法
+```
+  telepresence mcp vscode disable [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to VSCode config file
+  -h, --help                 help for disable
+      --server-name string   Name of the MCP server to remove (default: derived from executable name)
+      --workspace            Remove from workspace settings (.vscode/mcp.json) instead of user settings
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp vscode enable
+
+**用途**：Add server to VSCode config
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_vscode_enable](https://telepresence.io/docs/reference/cli/telepresence_mcp_vscode_enable)
+
+### 概要
+
+Add this application as an MCP server in VSCode
+
+### 用法
+```
+  telepresence mcp vscode enable [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to VSCode config file
+  -e, --env stringToString   Environment variables (e.g., --env KEY1=value1 --env KEY2=value2) (default [])
+  -h, --help                 help for enable
+      --log-level string     Log level (debug, info, warn, error)
+      --server-name string   Name for the MCP server (default: derived from executable name)
+      --workspace            Add to workspace settings (.vscode/mcp.json) instead of user settings
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence mcp vscode list
+
+**用途**：Show VSCode MCP servers
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_mcp_vscode_list](https://telepresence.io/docs/reference/cli/telepresence_mcp_vscode_list)
+
+### 概要
+
+Show all MCP servers configured in VSCode
+
+### 用法
+```
+  telepresence mcp vscode list [flags]
+```
+
+### 参数
+```
+      --config-path string   Path to VSCode config file
+  -h, --help                 help for list
+      --workspace            List from workspace settings (.vscode/mcp.json) instead of user settings
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence quit
+
+**用途**：Tell telepresence daemons to quit
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_quit](https://telepresence.io/docs/reference/cli/telepresence_quit)
+
+### 用法
+```
+  telepresence quit [flags]
+```
+
+### 参数
+```
+  -h, --help           help for quit
+  -s, --stop-daemons   stop all local telepresence daemons
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence replace
+
+**用途**：Replace a container
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_replace](https://telepresence.io/docs/reference/cli/telepresence_replace)
+
+### 用法
+```
+  telepresence replace [flags] <name> [-- [[docker run flags] <image name>] OR [<command>]] args...]
+```
+
+### 参数
+```
+      --address string                 Local address to forward to, e.g. '--address 10.0.0.2' (default "127.0.0.1" or name of container)
+      --container string               Name of container that should be replaced. Can be omitted if the workload only has one container.
+      --detailed-output                Provide very detailed info about the replace when used together with --output=json or --output=yaml'
+      --docker-build string            Build a Docker container from the given docker-context (path or URL), and run it with replaced environment and volume mounts, by passing arguments after -- to 'docker run', e.g. '--docker-build /path/to/docker/context -- -it IMAGE /bin/bash'
+      --docker-build-opt stringArray   Options to docker-build in the form key=value, e.g. --docker-build-opt tag=mytag.
+      --docker-debug string            Like --docker-build, but allows a debugger to run inside the container with relaxed security
+      --docker-mount string            The volume mount point in docker. Defaults to same as "--mount"
+      --docker-run                     Run a Docker container with replaced environment, volume mount, by passing arguments after -- to 'docker run', e.g. '--docker-run -- -it --rm ubuntu:20.04 /bin/bash'
+  -e, --env-file string                Also emit the remote environment to an file. The syntax used in the file can be determined using flag --env-syntax
+  -j, --env-json string                Also emit the remote environment to a file as a JSON blob.
+      --env-syntax string              Syntax used for env-file. One of "docker", "compose", "sh", "csh", "cmd", "json", and "ps"; where "sh", "csh", and "ps" can be suffixed with ":export" (default "docker")
+  -h, --help                           help for replace
+      --local-mount-port uint16        Do not mount remote directories. Instead, expose this port on localhost to an external mounter
+      --mount string                   The absolute path for the root directory where volumes will be mounted, $TELEPRESENCE_ROOT. Use "true" to have Telepresence pick a random mount point (default). Use "false" to disable filesystem mounting entirely. Append ":ro" to mount everything read-only. (default "true")
+  -n, --namespace string               Namespace containing the workload to replace. Defaults to the connected namespace
+  -p, --port strings                   Local ports to forward to. Use <local port>:<identifier> to uniquely identify container ports, where the <identifier> is the port name or number. Use "all" (the default) to forward all ports declared in the replaced container to their corresponding local port.  (default [all])
+      --to-pod strings                 Additional ports to forward to the pod containing the replaced container, will available for connections to localhost:PORT. Use this to, for example, access proxy/helper sidecars in the pod. The default protocol is TCP. Use <port>/UDP for UDP ports
+      --wait-message string            Message to print when replace handler has started
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence revoke
+
+**用途**：Revoke an intercept by intercept ID. The intercept ID must be in the format &lt;session_id&gt;:&lt;intercept_name&gt;
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_revoke](https://telepresence.io/docs/reference/cli/telepresence_revoke)
+
+Revoke an intercept by intercept ID. The intercept ID must be in the format <session_id>:<intercept_name>
+
+### 概要
+
+Revoke an intercept by intercept ID. This is an administrative operation that
+requires RBAC permissions to modify the "traffic-manager" configmap.
+
+### 用法
+```
+  telepresence revoke <intercept_id> [flags]
+```
+
+### 参数
+```
+  -h, --help   help for revoke
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence serve
+
+**用途**：Start the browser on a remote service
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_serve](https://telepresence.io/docs/reference/cli/telepresence_serve)
+
+### 用法
+```
+  telepresence serve <name of remote service> [flags]
+```
+
+### 参数
+```
+  -h, --help          help for serve
+  -p, --port uint16   service port (default 80)
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence status
+
+**用途**：Show connectivity status
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_status](https://telepresence.io/docs/reference/cli/telepresence_status)
+
+### 用法
+```
+  telepresence status [flags]
+```
+
+### 参数
+```
+  -h, --help           help for status
+      --multi-daemon   always use multi-daemon output format, even if there's only one daemon connected
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence uninstall
+
+**用途**：Uninstall telepresence agents
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_uninstall](https://telepresence.io/docs/reference/cli/telepresence_uninstall)
+
+### 用法
+```
+  telepresence uninstall [flags] <workloads...>
+```
+
+### 参数
+```
+  -a, --all-agents   uninstall intercept agent on all workloads
+  -h, --help         help for uninstall
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence version
+
+**用途**：Show version
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_version](https://telepresence.io/docs/reference/cli/telepresence_version)
+
+### 用法
+```
+  telepresence version [flags]
+```
+
+### 参数
+```
+  -h, --help   help for version
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```
+
+## telepresence wiretap
+
+**用途**：Wiretap a Service
+
+**官方来源**：[https://telepresence.io/docs/reference/cli/telepresence_wiretap](https://telepresence.io/docs/reference/cli/telepresence_wiretap)
+
+### 用法
+```
+  telepresence wiretap [flags] <wiretap_base_name> [-- <command with arguments...>]
+```
+
+### 参数
+```
+      --address string                 Local address to forward to, e.g. '--address 10.0.0.2' (default "127.0.0.1" or name of container)
+      --container string               Name of container that provides the environment and mounts for the wiretap. Defaults to the container matching the first wiretapped port.
+      --detailed-output                Provide very detailed info about the wiretap when used together with --output=json or --output=yaml'
+      --docker-build string            Build a Docker container from the given docker-context (path or URL), and run it with wiretapped environment and volume mounts, by passing arguments after -- to 'docker run', e.g. '--docker-build /path/to/docker/context -- -it IMAGE /bin/bash'
+      --docker-build-opt stringArray   Options to docker-build in the form key=value, e.g. --docker-build-opt tag=mytag.
+      --docker-debug string            Like --docker-build, but allows a debugger to run inside the container with relaxed security
+      --docker-mount string            The volume mount point in docker. Defaults to same as "--mount"
+      --docker-run                     Run a Docker container with wiretapped environment, volume mount, by passing arguments after -- to 'docker run', e.g. '--docker-run -- -it --rm ubuntu:20.04 /bin/bash'
+  -e, --env-file string                Also emit the remote environment to an file. The syntax used in the file can be determined using flag --env-syntax
+  -j, --env-json string                Also emit the remote environment to a file as a JSON blob.
+      --env-syntax string              Syntax used for env-file. One of "docker", "compose", "sh", "csh", "cmd", "json", and "ps"; where "sh", "csh", and "ps" can be suffixed with ":export" (default "docker")
+  -h, --help                           help for wiretap
+      --http-header strings            HTTP header filters. Only requests with matching headers will be wiretapped. Supports both formats: --http-header "X-User-ID=dev123" or --http-header "X-User-ID: dev123" (curl -H compatible). Multiple headers use AND logic.
+      --http-path-equal strings        HTTP path filters. Only requests with matching paths will be wiretapped. Exact path matching.
+      --http-path-prefix strings       HTTP path prefix filters. Only requests with matching path prefixes will be wiretapped.
+      --http-path-regex strings        HTTP path regex filters. Only requests with paths matching the regex will be wiretapped.
+      --local-mount-port uint16        Do not mount remote directories. Instead, expose this port on localhost to an external mounter
+      --mechanism mechanism            Which extension mechanism to use (default "tcp")
+      --mount string                   The absolute path for the root directory where volumes will be mounted, $TELEPRESENCE_ROOT. Use "true" to have Telepresence pick a random mount point (default). Use "false" to disable filesystem mounting entirely. Append ":ro" to mount everything read-only. (default "true")
+  -n, --namespace string               Namespace containing the workload to wiretap. Defaults to the connected namespace
+      --plaintext                      Use plaintext instead of TLS when communicating with the intercept handler
+  -p, --port strings                   Local ports to forward to. Use <local port>:<identifier> to uniquely identify service ports, where the <identifier> is the port name or number. With --docker-run and a daemon that doesn't run in docker', use <local port>:<container port> or <local port>:<container port>:<identifier>.
+      --service string                 Optional name of service to wiretap. Sometimes needed to uniquely identify the intercepted port.
+      --wait-message string            Message to print when wiretap handler has started
+  -w, --workload string                Name of workload (Deployment, ReplicaSet, StatefulSet, Rollout) to wiretap, if different from <name>
+```
+
+### 全局参数
+```
+      --config string     Path to the Telepresence configuration file (default "$HOME/.config/telepresence/config.yml")
+      --output string     Set the output format, supported values are 'json', 'yaml', and 'default' (default "default")
+      --progress string   Set type of progress output (auto, tty, plain, json, quiet) (default "auto")
+      --use string        Match expression that uniquely identifies the daemon container
+```

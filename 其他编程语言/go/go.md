@@ -222,9 +222,17 @@ dlv attach <pid> \
 
 ## go值类型与引用类型, 零值
 
-值类型: 数字, string, bool, array, struct
+值类型: 
 
-引用类型: 指针, slice, map, interface, func, chan  , 他们的零值为nil
+- 数字, byte, rune, string, bool, array, struct
+
+- 指针, interface, func
+
+  interface和func和指针有点类似,  虽然零值为nil, 但是在传参的时候会进行拷贝
+
+引用类型: slice, map, chan 他们的零值为nil
+
+他们在传参的时候, 和指针有点类似, 虽然零值为nil, 但是在传参的时候会进行拷贝, 并且这三种数据类型只能通过make来创建
 
 
 
@@ -974,14 +982,41 @@ func main() {
 ### for range
 
 ~~~go
-	// for range可以遍历数组, 切片, 字符串, map, 通道
-	// for range等效于for each
-	for i, i2 := range "hello" {
-        // i是索引, i2是值
-		fmt.Printf("%v, %c \n", i, i2)
-	}
+// for range可以遍历array, slice, string, map, chan
+	
+// 遍历array, slice
+arr := []int{10, 20, 30}
+for i, v := range arr {
+	fmt.Println(i, v) // v是拷贝
+}
 
-   for i in range
+// 遍历string
+s := "hello"
+for i, v := range s {
+	fmt.Println(i, v) // v是rune, 也就是int32
+}
+
+// 遍历map
+m := map[string]int{
+	"a": 1,
+	"b": 2,
+}
+for k, v := range m {
+	fmt.Println(k, v) // v是拷贝
+}
+
+// 遍历chan
+ch := make(chan int)
+
+go func() {
+	ch <- 1
+	ch <- 2
+	close(ch)
+}()
+
+for v := range ch {
+	fmt.Println(v)
+}
 ~~~
 
 
@@ -1166,7 +1201,7 @@ func main() {
 
 切片是建立在数组之上的数据类型, 他表示对数组一个连续片段的引用
 
-这个片段可以是整个数组, 也可以是子集
+slice可以是整个数组, 也可以是数组上面的一个切片
 
 ~~~go
 func main() {
@@ -1176,7 +1211,14 @@ func main() {
 
 	fmt.Println(s)              // [0 1 2]
 	fmt.Println(len(s), cap(s)) // 获取长度和容量, 3,  6
+}
+~~~
 
+
+
+当然在实际的使用过程中我们一般不会先创建一个数组, 然后再在数组上面建立slice, 而是通过下面的方法
+
+~~~go
 	// 使用make创建slice
 	// 参数1: 底层数组的类型
 	// 参数2: 切片的长度
@@ -1189,8 +1231,11 @@ func main() {
 	// 方式3, 通过字面量的方式创建
 	s2 := []int{1, 2, 98}
 	fmt.Println(s2, len(s2), cap(s2)) // [1 2 98] 3 3
-}
 ~~~
+
+
+
+
 
 
 
@@ -1797,7 +1842,7 @@ func main() {
 
 **不同的结构体即使他们的字段相同, 那么也不是相同的类型, 所以在赋值和传参的时候不能直接使用**
 
-**但是如果不同的结构体有完全相同的字段(名字, 个数, 类型完全相同), 他们可以对他们进行强制类型转换**
+**但是如果不同的结构体有完全相同的字段(名字, 个数, 类型完全相同), 他们可以对他们进行类型转换**
 
 ~~~go
 type Teacher struct {
@@ -2228,9 +2273,30 @@ func haha1(a any){}
 
 
 
-### 引用类型
 
-**interface类型是引用类型, 所以他的默认值为nil**
+
+#### interface类型
+
+interface 本身是值类型，但它内部持有的是“动态类型 + 动态值（通常是引用语义）"
+
+ interface 就像一个盒子：
+
+```
+interface = (类型信息, 数据指针)
+```
+
+也就是说它内部大致是：
+
+```go
+type iface struct {
+    type  *typeInfo
+    data  unsafe.Pointer
+}
+```
+
+
+
+他的默认值是nil
 
 ~~~go
 type CInterface interface {
@@ -2246,6 +2312,37 @@ func main() {
 	var c CInterface // 默认是nil
 
 	fmt.Println(stu,  c)
+}
+~~~
+
+
+
+**interface类型和指针类型有点类似, 默认值是nil, 但是他是值类型, 因为在传参的时候会进行复制**
+
+~~~go
+func test(i interface{}) {
+    i = 100
+}
+
+func main() {
+    var a interface{} = 10
+    test(a)
+    fmt.Println(a) // 仍然是 10
+}
+~~~
+
+并且他和指针一样都可以对对象的内部数据进行修改
+
+~~~go
+func test(i interface{}) {
+    v := i.([]int)
+    v[0] = 999
+}
+
+func main() {
+    arr := []int{1, 2, 3}
+    test(arr)
+    fmt.Println(arr) // [999 2 3]
 }
 ~~~
 
@@ -2290,7 +2387,7 @@ func main() {
 
 
 
-#### 多态数组
+#### 多态与数组
 
 ~~~go
 func main() {
@@ -2301,20 +2398,27 @@ func main() {
 
 
 
-### 类型判断
+
+
+### 类型断言
 
 ~~~go
 // 方式1
 func main() {
 	var i interface{} = 123
 
-	// i必须是一个接口类型, 才可以进行判断
+	// i必须是一个接口类型, 才可以进行断言, 因为interface才具有多态
+    // 实际上这个断言就是从interfae中获取类型信息, 然后和int进行比较, 判断是不是int类型, 如果是就返回实际的值, 否则就返回nil
 	value, ok := i.(int)
 	if ok {
 		fmt.Println("i is of type int with value:", value)
 	} else {
 		fmt.Println("i is not of type int")
 	}
+    
+    // 当然你也可以不进行判断, 直接进行类型断言并获取值
+    value = i.(int) // 如果i不是int类型, 那么会产生panic
+    
 
 }
 
@@ -2335,7 +2439,9 @@ default:
 
 
 
-### 类型定义语法
+
+
+### type关键字
 
 在go中, 支持自定义数据类型, 有两种方式:
 
@@ -3211,36 +3317,74 @@ func main() {
 
 ### error
 
-在go中, error被认为是一种预期的错误, 必须被处理
+在go中, error被认为是一种预期的错误, 必须被处理, 比如
 
-类似与java的Exception, 必须声明throw, 要么就catch
+- 在读取文件的时候, 文件不存在怎么办
+- 文件权限拒绝怎么办
+
+这些都是error, 都是必须处理的, 类似与java的Exception, 必须声明throw, 要么就catch
+
+**在go中, 没有try-catch, 转而使用返回值来表示error**
 
 
 
-在go中, 没有try-catch, 转而使用返回值来表示error
+1. 创建错误的方式
 
-~~~go
-func main() {
-    // 必须判断err是否为nil来判断是否发生了错误
-	d, err := devide(20, 0)
-	if (err != nil) {
-		fmt.Println(err.Error())
-		return
-	}
-	fmt.Println("结果为: ", d)
-}
+   ~~~go
+   func devide(a int, b int) (int, error) {
+   	if b == 0 {
+           // 使用errors.New创建一个error
+   		return 0, errors.New("除数不能为0") 
+           
+           // 使用fmt.Errorf来创建一个异常
+           return 0, fmt.Errorf("产生了一个异常, 除数为: %v", b)
+   	}
+   	return a / b, nil
+   }
+   ~~~
 
-func devide(a int, b int) (int, error) {
-	if b == 0 {
-        // 使用errors.New创建一个error
-		return 0, errors.New("除数不能为0") 
-        
-        // 使用fmt.Errorf来创建一个异常
-        return 0, fmt.Errorf("产生了一个异常, 除数为: %v", b)
-	}
-	return a / b, nil
-}
-~~~
+2. 错误的处理
+
+   ~~~go
+   func main() {
+       // 必须判断err是否为nil来判断是否发生了错误
+   	d, err := devide(20, 0)
+   	if (err != nil) {
+   		fmt.Println(err.Error())
+   		return
+   	}
+   	fmt.Println("结果为: ", d)
+   }
+   ~~~
+
+3. 自定义错误
+
+   在go语言中, 错误error实际上就是一个接口
+
+   ~~~go
+   type error interface {
+       Error() string
+   }
+   ~~~
+
+   也就是说任何实现了`Error() string`方法的类型, 都可以作为error
+
+   ~~~go
+   type MyError struct {
+       Code int
+       Msg  string
+   }
+   
+   func (e MyError) Error() string {
+       return fmt.Sprintf("code=%d, msg=%s", e.Code, e.Msg)
+   }
+   ~~~
+
+   
+
+
+
+
 
 
 
@@ -3271,7 +3415,7 @@ func main() {
 func devide(a int, b int) (int) {
 	defer fmt.Println("执行了devide中的defer")
 	if b == 0 {
-		panic("除数不能为0") // 使用panic来产生一个恐慌
+		panic("除数不能为0") // 使用panic函数来产生一个恐慌
 	}
 	fmt.Println("结果为", a/b)
 	return a / b
@@ -3308,6 +3452,7 @@ func divideInRecover(a int, b int) int {
 
     // 如果divide产生了panic, 那么会执行defer后面的语句
 	// 如果出现了panic, 那么不会执行return, 那么这个函数会正常返回类型的默认值, 这里是0
+    // 如果返回值是具名的, 那么会直接返回这个变量, 而不是使用默认值
 	defer func() {
 		// 在defer中执行recover, 如果有panic, 那么可以捕获
 		if err := recover(); err != nil {
@@ -3633,8 +3778,8 @@ func main() {
 }
 
 func test() {
+    defer wg.Done() // 协程执行完毕, wg减1
 	for i := 0; i < 10; i++ {
-		defer wg.Done() // 协程执行完毕, wg减1
 		fmt.Println(i)
 		time.Sleep(time.Second)
 	}
@@ -3794,9 +3939,9 @@ func devide() {
 1. 管道本质上是队列
 2. 数据在管道中, 是先进先出的
 3. chan是线程安全的,  多个协程访问channel不需要加锁
-4. chan是由类型的,  一个string的管道, 只能存放string类型的数据
+4. chan是有类型的,  一个string的管道, 只能存放string类型的数据
 5. **chan是引用类型, 默认值是nil, 必须先make才可以使用**
-6. 如果不指定chan的容量, 默认为0, 即是一个**同步管道**,  必须一边读取, 一边添加
+6. 如果不指定chan的容量, 默认为0, 即这个管道无法存放数据, push进去就必须被同步pop出来, 否则push会被堵塞
 
 ~~~go
 func main() {
@@ -3825,13 +3970,13 @@ func main() {
 
 
 
-#### 管道的操作
+#### 关闭管道
 
 可以调用`close`方法来关闭管道,  关闭之后, 管道内部的时候可以正常读取, 但是不能再往管道内添加数据了
 
 | 操作           | nil的channel | 正常channel | 已关闭的channel            |
 | -------------- | ------------ | ----------- | -------------------------- |
-| 读 <-ch        | 阻塞         | 成功或阻塞  | 读到初始值或者预测值的元素 |
+| 读 <-ch        | 阻塞         | 成功或阻塞  | 读到初始值或者未消费的元素 |
 | 写 ch<-        | 阻塞         | 成功或阻塞  | panic                      |
 | 关闭 close(ch) | panic        | 成功        | panic                      |
 
@@ -3846,15 +3991,19 @@ func main() {
 	strings <- "aa"
 	strings <- "bb"
 
-	close(strings) // 关闭channel
+	close(strings) // 关闭channel, 这样消费者才知道已经没有生产者生成数据了
 	aa := <-strings
 	bb, ok := <-strings  // 可以继续读取其中的元素, 并且ok为true
 	cc, ok1 := <-strings // 如果已经读取完毕了, 那么会返回对应类型的初始值, 并且ok为false
 	fmt.Printf("aa:%s, bb:%s, cc:%s, ok:%v, ok1:%v\n", aa, bb, cc, ok, ok1)
 
-	// strings <- "dd" // channel关闭了, 不能再添加元素
+	// strings <- "dd" // channel关闭了, 不能再添加元素, 会产生panic
 }
 ~~~
+
+
+
+
 
 #### channel的死锁检测
 
@@ -3864,6 +4013,8 @@ func main() {
 - channel已经满了, 但是没有人读取其中的元素, 但是还有人在添加元素, 此时添加会阻塞
 
 对于上面两种情况, 一旦发生, 都会报错deadlock
+
+<font color=red>**所以你再也不打算写一个chan了, 那么一定要close掉, 这样消费者才能够通过ok来判断chan已经被关闭了**</font>
 
 ~~~go
 	// 情况1:  插入10个, 读取10个, 所以不会死锁
@@ -3901,32 +4052,26 @@ func main() {
 
 
 
-
-
-
-
-
-
 #### 遍历管道
 
 ~~~go
 func main() {
+    
+    ch := make(chan int, 100)
 
-	channel := make(chan int, 100)
-
-	for i := 0; i < 100; i++ {
-		channel <- i // 添加元素
-	}
-
-	// 为了避免deadlock, 我们应该先关闭channel
-	close(channel)
+	go func() {
+		for i := 0; i < 5; i++ {
+			ch <- i
+		}
+		close(ch) // ⚠️ 必须关闭, 否则main协程中的for range报deadlock, 因为没有生产者了, 但是一直有消费者
+	}()
 
     // for range的原理估计就是 value, ok := <- channel
     // 如果不ok就break出去
-	for value := range channel {
-		fmt.Println(value)
+	for v := range ch {
+		fmt.Println(v)
 	}
-    
+
     // 等效于
     for {
 		val, ok := <-ch
@@ -3992,7 +4137,7 @@ func main() {
 		for i := 0; i < 1000; i++ {
 			c <- i
 		}
-	}(channel) // 可以将一个双向的管道, 赋值给一个只写的管道
+	}(channel) // 可以将一个双向的管道, 赋值给一个只写的管道, 用于限制其他方法只能写这个管道
 	
 	// <-chan int  只读的int管道
 	go func(c <-chan int) {
@@ -4001,7 +4146,7 @@ func main() {
 			i := <- c
 			fmt.Println(i)
 		}
-	}(channel) // 可以将一个双向的管道, 赋值给一个只读的管道
+	}(channel) // 可以将一个双向的管道, 赋值给一个只读的管道, 用于限制其他方法只能读取这个管道
 
 	wg.Wait()
 
@@ -4034,7 +4179,7 @@ func main() {
 		}
 	}()
 
-	// select 应该放在for{}中, 否则只会检查一次并退出
+	// select 应该放在for{}中, 不停的进行循环, 否则select只会执行一次就退出了
 	for {
 		// select可以多路复用的调度多个channel,
 		// 当channel中有可用数据的时候, 他会公平的读取其中的数据, 并执行对应的分支
@@ -4050,6 +4195,23 @@ func main() {
 		}
 	}
 	wg.Wait()
+}
+~~~
+
+
+
+
+
+使用select来实现定时任务
+
+~~~go
+// 在go语言中, 你可以使用 time.Tick来生成一个chan
+// 这个c是一个只读类型的chan, 并且这个chan每隔1分钟会收到一个time.Time类型的元素
+var c <-chan time.Time = time.Tick(time.Second * 60)
+
+// 使用for range来遍历这个chan, 在没有元素的时候for range被杜塞
+for range  c {
+    // 执行你当前的定时任务
 }
 ~~~
 
@@ -5164,7 +5326,38 @@ http包主要用来创建http Client和http server
   }
   ~~~
 
-  
+
+
+
+
+
+#### Server
+
+~~~~go
+package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+func helloHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintln(w, "hello world")
+}
+
+func main() {
+	http.HandleFunc("/hello", helloHandler)
+
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		panic(err)
+	}
+}
+~~~~
+
+
+
+
 
 ### time
 
@@ -5272,7 +5465,7 @@ func WithValue(parent Context, key, val interface{}) Context
 
 #### WithValue
 
-WithValue主要用在多个goroutinue之前传递上下文环境的参数,  比如我们可以在context中放一个trace_id, 这样随着context的传递, 所有的goroutinue都可以打印这个trace_id
+WithValue主要用在多个goroutinue之间传递上下文环境的参数,  比如我们可以在context中放一个trace_id, 这样随着context的传递, 所有的goroutinue都可以打印这个trace_id
 
 ~~~go
 func main() {
@@ -5319,7 +5512,12 @@ func main() {
 
 WithTimeout和WithDeadline的作用其实和WithCancel非常的类似
 
-不同在于, 我们可以通过WithTimeout和WithDeadline来指定一个事件点, 自动取消
+不同在于, 我们可以通过WithTimeout和WithDeadline来指定一个时间点, 自动取消
+
+WithTimeout和WithDeadline的区别在于
+
+- WithTimeout指定多少秒之后自动取消
+- WithTimeout指定到了具体的时间点超时取消
 
 ~~~go
 func main() {
@@ -6498,5 +6696,62 @@ include用于在一个makefile中包含其他的makefile
 
 ~~~makefile
 include filenames....
+~~~
+
+
+
+
+
+## 其他
+
+### new和make的区别
+
+在go语言中, new和make都是用来创建一个类型的变量的, 他们的区别如下
+
+| 对比项   | `new`      | `make`                        |
+| -------- | ---------- | ----------------------------- |
+| 返回值   | **指针**   | **具体类型（不是指针）**      |
+| 做什么   | 只分配内存 | 分配 + 初始化                 |
+| 能用在哪 | 所有类型   | 只支持：slice / map / channel |
+| 初始化   | ❌ 不初始化 | ✅ 初始化内部结构              |
+
+
+
+**new只分配内存, 但是不初始化**, 实际上new方法类似如下的代码
+
+~~~go
+p := new(int) // (*p) 为0
+// 等效于
+var tmp int
+p = &tmp // (*p) 为0
+
+type Student{
+    name string
+}
+s := new(Student) // (*s)是一个空的结构体
+// 等效于
+var tmp Student
+p := &s // (*s)是一个空的结构体
+~~~
+
+**如果new碰上chan, map, slice, interface这列零值为nil的一定要小心**
+
+~~~go
+m := new(map[string]int) // (*m)是nil
+// 等效于
+var tmp map[string]int
+m := &tmp // (*m)是nil
+(*m)["a"] = 1 // ❌ panic
+~~~
+
+
+
+make只能用在slice, map, chan上面, 返回的是对象本身
+
+~~~go
+m := make(map[int]string)
+m["a"] = "hello"
+
+ch := make(chan int, 10) // 已经初始化了chan内部
 ~~~
 
